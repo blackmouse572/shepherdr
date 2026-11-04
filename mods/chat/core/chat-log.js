@@ -534,9 +534,11 @@ export class Conversation {
 
   claude(l, off) {
     if (l.isSidechain) return;
-    if (l.type === "user" && l.origin?.kind === "task-notification") {
+    // A notification that came mid-turn is queued as an attachment (queued_command), not a user line.
+    const queued = l.type === "attachment" && l.attachment?.type === "queued_command" && /<task-notification>/.test(String(l.attachment?.prompt ?? ""));
+    if (queued || (l.type === "user" && l.origin?.kind === "task-notification")) {
       // A helper or a background job finished (Claude Code tells the agent so): it's done.
-      const c = l.message?.content;
+      const c = queued ? l.attachment.prompt : l.message?.content;
       const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => b?.text ?? "").join("\n") : "";
       const id = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1];
       if (id) {
