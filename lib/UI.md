@@ -51,9 +51,11 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   so a choice list lines up).
 - `heading(text, right?)`: small dim heading, 12 medium, sentence case. Never uppercase.
 - `cardHeader(title, [actions])`: title left (13 medium), links or small buttons right.
-- `dialogTitle(id, title, { pad, state, sub, right })`: a dialog's title as the design's header, a duotone banner
+- `dialogTitle(id, title, { pad, state, sub, right, lead, onClose })`: a dialog's title as the design's header, a duotone banner
   across the dialog's top (negative margins past the root's `pad`) with the title in the serif, an optional dim line
-  and a right-hand control (`radius` for a dialog that draws its own rounded frame). Dark only; light keeps the
+  and a right-hand control (`radius` for a dialog that draws its own rounded frame). `lead` puts a 16 icon left of
+  the title (`DIALOG_ICON` folder, server, branch, as Doop App 06); `onClose` adds the top-right X (`closeX`), which
+  closes as Cancel and Esc do. New space, Rename and Add machine have the X; New space and Add machine lead with an icon. Dark only; light keeps the
   plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
   On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine.
 - `dialogFooter({ onCancel, primary: { id, label, onClick, disabled }, note, error })`: 32 tall,

@@ -28,7 +28,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
-import { dialogFooter, dialogTitle, TITLE_SHIFT, button, TEXT, RADIUS } from "./ui.js";
+import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, TEXT, RADIUS } from "./ui.js";
 import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
@@ -318,7 +318,7 @@ export default class NewSpace extends View {
       .on_mouse_down("left", (_e, cx) => { if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); } })
       // The design's banner header (ui.js dialogTitle), its machine at the right; the space under it gives up what
       // the banner adds, so newSpaceHeight() holds.
-      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9,
+      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9, lead: DIALOG_ICON.folder, onClose: () => this.close(),
         right: this.machine ? div().min_w(0).max_w(200).truncate().text_size(TEXT.label).text_color(t.muted).child(W.on(this.machine)) : null }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.label))
