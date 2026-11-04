@@ -54,7 +54,7 @@ export const WORDS = {
   badgeNext: "Next",
   badgeSkipped: "Skipped",
   skippedLine: "not used for switching",
-  claudeSub: (n) => `${n} ${n === 1 ? "folder" : "folders"} · switch order top to bottom`,
+  claudeSub: (n) => `${n} ${n === 1 ? "folder" : "folders"} · drag to set the switch order`,
   addAccount: "Add account",
   switching: "Switching",
   switchingSub: (where) => `One rule for every space on ${where}`,
@@ -146,6 +146,14 @@ export function resetsWhen(iso) {
   return `${DAY[at.getDay()]} ${hh}:${mm}`;
 }
 
+// Kept numbers (keepGood's `stale`) as "as of 10:42", with the day once it isn't today; "" when they're fresh.
+export function staleLine(a, now = Date.now()) {
+  const at = a?.stale ? new Date(a.stale) : null;
+  if (!at || !Number.isFinite(at.getTime())) return "";
+  const hm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
+  return new Date(now).toDateString() === at.toDateString() ? `as of ${hm}` : `as of ${DAY[at.getDay()]} ${hm}`;
+}
+
 // The switch point: 50 to 95 in steps of 5. Whether it switches at all is its own pick (prefs.auto).
 export const SWITCH_DEFAULT = 95;
 export const clampSwitch = (v) => Math.min(95, Math.max(50, Math.round((n(v) ?? SWITCH_DEFAULT) / 5) * 5));
@@ -198,6 +206,21 @@ export function moved(accounts, prefs, id, delta) {
   if (i < 0 || j < 0 || j >= ids.length) return ids;
   [ids[i], ids[j]] = [ids[j], ids[i]];
   return ids;
+}
+// Which edge of `to`'s row a dragged `from` lands on: below it when coming from above, else above it.
+export function dropEdge(accounts, prefs, from, to) {
+  const ids = ordered(accounts, prefs).map((a) => a.id);
+  const i = ids.indexOf(from), j = ids.indexOf(to);
+  return i >= 0 && i < j ? "bottom" : "top";
+}
+// The order with `from` dropped on `to`'s row (Settings > Accounts' drag), at dropEdge's side.
+export function dropped(accounts, prefs, from, to) {
+  const ids = ordered(accounts, prefs).map((a) => a.id);
+  if (from === to || !ids.includes(from) || !ids.includes(to)) return ids;
+  const below = dropEdge(accounts, prefs, from, to) === "bottom";
+  const rest = ids.filter((id) => id !== from);
+  rest.splice(rest.indexOf(to) + (below ? 1 : 0), 0, from);
+  return rest;
 }
 export const skipped = (a, prefs) => (prefs?.skipped ?? []).includes(a?.id);
 

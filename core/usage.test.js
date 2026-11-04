@@ -166,3 +166,28 @@ test("keepGood holds the last numbers through a failed read, not through a sign-
   expect(keepGood(good, out).claude[0].error).toBe("signed-out");
   expect(keepGood(null, failed)).toBe(failed);
 });
+
+test("kept numbers say when they were read", async () => {
+  const { staleLine } = await import("./usage.js");
+  const read = new Date(2026, 10, 4, 10, 42);
+  expect(staleLine({ stale: read.toISOString() }, new Date(2026, 10, 4, 11, 5).getTime())).toBe("as of 10:42");
+  expect(staleLine({ stale: read.toISOString() }, new Date(2026, 10, 5, 9, 0).getTime())).toBe("as of Wed 10:42");
+  expect(staleLine({ stale: null })).toBe("");
+  expect(staleLine({ stale: "nope" })).toBe("");
+  expect(staleLine(null)).toBe("");
+});
+
+test("a dragged account lands on the row it's dropped on", async () => {
+  const { dropped, dropEdge } = await import("./usage.js");
+  const list = ["a", "b", "c", "d"].map((id) => acct(id, 1, 1));
+  const pr = { order: [] };
+  // Down: below the target; up: above it.
+  expect(dropEdge(list, pr, "a", "c")).toBe("bottom");
+  expect(dropEdge(list, pr, "d", "b")).toBe("top");
+  expect(dropped(list, pr, "a", "c")).toEqual(["b", "c", "a", "d"]);
+  expect(dropped(list, pr, "d", "b")).toEqual(["a", "d", "b", "c"]);
+  expect(dropped(list, pr, "b", "b")).toEqual(["a", "b", "c", "d"]);
+  expect(dropped(list, pr, "x", "b")).toEqual(["a", "b", "c", "d"]);
+  // The person's order counts, not the order found.
+  expect(dropped(list, { order: ["d", "c", "b", "a"] }, "d", "a")).toEqual(["c", "b", "a", "d"]);
+});

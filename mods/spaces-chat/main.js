@@ -463,7 +463,8 @@ export default class Spaces extends View {
     return out;
   }
 
-  // The rows, under a header per machine once one isn't this computer.
+  // The rows, under a header per machine, this computer's too (Doop App 01/02: "THIS MAC · 9 terminals"); the rail
+  // shows none while this computer is the only one.
   // Pinned spaces (sections.js) sit in Pinned at the top instead (not on the rail).
   grouped(t, collapsed) {
     const visible = this.visible();
@@ -485,7 +486,7 @@ export default class Spaces extends View {
     };
     const loadingRow = m => div().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(8).flex().items_center().text_size(TEXT.label).text_color(t.dim).child(collapsed ? "…" : "Loading…");
     const pinned = this.pinned(visible, pins, Boolean(remote.length), t, visible.filter(underPin));
-    if (!remote.length) return [...pinned, ...(loading(null) && !rows.length && !pinned.length ? [loadingRow(null)] : body(null, rows))];
+    if (!remote.length && collapsed) return [...pinned, ...(loading(null) && !rows.length && !pinned.length ? [loadingRow(null)] : body(null, rows))];
     const machineNames = [null, ...remote];
     return [...pinned, ...machineNames.flatMap((m) => {
       const mine = rows.filter((r) => (r.w.machine ?? null) === m);

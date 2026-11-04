@@ -11,8 +11,9 @@ import { usagePill, usageRest, openUsage, UsagePopover } from "./usage.js";
 import { startUsage } from "./usage-data.js";
 
 // A machine as the sidebar shows it (mods/spaces-chat sections.js machineLook): the name it was
-// given there, else its own.
-const machineName = (m) => (shared("spaces-chat")?.machines?.[m ?? ""]?.name) || (m ?? "This computer");
+// given there, else its own; this computer "This Mac" on a Mac.
+const machineName = (m) => (shared("spaces-chat")?.machines?.[m ?? ""]?.name)
+  || (m ?? (window()?.platform === "macos" ? "This Mac" : "This computer"));
 
 export default class WorkspaceStatus extends View {
   init(_props, cx) {

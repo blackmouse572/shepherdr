@@ -8,10 +8,11 @@ Shepherdr can use more than one Claude account on a machine. Each account is a C
 - **The status bar** shows, after the machine, the usage pill (the active account, its 5-hour session and its week),
   the switch rule ("switch at 95% · Personal next") and Codex's plan and session. A click opens the usage popover: one
   card per account, meters with the switch point, and a chevron for an account's detail (the last 7 days, this week
-  by space, when the week resets, and Use for new work or Sign in).
-- **Settings > Accounts** lists the accounts in their switch order, one compact row each. A row's ⋯ renames it, sets it
-  as default (new work starts there), signs in again, opens its folder, moves it up or down in the order, skips it
-  when switching, or removes it. **Add account** sits in the Claude card's header. The Switching card holds the rule,
+  by space, when the week resets, and Sign in when signed out). Another account's card has a quick Switch. Numbers
+  kept from an earlier read, after a read failed, show dimmed with when they were read ("as of 10:42").
+- **Settings > Accounts** lists the accounts in their switch order, one compact row each; drag a row by its grip to
+  reorder. A row's ⋯ renames it, sets it as default (new work starts there), signs in again, opens its folder, moves it
+  up or down in the order, skips it when switching, or removes it. **Add account** sits in the Claude card's header. The Switching card holds the rule,
   the Codex card signs Codex in and out (`codex login` / `codex logout`). With connected machines, a machine's own
   ~/.claude and Codex show read-only, as Settings > Machines reads them.
 - **Tasks** show the account their Claude agent runs on: an initial in the task list, its name in the task's header.
