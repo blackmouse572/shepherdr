@@ -298,3 +298,14 @@ export function plainError(e) {
   s = s[0].toUpperCase() + s.slice(1);
   return /[.!?…]$/.test(s) ? s : `${s}.`;
 }
+
+// Keycaps ------------------------------------------------------------------------------------
+// A key shortcut as caps, one key each ("Ctrl", "Shift", "P"; core/keys.js keyCaps() makes the list), for a row's right
+// end or a footer: 22 tall, never cut, a flat cap with a hairline border.
+export function keycaps(caps) {
+  const t = theme();
+  return h_flex().flex_none().gap(4).items_center().children((caps ?? []).map((c) =>
+    div().h(22).min_w(22).px(6).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
+      .border_1().border_color(t.border).bg(t.background).text_size(TEXT.label).font_medium().text_color(t.muted)
+      .whitespace_nowrap().child(c)));
+}

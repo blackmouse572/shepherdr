@@ -13,6 +13,9 @@ import { on as addonOn } from "./addons.js";
 // A tab's name (what runs in it while Herdr named it): core/menus.js, as the web app's tab bar names it.
 import { tabName } from "./core/menus.js";
 
+// The command bar's popup, as mods/jump/mod.json opens it (keep the two the same).
+const JUMP_POPUP = { at: "top", offset: 56, width: 640, height: 560 };
+
 function find(node, id) {
   if (node?.id === id) return node;
   for (const child of node?.children ?? []) {
@@ -61,6 +64,8 @@ export default class Tabs extends View {
         if (c === "rename-space") { const sp = spaces().find(s => s.active); if (sp) renameSpace(sp.id); }
         // Ctrl+Shift+N: the New space dialog, on the shown space's machine.
         if (c === "newspace") newSpace(spaces().find(s => s.active));
+        // Ctrl+Shift+P (keys.json): the command bar (mods/jump) on commands only.
+        if (c === "commands") openOverlay({ mod: "jump", kind: "popup", ...JUMP_POPUP, props: { mode: "commands" } });
         // This computer's + in the Spaces sidebar: the dialog here, whatever space is shown.
         if (c === "newspace-local") newSpace(null);
         // A machine's New space in the Spaces sidebar: the dialog there (shared "newspace.on" =

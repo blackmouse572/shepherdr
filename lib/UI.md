@@ -63,6 +63,8 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
 - `banner(id, state, height)`: the duotone header (`attention`, `working`, `done`, `neutral`): a dark wash with halftone
   dots fading toward the left, a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`).
   Put the header's content in an `.absolute().inset_0()` child. Dark only for now.
+- `keycaps(caps)`: a shortcut as caps, one key each (`core/keys.js` `keyCaps("ctrl-shift-p", mac)` gives the list), 22
+  tall, never cut. The command bar's rows and foot.
 - `openSettings({ space?, section? })`: Shepherdr's settings window (mods/shepherdr-settings, the foot's Shepherdr); with
   `space`, that space's own settings. Never open it with your own size.
 
@@ -71,6 +73,9 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
 - Pointer and hover only where a click does something; nothing else gets either.
 - Hover is a background (`theme().hover`), rounded 8 on rows, 6 on controls. Nothing moves or
   resizes on hover.
+- A selected or active row is a flat fill one step lighter than its surface (`theme().selected`): no border, no amber
+  edge, no glow, no gradient, no Enter cap on the row. Amber is for buttons and real attention only.
+- Search matches: the primary text colour with a thin underline, never amber.
 - One solid primary per panel or dialog. A dangerous action is secondary, except as the primary
   of its own confirm dialog, where its label is the verb ("Delete section"), never "Confirm".
 - Labels are capitalized and sentence case; short labels have no period, full sentences do.

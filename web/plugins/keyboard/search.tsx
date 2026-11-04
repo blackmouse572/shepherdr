@@ -1,5 +1,8 @@
-// Jump (Ctrl+K), as the window's: one box over spaces, tasks and artifacts (and machines, once there are others), each
-// group with its count, newest first, eight rows and then "Show N more". Every word typed is in the row somewhere.
+// Jump (Ctrl+K), as the window's command bar: one box over spaces, tasks and artifacts (and machines, once there are
+// others). Nothing typed: Needs you (every one), then Recent (the five latest). Typed: each group with its count, newest
+// first, eight rows and then "Show N more"; every word typed is in the row somewhere, and each match is underlined in
+// the primary text colour. Tab and Shift+Tab jump between sections. The window's Herdr commands (panes, splits, zoom)
+// have no web form.
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
 import { goPlace, openArtifact, openTask, setUI, useSnap, useUI, getState, listView, type UI } from '@client/kernel.ts'
@@ -10,12 +13,35 @@ import { showInPanel } from '@plugins/artifacts/client.tsx'
 import type { Snapshot, TaskStatus } from '@shared/types.ts'
 
 type Kind = 'space' | 'task' | 'artifact' | 'machine'
-const KINDS: Kind[] = ['space', 'task', 'artifact', 'machine']
-const GROUP: Record<Kind, string> = { space: 'Spaces', task: 'Tasks', artifact: 'Artifacts', machine: 'Machines' }
+type Sec = Kind | 'needs' | 'recent'
+const KINDS: Kind[] = ['task', 'space', 'artifact', 'machine']
+const GROUP: Record<Sec, string> = { space: 'Spaces', task: 'Tasks', artifact: 'Artifacts', machine: 'Machines', needs: 'Needs you', recent: 'Recent' }
+const RECENT = 5
 const SHOWN = 8
 const STATUS: Record<TaskStatus, string> = { need: 'Needs you', work: 'Working', merging: 'Merging', ready: 'Ready', queued: 'Queued', todo: 'To do', done: 'Done' } as Record<TaskStatus, string>
 
-type Item = { kind: Kind; key: string; label: string; sub: string; at: number; icon?: string; ref?: string; status?: TaskStatus; pct?: number; active?: boolean; go: () => void }
+type Item = { kind: Kind; key: string; label: string; sub: string; at: number; meta?: string | null; icon?: string; ref?: string; status?: TaskStatus; pct?: number; active?: boolean; go: () => void; sec?: Sec }
+type More = { more: Sec; count: number; sec: Sec }
+
+/** where each word typed first shows in a text, as parts (hit: underlined); overlapping hits merge (the window's matchParts) */
+function matchParts(text: string, words: string[]) {
+  const low = text.toLowerCase()
+  const spans = words.map((w) => [low.indexOf(w.toLowerCase()), w.length]).filter(([i]) => i >= 0).map(([i, n]) => [i, i + n]).sort((a, b) => a[0] - b[0])
+  const parts: { text: string; hit: boolean }[] = []
+  let at = 0
+  for (const [a, b] of spans) {
+    if (b <= at) continue
+    const from = Math.max(a, at)
+    if (from > at) parts.push({ text: text.slice(at, from), hit: false })
+    parts.push({ text: text.slice(from, b), hit: true })
+    at = b
+  }
+  if (at < text.length) parts.push({ text: text.slice(at), hit: false })
+  return parts
+}
+const Marked = ({ text, words }: { text: string; words: string[] }) => (
+  <>{matchParts(text, words).map((p, i) => (p.hit ? <span key={i} className="text-fg underline decoration-fg/40 decoration-1 underline-offset-4">{p.text}</span> : p.text))}</>
+)
 
 /** every word typed is in one of these, any case */
 const matches = (q: string, ...fields: (string | undefined | null)[]) => {
@@ -53,8 +79,9 @@ function itemsOf(snap: Snapshot, q: string, ui: UI, fromChat: boolean): Item[] {
     if (q && !matches(q, t.id, t.name, line, place)) continue
     out.push({
       kind: 'task', key: `t:${t.id}`, ref: t.id, label: t.name, status: t.status, pct: t.report?.progress,
-      sub: [t.archived ? 'Archived' : STATUS[t.status], line && capital(line.split('\n')[0]), place].filter(Boolean).join(' · '),
+      sub: [t.id, t.archived ? 'Archived' : STATUS[t.status], line && capital(line.split('\n')[0]), place].filter(Boolean).join(' · '),
       at: Math.max(t.archived ?? 0, t.doneAt ?? 0, t.at ?? 0),
+      meta: ago(Math.max(t.archived ?? 0, t.doneAt ?? 0, t.at ?? 0)),
       go: () => {
         openTask(t.id)
         const { ui, snap } = getState()
@@ -68,7 +95,7 @@ function itemsOf(snap: Snapshot, q: string, ui: UI, fromChat: boolean): Item[] {
     const on = a.machine ?? snap.host
     if (q && !matches(q, a.title, a.id, a.task, place, a.folder, remote ? machineName(on) : null)) continue
     out.push({
-      kind: 'artifact', key: `a:${a.machine ?? ''}:${a.id}`, label: a.title || a.id, sub: [a.task, place, remote ? machineName(on) : null, `v${a.v}`, ago(a.at)].filter(Boolean).join(' · '), at: a.at ?? 0,
+      kind: 'artifact', key: `a:${a.machine ?? ''}:${a.id}`, label: a.title || a.id, sub: [a.task, place, remote ? machineName(on) : null, `v${a.v}`].filter(Boolean).join(' · '), at: a.at ?? 0, meta: ago(a.at ?? 0),
       // over the chat the keyboard was in, as its card opens it; else in the Artifacts list beside it
       go: () => (fromChat ? openArtifact(a.id) : showInPanel(a.id)),
     })
@@ -98,31 +125,34 @@ export function Search({ onClose }: { onClose: () => void }) {
   // the keyboard was in a chat's box as Jump opened: an artifact opens over that chat, as its card there would
   const [fromChat] = useState(() => !!document.activeElement?.closest('[data-composer]'))
   const [q, setQ] = useState('')
-  const [more, setMore] = useState<Set<Kind>>(new Set())
+  const [more, setMore] = useState<Set<Sec>>(new Set())
   const [sel, setSel] = useState<string | null>(null)
   const query = q.trim()
   const rows = useMemo(() => {
     if (!snap) return []
     const all = itemsOf(snap, query, { ...getState().ui, place }, fromChat)
-    const list: ({ head: Kind; count: number } | { more: Kind; count: number } | Item)[] = []
-    for (const kind of KINDS) {
-      const mine = all.filter((x) => x.kind === kind)
+    // nothing typed: what needs you (never folded), then the latest work; typed: the groups
+    const secs: [Sec, Item[], number][] = query
+      ? KINDS.map((kind) => [kind, all.filter((x) => x.kind === kind), SHOWN])
+      : [['needs', all.filter((x) => x.kind === 'task' && x.status === 'need'), 0],
+        ['recent', all.filter((x) => x.at > 0 && x.kind !== 'machine' && !(x.kind === 'task' && (x.status === 'need' || x.status === 'done'))).slice(0, RECENT), 0]]
+    const list: ({ head: Sec; count: number | null } | More | Item)[] = []
+    for (const [sec, mine, fold] of secs) {
       if (!mine.length) continue
-      list.push({ head: kind, count: mine.length })
-      const shown = more.has(kind) ? mine : mine.slice(0, SHOWN)
-      list.push(...shown)
-      if (mine.length > shown.length) list.push({ more: kind, count: mine.length - shown.length })
+      list.push({ head: sec, count: query || sec === 'needs' ? mine.length : null })
+      const shown = fold && !more.has(sec) ? mine.slice(0, fold) : mine
+      list.push(...shown.map((x) => ({ ...x, key: `${sec}|${x.key}`, sec })))
+      if (mine.length > shown.length) list.push({ more: sec, count: mine.length - shown.length, sec })
     }
     return list
   }, [snap, query, more, place, fromChat])
-  // task ids in a column of one width, so titles line up (the window's monospace id column)
-  const idWidth = Math.max(0, ...rows.map((r) => ('ref' in r && r.ref ? r.ref.length : 0)))
-  const pickable = rows.filter((r) => !('head' in r)) as (Item | { more: Kind; count: number })[]
-  const keyOf = (r: Item | { more: Kind }) => ('more' in r ? `more:${r.more}` : r.key)
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const pickable = rows.filter((r) => !('head' in r)) as (Item | More)[]
+  const keyOf = (r: Item | More) => ('more' in r ? `more:${r.more}` : r.key)
   const at = Math.max(0, pickable.findIndex((r) => keyOf(r) === sel))
   const cur = pickable[at]
   useEffect(() => { if (cur) document.getElementById(`jump-${keyOf(cur)}`)?.scrollIntoView({ block: 'nearest' }) }, [cur && keyOf(cur)])
-  const go = (r?: Item | { more: Kind; count: number }) => {
+  const go = (r?: Item | More) => {
     if (!r) return
     if ('more' in r) {
       setMore(new Set([...more, r.more]))
@@ -135,6 +165,14 @@ export function Search({ onClose }: { onClose: () => void }) {
   const move = (d: number) => {
     if (!pickable.length) return
     setSel(keyOf(pickable[Math.max(0, Math.min(pickable.length - 1, at + d))]))
+  }
+  // Tab: the next section's first row (round to the first); Shift+Tab: this section's first, else the one before
+  const jump = (d: number) => {
+    const firsts = pickable.filter((r, i) => i === 0 || pickable[i - 1].sec !== r.sec)
+    if (!firsts.length) return
+    const mine = firsts.findIndex((r) => r.sec === cur?.sec)
+    const next = d > 0 ? firsts[(mine + 1) % firsts.length] : cur && firsts[mine] !== cur ? firsts[mine] : firsts[(mine - 1 + firsts.length) % firsts.length]
+    setSel(keyOf(next))
   }
   return (
     <Sheet label="Jump" onClose={onClose} panel="max-w-[640px]">
@@ -154,6 +192,7 @@ export function Search({ onClose }: { onClose: () => void }) {
           onKeyDown={(e) => {
             if (e.key === 'ArrowDown' || (e.key === 'n' && e.ctrlKey)) { e.preventDefault(); move(1) }
             else if (e.key === 'ArrowUp' || (e.key === 'p' && e.ctrlKey)) { e.preventDefault(); move(-1) }
+            else if (e.key === 'Tab') { e.preventDefault(); jump(e.shiftKey ? -1 : 1) }
             else if (e.key === 'Enter') { e.preventDefault(); go(cur) }
             else if (e.key === 'Escape') onClose()
           }}
@@ -169,37 +208,40 @@ export function Search({ onClose }: { onClose: () => void }) {
               return (
                 <h3 key={`h:${r.head}`} className="flex gap-1.5 px-2.5 pt-2.5 pb-1 text-[0.75rem] font-medium text-fg3 tabular-nums phone:text-[0.8125rem]">
                   {GROUP[r.head]}
-                  <span>{r.count}</span>
+                  {r.count !== null ? <span className="ml-auto font-mono text-[0.6875rem]">{r.count}</span> : null}
                 </h3>
               )
             const k = keyOf(r)
             if ('more' in r)
               return (
                 <button key={k} id={`jump-${k}`} type="button" role="option" aria-selected={cur && keyOf(cur) === k} onClick={() => go(r)}
-                  className="flex h-9 w-full items-center rounded-row px-2.5 text-[0.8125rem] text-focus hover:bg-hover aria-selected:bg-hover phone:h-11 phone:text-[0.9375rem]">
+                  className="flex h-9 w-full items-center rounded-row px-2.5 text-[0.8125rem] text-fg2 hover:bg-hover aria-selected:bg-hover phone:h-11 phone:text-[0.9375rem]">
                   Show {r.count} more
                 </button>
               )
             return (
               <div key={k} id={`jump-${k}`} role="option" tabIndex={-1} aria-selected={cur && keyOf(cur) === k} onClick={() => go(r)}
-                className="flex min-h-12 cursor-pointer items-center gap-2.5 rounded-row px-2.5 py-1.5 hover:bg-hover aria-selected:bg-hover phone:min-h-14">
+                className="flex min-h-10 cursor-pointer items-center gap-3 rounded-row px-3 py-1.5 hover:bg-hover aria-selected:bg-hover phone:min-h-14">
                 <span className="grid w-4 shrink-0 place-items-center text-fg3">
                   {r.kind === 'task' ? <Dot s={r.status ?? 'todo'} p={r.status === 'work' ? r.pct : undefined} />
                     : r.kind === 'artifact' ? <PageIcon className={ic} />
                       : r.kind === 'machine' ? <ServerIcon className={ic} />
                         : <span className="text-[0.9375rem]">{r.icon}</span>}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    {r.ref ? <span className="shrink-0 font-mono text-[0.6875rem] text-fg3" style={{ width: `${idWidth}ch` }}>{r.ref}</span> : null}
-                    <span className={clsx('truncate text-[0.875rem] phone:text-[1rem]', r.active && 'font-semibold')}>{r.label}</span>
-                  </span>
-                  {r.sub ? <span className="truncate text-[0.75rem] text-fg3 phone:text-[0.8125rem]">{r.sub}</span> : null}
+                {/* one line: the name, then a quieter part (two lines on a phone), the time at the right */}
+                <span className="flex min-w-0 flex-1 items-baseline gap-2.5 phone:flex-col phone:items-stretch phone:gap-0">
+                  <span className={clsx('max-w-[300px] shrink-0 truncate text-[0.875rem] phone:max-w-none phone:text-[1rem]', r.active && 'font-semibold')}><Marked text={r.label} words={words} /></span>
+                  {r.sub ? <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg3 phone:text-[0.8125rem]"><Marked text={r.sub} words={words} /></span> : null}
                 </span>
+                {r.meta ? <span className="shrink-0 font-mono text-[0.6875rem] text-fg3">{r.meta}</span> : null}
               </div>
             )
           })
         )}
+      </div>
+      <div className="flex h-11 shrink-0 items-center gap-2 border-t border-line px-4 text-[0.75rem] text-fg3 phone:hidden coarse:hidden">
+        <kbd className="grid h-5.5 min-w-5.5 place-items-center rounded-md border border-line bg-bg px-1.5 font-sans font-medium text-fg2">Tab</kbd>
+        to jump between sections
       </div>
     </Sheet>
   )
