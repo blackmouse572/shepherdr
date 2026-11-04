@@ -22,7 +22,7 @@ import { taskDot, ownProgress } from "./dot.js";
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
   queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { button, banner, TEXT, H, RADIUS, red, working } from "./ui.js";
+import { button, banner, TEXT, H, RADIUS, red, working, isDark, SERIF } from "./ui.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
@@ -370,7 +370,8 @@ export default class Tasks extends View {
       // while one is working, else neutral.
       .child(banner("tasks-head", needRows.length ? "attention" : tasksOf.working?.length ? "working" : "neutral", 42).border_b(1).border_color(t.border)
         .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
-        .child(div().font_semibold().child("Tasks"))
+        // The card header's title in the serif over the banner (dark), as the pane headers and dialogs.
+        .child(div().when(isDark(), (el) => el.font_family(SERIF).text_size(TEXT.body + 1)).when(!isDark(), (el) => el.font_semibold()).child("Tasks"))
         .child(div().flex_1())
         .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
