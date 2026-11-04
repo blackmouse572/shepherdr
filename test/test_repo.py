@@ -14,7 +14,7 @@ def text_files():
         for d, dirs, files in os.walk(J(top)):
             dirs[:] = [x for x in dirs if x != "__pycache__"]
             for f in files:
-                if not f.endswith((".svg", ".png", ".pyc")):
+                if not f.endswith((".svg", ".png", ".pyc", ".ttf")):
                     yield os.path.join(d, f)
 
 

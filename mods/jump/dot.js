@@ -2,19 +2,19 @@
 // in a 14px box so nothing moves when a status changes.
 // Shared: the source is lib/dot.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/dot.js, never a mod's copy, then run bin/sync-shared.
-//   working  the ring in amber, a pie inside filling with the % done (5% steps,
+//   working  the ring in blue, a pie inside filling with the % done (5% steps,
 //            min 5%; half full while it reports none)
-//   needs    a 10px red dot (halo: a faint ring around it, as Shepherdr's chat header)
+//   needs    a 10px amber dot (halo: a faint ring around it, as Shepherdr's chat header)
 //   ready    green, a white tick        done     the same in grey
 //   merging  the green ring with a quarter gap, turning
 //   queued   the grey ring with a clock's two hands      todo  the grey ring      off  dashed
 import { div, svg } from "gpui-kit";
 import { theme, terminals } from "herdr";
-import { red, green, amber } from "./ui.js";
+import { need, working, green } from "./ui.js";
 
-// Shepherdr's own red, green and amber, light and dark: one source for the app, in ui.js. The
+// The design's need, working and ready colours, light and dark: one source for the app, in ui.js. The
 // greys are the theme's.
-const needColor = red;
+const needColor = need;
 const readyColor = green;
 
 // The pie: the ring with a solid wedge inside, from twelve o'clock clockwise, radius 3.5 of 14
@@ -29,7 +29,7 @@ const ring = (color, file = "circle") => svg(`mods/tasks/${file}.svg`).size(14).
 export function taskDot(s, { pct = null, halo = false } = {}) {
   const t = theme();
   switch (s) {
-    case "working": return svg(pie(Number.isFinite(pct) ? pct : 50)).size(14).flex_none().text_color(amber());
+    case "working": return svg(pie(Number.isFinite(pct) ? pct : 50)).size(14).flex_none().text_color(working());
     case "needs": return box().items_center().justify_center().flex()
       .child(div().size(10).flex_none().rounded(5).bg(needColor()))
       .when(halo, (el) => el.child(div().absolute().top(-1).left(-1).size(16).rounded(8).border(1.5).border_color(needColor() + "4d")));

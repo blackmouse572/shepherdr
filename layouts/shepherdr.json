@@ -5,6 +5,11 @@
     "version": "0.1.11"
   },
   "type": "row",
+  "theme": {
+    "light": "paper",
+    "dark": "shepherdr-night"
+  },
+  "ui_font": "Geist",
   "children": [
     {
       "id": "sidebar",

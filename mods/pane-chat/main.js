@@ -17,7 +17,7 @@ import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
-import { button as uiButton, segmented, TEXT, RADIUS, toast, plainError } from "./ui.js";
+import { button as uiButton, segmented, TEXT, RADIUS, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, SERIF } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
 import { endAgent } from "./core/menus.js";
@@ -221,13 +221,18 @@ export default class Pane extends View {
     // Autopilot add-on is off).
     const apFor = addonOn("autopilot") ? apSpace(agent ?? (chatMode ? null : self.terminal), lazy || null) : null;
     apWatch(this, apFor, cx);
+    // Dark: the header is a duotone banner in the agent's state (ui.js bannerBg/bannerDots), its name in the serif.
+    const banner = isDark() ? agentBanner(st) : null;
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
       .px(10)
       .gap(8)
       .items_center()
-      .bg(t.background)
+      .relative()
+      .overflow_hidden()
+      .bg(banner ? bannerBg(banner) : t.background)
+      .when(Boolean(banner), (el) => el.child(bannerDots(banner)))
       .border_b(1)
       .border_color(t.border)
       .text_size(TEXT.label)
@@ -235,7 +240,10 @@ export default class Pane extends View {
       .on_size_change((size, cx) => { if (Math.round(size.width) !== this.width) { this.width = Math.round(size.width); cx.notify(); } })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).font_medium().text_color(t.foreground).child(name))
+      .child(div().flex_none().truncate().max_w(260).text_color(t.foreground)
+        .when(Boolean(banner), (el) => el.font_family(SERIF).text_size(TEXT.body + 1))
+        .when(!banner, (el) => el.font_medium())
+        .child(name))
       // The folder gives way first; the switch keeps its width; the gap after pushes the rest right.
       .child(div().flex_shrink_1().min_w(0).truncate().text_color(t.dim).child(folder(p.cwd)))
       .when(Boolean(apFor), (el) => el.child(apChip(this, t, apFor, pane, (this.width ?? Infinity) < COMPACT_BELOW))

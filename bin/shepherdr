@@ -12,6 +12,7 @@
 What goes where (each under --root, default your home):
   .config/herdr-app/mods/<mod>          the add-ons' mods (lib/addons.json lists them), one swap per mod
   .config/herdr-app/layouts/shepherdr.json, lib/, core/, bin/
+  .config/herdr-app/themes/shepherdr-night.json   the layout's dark look (your own themes are never touched)
   .config/herdr-app/keys.json           our keys merged in: free ones added, a key you use asked about first
   .config/herdr-core/templates/*.md     the Assistant's, worker's and reviewer's instructions
   .local/bin/{herdr-task,herdr-artifact,herdr-secret,herdr-browser,shepherdr}   links into the above
@@ -184,7 +185,7 @@ def walk_files(top):
 
 def source_items(src):
     """What the checkout installs: [(group, rel under root, source path)]. group: a mod's name,
-    or "layout", "lib", "bin", "template"."""
+    or "layout" (also our themes), "lib", "bin", "template"."""
     manifest = json.load(open(os.path.join(src, "lib", "addons.json")))
     mods = list(manifest["core"]["mods"]) + [m for a in manifest["addons"] for m in a.get("mods", [])]
     items = []
@@ -195,6 +196,10 @@ def source_items(src):
         items += [(m, f"{APP}/mods/{m}/{f}", os.path.join(top, f)) for f in walk_files(top)]
     for name in manifest["core"]["layouts"]:
         items.append(("layout", f"{APP}/layouts/{name}.json", os.path.join(src, "layouts", f"{name}.json")))
+    # Our themes (the layout's dark look, themes/shepherdr-night.json): Herdr's themes/ folder, beside the person's own.
+    for f in sorted(os.listdir(os.path.join(src, "themes"))) if os.path.isdir(os.path.join(src, "themes")) else []:
+        if f.endswith(".json"):
+            items.append(("layout", f"{APP}/themes/{f}", os.path.join(src, "themes", f)))
     for f in walk_files(os.path.join(src, "lib")):
         if not f.startswith(".last"):
             items.append(("lib", f"{APP}/lib/{f}", os.path.join(src, "lib", f)))

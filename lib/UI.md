@@ -25,9 +25,16 @@ No other sizes. Use the names, not the numbers, so a change here reaches everyon
 
 ## Colors
 
-`red()` needs you and alerts, `green()` ready, `amber()` working: Shepherdr's own, light and
-dark, the same as the task dots (`dot.js` uses them). `onStatus()` is text on one of them
-(white in light, black in dark). Everything else comes from `theme()`; never write hex in a mod.
+The design system's night-pasture status colours, light and dark, the same as the task dots (`dot.js` uses them):
+`need()` needs you (lantern amber, the accent), `working()` working (dusk blue), `green()` ready and done (moss),
+`red()` errors, danger and failed checks only (ember). `amber()` is `need()`'s colour, for a warning. `onStatus()` is
+text on one of them (white in light, black in dark). Everything else comes from `theme()`; never write hex in a mod.
+
+The dark look itself is a Herdr theme, `themes/shepherdr-night.json` (installed into the app's `themes/`), which the
+layout picks for dark mode (`paper` stays for light). A theme the person picks in Herdr overrides it.
+
+Dark buttons are raised: `primary` and `secondary` get an outline, a lit top hairline, a shaded bottom one and a
+small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Serif, in `mods/pane-chat/fonts/`).
 
 ## Parts
 

@@ -14,7 +14,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { openViewer } from "./artview.js";
 import { appHome, closeOverlay, exec, notify, openOverlay, props, shared, setShared, theme } from "herdr";
-import { dialogFooter, green, red, amber, H, RADIUS, TEXT } from "./ui.js";
+import { dialogFooter, green, red, working, H, RADIUS, TEXT } from "./ui.js";
 // The card's words, the summary cut and the details as bullets: core/accept.js, shared with the web app's card.
 import { ACCEPT, words, readable, commitsLine, filesLine, moreLine, proofTitle, whereNow } from "./core/accept.js";
 
@@ -227,7 +227,7 @@ export default class AcceptCard extends View {
 
   checks(t, e) {
     const c = e.checks ?? { state: "none", text: ACCEPT.noChecks };
-    const color = { passed: green(), failed: red(), running: amber(), unknown: red() }[c.state] ?? t.muted;
+    const color = { passed: green(), failed: red(), running: working(), unknown: red() }[c.state] ?? t.muted;
     return h_flex().gap(8).items_center()
       .when(c.state !== "none", (el) => el.child(div().size(7).flex_none().rounded(4).bg(color)))
       .child(div().text_color(c.state === "none" ? t.muted : t.foreground).child(c.text));
