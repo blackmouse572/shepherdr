@@ -157,7 +157,8 @@
       "title": "Status bar",
       "core": [
         "needs",
-        "tasks"
+        "tasks",
+        "usage"
       ],
       "herdr": {
         "mods": [
@@ -170,7 +171,7 @@
         ]
       },
       "forms": {
-        "herdr": "Machine, branch, Needs you badge",
+        "herdr": "Machine, branch, Needs you badge, usage pill with the usage and accounts popover",
         "desktop": "Header chips",
         "tablet": "Header chips",
         "phone": "Top-bar subtitle; badge on the Needs you tab"
@@ -252,7 +253,7 @@
         ]
       },
       "forms": {
-        "herdr": "Dialog: Agents, Tasks, Autopilot, Notify, Secrets, Machines, Window, Web",
+        "herdr": "Dialog: Agents, Tasks, Autopilot, Notify, Secrets, Machines, Accounts, Window, Web",
         "desktop": "Page with a side list",
         "tablet": "Same",
         "phone": "Grouped list, pages slide in"

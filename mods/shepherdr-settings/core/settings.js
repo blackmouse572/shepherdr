@@ -15,6 +15,8 @@ export const SECTIONS = [
   { id: "notify", title: "Notify", icon: "bell", space: true },
   { id: "secrets", title: "Secrets", icon: "key", space: true },
   { id: "machines", title: "Machines", icon: "network" },
+  // this computer's Claude accounts and Codex sign-in, and which one new work starts on (core/usage.js)
+  { id: "accounts", title: "Accounts", icon: "users" },
   { id: "window", title: "Window", icon: "layout" },
   { id: "web", title: "Web", icon: "globe" },
 ];
