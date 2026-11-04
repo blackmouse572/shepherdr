@@ -14,7 +14,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, shared, spaces } from "herdr";
 import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook } from "./sections.js";
 import { logSpace } from "./spacelog.js";
-import { dialogFooter, TEXT, RADIUS, H } from "./ui.js";
+import { dialogFooter, dialogTitle, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
 
 // As New space's (tabs-tasks/coordinator.js NEWSPACE): the app's one dialog footer (ui.js), 32 tall.
 const K = { pad: 18, title: 20, label: 16, gap: 4, field: H.lg, buttons: H.lg, section: 16 };
@@ -121,8 +121,9 @@ export class Rename {
         : div().text_size(16).text_color(t.muted).child("#");
     const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(10).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(TEXT.body)
       .on_key_down((e) => { if (e.key === "escape") this.cancel(); })
-      .child(div().h(K.title).flex_none().text_size(TEXT.title).font_semibold().text_color(t.foreground).child(this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space"))
-      .child(div().h(K.section).flex_none())
+      // The design's banner header (ui.js dialogTitle): the space under it gives up what it adds, so RENAME's height holds.
+      .child(dialogTitle("rename-title", this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space", { pad: K.pad, radius: 9 }))
+      .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child("Icon and name"))
       .child(div().h(K.gap).flex_none())
       .child(h_flex().h(K.field).flex_none().gap(8).items_center()

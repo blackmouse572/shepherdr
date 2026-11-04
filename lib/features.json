@@ -282,7 +282,7 @@
         ]
       },
       "forms": {
-        "herdr": "Search, sidebar toggle, Settings and Shepherdr buttons, Add machine",
+        "herdr": "Search, sidebar toggle, New space menu (New worktree, New section, Add machine), Settings and Shepherdr buttons",
         "desktop": "Header and sidebar footer",
         "tablet": "Header",
         "phone": "Top bar and the More sheet"

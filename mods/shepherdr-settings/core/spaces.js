@@ -156,3 +156,45 @@ export function withIcon(d, space, icon) {
   if (icon) x.icons[space] = icon; else delete x.icons[space];
   return x;
 }
+
+// ---- the sidebar under load (the design's overflow rules, Doop App 13) ---------------------------------------------
+
+// R2: a path or branch cut in the middle, keeping its start and its end (the part that tells two apart): at most `max`
+// characters, "…" where the cut is. Short enough already: as it is.
+export function midCut(text, max) {
+  const s = String(text ?? "");
+  if (max < 5 || s.length <= max) return s;
+  const keep = max - 1, tail = Math.ceil(keep / 2);
+  return `${s.slice(0, keep - tail)}…${s.slice(s.length - tail)}`;
+}
+
+// The folder a space's row shows under its name: where it is, without the last part (the name already says that),
+// from ~. "~/dev/app" -> "~/dev"; a home folder or a top folder: "".
+export function parentOf(path) {
+  const p = tilde(String(path ?? "").replace(/\/+$/, ""));
+  const cut = p.lastIndexOf("/");
+  return cut > 0 ? p.slice(0, cut) : cut === 0 ? "/" : "";
+}
+
+// R4 and R5: a list shows its first `limit` items, then "N more" (open: all of them). Items `keep` says yes to (one
+// that needs you, the one you're in) never fold away, wherever they are in it. { shown, hidden } (hidden: how many).
+export function foldList(items, { limit = 5, open = false, keep = () => false } = {}) {
+  if (open || items.length <= limit) return { shown: items, hidden: 0 };
+  const shown = items.filter((x, i) => i < limit || keep(x));
+  return { shown, hidden: items.length - shown.length };
+}
+
+// `git worktree list --porcelain`: each checkout of a repo after the first (the repo's own folder), as
+// { path, branch (null: detached), head }. Prunable ones (their folder is gone) and bare ones are left out.
+export function parseWorktrees(out) {
+  const all = [];
+  let cur = null;
+  for (const line of String(out ?? "").split("\n")) {
+    if (line.startsWith("worktree ")) all.push((cur = { path: line.slice(9), branch: null, head: null }));
+    else if (!cur) continue;
+    else if (line.startsWith("HEAD ")) cur.head = line.slice(5);
+    else if (line.startsWith("branch ")) cur.branch = line.slice(7).replace(/^refs\/heads\//, "");
+    else if (line === "bare" || line.startsWith("prunable")) cur.gone = true;
+  }
+  return all.slice(1).filter((w) => !w.gone).map(({ path, branch, head }) => ({ path, branch, head }));
+}

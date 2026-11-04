@@ -53,8 +53,9 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
 - `cardHeader(title, [actions])`: title left (13 medium), links or small buttons right.
 - `dialogTitle(id, title, { pad, state, sub, right })`: a dialog's title as the design's header, a duotone banner
   across the dialog's top (negative margins past the root's `pad`) with the title in the serif, an optional dim line
-  and a right-hand control. Dark only; light keeps the plain title. On: confirm, prompt, Close the Assistant,
-  Keyboard shortcuts, Accept.
+  and a right-hand control (`radius` for a dialog that draws its own rounded frame). Dark only; light keeps the
+  plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
+  On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine.
 - `dialogFooter({ onCancel, primary: { id, label, onClick, disabled }, note, error })`: 32 tall,
   optional dim note left (red when `error`), plain Cancel, then the solid primary. No "Esc" hint.
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`

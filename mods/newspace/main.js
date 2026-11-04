@@ -28,7 +28,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
-import { dialogFooter, button, TEXT, RADIUS } from "./ui.js";
+import { dialogFooter, dialogTitle, TITLE_SHIFT, button, TEXT, RADIUS } from "./ui.js";
 import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
@@ -316,9 +316,11 @@ export default class NewSpace extends View {
     const panel = v_flex().id("newspace").w_full().flex_none().p(K.pad).rounded(10).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", (_e, cx) => { if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); } })
-      .child(h_flex().h(K.title).flex_none().gap(6).items_baseline().text_size(TEXT.title).font_semibold().text_color(t.foreground).child(W.title)
-        .when(Boolean(this.machine), (el) => el.child(div().min_w(0).truncate().font_normal().text_color(t.dim).child(W.on(this.machine)))))
-      .child(div().h(K.section).flex_none())
+      // The design's banner header (ui.js dialogTitle), its machine at the right; the space under it gives up what
+      // the banner adds, so newSpaceHeight() holds.
+      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9,
+        right: this.machine ? div().min_w(0).max_w(200).truncate().text_size(TEXT.label).text_color(t.muted).child(W.on(this.machine)) : null }))
+      .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.label))
       .child(div().h(K.gap).flex_none())
       // The icon (as the Rename dialog's), the field and Browse…: the desktop's own folder picker

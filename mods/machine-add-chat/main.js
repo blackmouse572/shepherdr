@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { hc, exec, home, readTextFile, theme, props, closeOverlay, openOverlay } from "herdr";
-import { button, TEXT, RADIUS, H, red, green } from "./ui.js";
+import { button, dialogTitle, TEXT, RADIUS, H, red, green } from "./ui.js";
 
 // The words, the ssh config's hosts and when an add needs a terminal: core/machine-add.js, shared with
 // the web app's Add machine.
@@ -245,10 +245,11 @@ export default class MachineAdd extends View {
       .p(18)
       .bg(t.popover)
       .text_color(t.foreground)
-      .child(div().text_size(TEXT.title).font_semibold().child(W.title))
+      // The design's banner header (ui.js dialogTitle); the hosts list below shrinks to make room for it.
+      .child(dialogTitle("ma-title", W.title))
       .child(
         div()
-          .pt(6)
+          .pt(12)
           .text_size(TEXT.body)
           .line_height("19px")
           .text_color(t.muted)

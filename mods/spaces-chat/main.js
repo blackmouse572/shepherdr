@@ -1,12 +1,16 @@
-// Workspace spaces: stable colored avatars, worktrees under their checkout,
-// grouped by machine when more than one is known. After a space's name, the repo
-// its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
+// Workspace spaces, as the design's sidebar (Doop App 01/02): Needs you on top, then Pinned, each machine's spaces
+// and its sections, under small mono headings. A space's row is its folder, its name and, under it, its parent
+// folder; a repo lists its worktrees under it (git worktree list), each with its branch and how far ahead it is, a
+// worktree open as a space being that space's row there. Long lists fold after 5 ("N more"), never folding what
+// needs you or the space you're in; names stay on one line, paths and branches are cut in the middle (App 13).
+// After a space's name, the repo its first terminal is in now, only where unusual: branch, ahead/behind. Click to
 // switch, right-click for its menu, drag to reorder. Under each machine, its sections
 // (sections.js): the + on its header makes one, spaces drag in and out of them (only by
-// dragging; a folded one opens while a space is dragged over it). Above the machines, Pinned
-// (Pin / Unpin in a space's menu, or a drag in and out). A machine header's right-click renames
+// dragging; a folded one opens while a space is dragged over it); a section's own + makes a space in it. Above the
+// machines, Pinned (Pin / Unpin in a space's menu, or a drag in and out). A machine header's right-click renames
 // it: the name and emoji the sidebar shows. A space nobody named reads after where it is
-// (nameOf: "Home", its repo, its folder); two with one name on a machine show their folder dim.
+// (nameOf: "Home", its repo, its folder). New space (and its menu) is in the sidebar's footer
+// (workspace-chrome-shepherdr), which asks this mod for the menu (spaces-chat.new-menu).
 // A machine that isn't connected reads "Offline", dimmed and folded, with no + or meter.
 // Opened as an overlay (props.view), this mod is instead one of its menus (popups.js), the
 // rename and New section dialog (rename.js) or that dialog's icon picker (icon.js).
@@ -14,10 +18,10 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { machines, panes, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand, spaces as allSpaces } from "herdr";
-import { countsByTab, readyByTab } from "./inbox.js";
+import { countsByTab, readyByTab, count as needsCount, showInbox } from "./inbox.js";
 import { spacesWithChats } from "./parked.js";
 import { sectionsOf, sectionOf, iconOf, placeSpace, foldSection, prune, data, pin, foldPinned, machineLook, restoreSection } from "./sections.js";
-import { Menu, openMenu, rectOf } from "./popups.js";
+import { Menu, openMenu, rectOf, newSpace } from "./popups.js";
 import { IconPicker } from "./icon.js";
 import { Rename } from "./rename.js";
 import { unreadSpaces, readShown } from "./unread.js";
@@ -26,8 +30,8 @@ import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.
 import { startPolling, allStats, healthMeters, bars } from "./machines.js";
 // The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
 import { meterWords, healthErrorWords } from "./core/machines.js";
-import { countBadge, red, H, TEXT, RADIUS } from "./ui.js";
-import { spaceName, gitTail, tilde, sharedNames } from "./core/spaces.js";
+import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS } from "./ui.js";
+import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees } from "./core/spaces.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup };
 
@@ -60,13 +64,21 @@ function place(s, ps) {
   const own = (cwd) => !WORKTREES.test(`${cwd}/`) || (s.folder && inside(cwd, s.folder));
   return ps.find((p) => tabs.has(p.tab) && p.cwd && own(p.cwd))?.cwd || s.folder;
 }
-const rowHeight = ({ tree }) => (tree ? 28 : 30);
+// The design's rows (Doop App 01/02): a space is its name over its parent folder (38), or one line when there is
+// none (30); a worktree under its repo is one quiet mono line (26). Group headings are small mono capitals.
+const ROW = 30, ROW_SUB = 38, TREE = 26;
+const MONO = "JetBrains Mono", MONO_CHAR = 6.6; // an 11px mono character's width, for cutting paths to fit
+// R4: a list shows 5, then "N more".
+const FOLD = 5;
+// The sidebar's width now (its edge can be dragged), and how many mono characters fit in `used` less than it.
+const sideWidth = () => find(layout(), "sidebar")?.size?.px ?? 268;
+const fits = (used) => Math.max(8, Math.floor((sideWidth() - used) / MONO_CHAR));
 // drag()'s machine for Pinned's places: a space from any machine lands there.
 const ANY = "\u0000any";
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
-// A home folder, here or on another machine (whose home() isn't known here), and a path from it (tilde), and the spaces
-// two on one machine share a name with, which show their folder (sharedNames): the shared core's, as the web's rows.
+// A home folder, here or on another machine (whose home() isn't known here), and a path from it (tilde): the shared
+// core's, as the web's rows.
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
@@ -102,7 +114,10 @@ export default class Spaces extends View {
       this.popup.init(cx);
       return;
     }
-    this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
+    this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked, top }, null: not a repo
+    this.trees = {}; // a repo (its git's repo key) -> its worktrees: [{ path, branch, head, ahead }] (git worktree list)
+    this.more = new Set(); // lists opened past their first 5 ("N more"), by key
+    this.into = null; // a section's +: { section, machine, before (the space ids then), at }: the new space goes in it
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)
     this.pending = new Set(); // where()s to look at next
@@ -136,6 +151,8 @@ export default class Spaces extends View {
         if (c === "machine-limits") openMachineSettings();
         // The Deleted section toast's click (sections.js deleteSection).
         if (c === "undo-section") restoreSection();
+        // The sidebar footer's New space (workspace-chrome-shepherdr): its menu, at the pointer, for the shown space.
+        if (c === "new-menu") this.footerMenu();
         cx.notify();
       }
     });
@@ -147,6 +164,7 @@ export default class Spaces extends View {
   checkNew(cx) {
     const now = Date.now();
     const sp = spaces();
+    this.fileNew(sp, now);
     for (const s of sp) if (!this.shown.has(s.id)) this.born[s.id] ??= now;
     const due = this.due(now, sp, panes());
     if (due.size) this.refreshGit(due, cx);
@@ -221,6 +239,31 @@ export default class Spaces extends View {
     });
   }
 
+  // A section's + made a space: the first new one on its machine goes into that section (for 2 minutes).
+  fileNew(sp, now) {
+    const into = this.into;
+    if (!into) return;
+    if (now - into.at > 120000) { this.into = null; return; }
+    const made = sp.find((s) => !into.before.has(s.id) && (s.machine ?? null) === into.machine);
+    if (!made) return;
+    this.into = null;
+    placeSpace(made.id, into.section);
+  }
+
+  // New space from a section header's +: the New space dialog on its machine, the new space filed in it.
+  newIn(s) {
+    this.into = { section: s.id, machine: s.machine ?? null, before: new Set(allSpaces().map((x) => x.id)), at: Date.now() };
+    newSpace(s.machine ?? null);
+  }
+
+  // The footer's New space menu: New space and New section on the shown space's machine, New worktree when that
+  // space is in a repo, and Add machine.
+  footerMenu() {
+    const s = allSpaces().find((x) => x.active);
+    const g = s ? this.git[where(s, panes())] : null;
+    openMenu("add", { machine: s?.machine ?? null, space: s?.id ?? null, git: Boolean(g), footer: true });
+  }
+
   // One place's git: branch, ahead/behind, its repo.
   async check(key, cx) {
     const [on, cwd] = JSON.parse(key);
@@ -241,7 +284,7 @@ export default class Spaces extends View {
       const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
       const repo = common.stdout.trim();
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
-      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
+      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git`, top: top.stdout.trim() };
       for (const line of r.stdout.split("\n")) {
         if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
         else if (line.startsWith("# branch.ab ")) {
@@ -251,12 +294,28 @@ export default class Spaces extends View {
         }
       }
       this.git[key] = info;
+      // A repo's own folder lists its worktrees under it.
+      if (!info.linked) await this.listTrees(on, cwd, info);
       if (!on) this.watch(repo, cx);
     } catch {
       // Couldn't ask (the machine is away): keep what it showed, look again later.
       this.git[key] ??= null;
       this.unsure.add(key);
     }
+  }
+
+  // A repo's worktrees (git worktree list), each with how many commits its branch has that the repo's own branch
+  // hasn't (its ahead count, as the design's "↑3"): one git and one sh, whatever the number of worktrees.
+  async listTrees(on, cwd, info) {
+    const r = await exec("git", ["--no-optional-locks", "worktree", "list", "--porcelain"], { cwd, on });
+    if (r.code !== 0) return;
+    const list = parseWorktrees(r.stdout);
+    if (!list.length) { this.trees[info.repo] = []; return; }
+    const from = info.branch && info.branch !== "(detached)" ? info.branch : "HEAD";
+    const refs = list.map((w) => (w.branch ? `refs/heads/${w.branch}` : w.head));
+    const n = await exec("sh", ["-c", 'b=$1; shift; for r in "$@"; do git rev-list --count "$b..$r" 2>/dev/null || echo 0; done', "sh", from, ...refs], { cwd, on });
+    const counts = n.code === 0 ? n.stdout.trim().split("\n").map((x) => parseInt(x, 10) || 0) : [];
+    this.trees[info.repo] = list.map((w, i) => ({ ...w, ahead: counts[i] ?? 0 }));
   }
 
   watch(repo, cx) {
@@ -302,24 +361,50 @@ export default class Spaces extends View {
     });
   }
 
-  // `list` in order, each worktree space moved under its main checkout's when both are in it.
-  // Shepherdr settings' "Worktrees in the sidebar" off (shared "sidebar.worktrees" false): those
-  // nested worktree spaces aren't listed, except the one being looked at.
+  // `list` in order, each repo's own checkout with its worktrees under it (`kids`, from git worktree list; one
+  // that is a space is that space's row there), so its worktree spaces aren't rows of their own.
   ordered(list = this.visible()) {
     const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
-    const hide = shared("sidebar.worktrees") === false;
     const nested = (r) => r.g?.linked && mains.has(r.g.repo);
-    list = list.filter((r) => !hide || !nested(r) || r.w.active);
     const out = [];
     const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
     for (const r of list) {
       if (nested(r)) continue;
-      out.push({ ...r, tree: null });
+      const top = { ...r, kids: [] };
+      out.push(top);
       if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
       placed.add(r.g.repo);
-      const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
-      kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─" }));
+      top.kids = this.kidsOf(r, list.filter((k) => nested(k) && k.g.repo === r.g.repo));
     }
+    return out;
+  }
+
+  // A repo's worktrees, each { path, branch, ahead, space } (space: the row of the space open in it, or null). A
+  // worktree space git's list didn't have (not read yet) still shows, with its own branch. Shepherdr settings'
+  // "Worktrees in the sidebar" off (shared "sidebar.worktrees" false): only the one being looked at.
+  kidsOf(r, spacesIn) {
+    const used = new Set();
+    const kids = (this.trees[r.g.repo] ?? []).map((w) => {
+      const space = spacesIn.find((k) => k.g.top === w.path) ?? null;
+      if (space) used.add(space.w.id);
+      return { path: w.path, branch: w.branch, ahead: w.ahead, space };
+    });
+    for (const k of spacesIn) if (!used.has(k.w.id)) kids.push({ path: k.g.top ?? k.at, branch: k.g.branch, ahead: k.g.ahead, space: k });
+    return shared("sidebar.worktrees") === false ? kids.filter((k) => k.space?.w.active) : kids;
+  }
+
+  // What never folds away (R5): the space you're in, one that needs you, one with something new.
+  keeps(r) {
+    return Boolean(r && (r.w.active || this.needs(r.w) > 0 || this.unread.has(r.w.id)));
+  }
+
+  // Top rows (`ordered`) as drawn: each space's row, then its worktrees. Past 5 rows the rest fold into "N more"
+  // (`key` names the list), except those keeps() holds. `opts` goes to each row (Pinned's, a section's last).
+  drawList(key, tops, t, opts = () => ({})) {
+    const kept = (r) => this.keeps(r) || r.kids.some((k) => this.keeps(k.space));
+    const { shown, hidden } = foldList(tops, { limit: FOLD, open: this.more.has(key), keep: kept });
+    const out = shown.flatMap((r, n) => [this.row({ ...r, ...opts(r, n, shown.length) }, t), ...this.treeRows(r, t)]);
+    if (hidden || (this.more.has(key) && tops.length > FOLD)) out.push(this.moreRow(key, hidden, t, 0));
     return out;
   }
 
@@ -327,14 +412,16 @@ export default class Spaces extends View {
   // Pinned spaces (sections.js) sit in Pinned at the top instead (not on the rail).
   grouped(t, collapsed) {
     const visible = this.visible();
-    // Names two spaces on one machine share (a worktree under its repo aside: its branch shows).
-    this.dup = sharedNames(visible.map((r) => ({ id: r.w.id, machine: r.w.machine, name: r.name, linked: Boolean(r.g?.linked) })));
     const pins = collapsed ? [] : data().pinned;
-    const all = visible.filter((r) => !pins.includes(r.w.id));
+    // A pinned repo keeps its worktree spaces under it in Pinned, not in its machine's list.
+    const pinnedRepos = new Set(visible.filter((r) => pins.includes(r.w.id) && r.g && !r.g.linked).map((r) => r.g.repo));
+    const underPin = (r) => Boolean(r.g?.linked && pinnedRepos.has(r.g.repo) && !pins.includes(r.w.id));
+    const all = visible.filter((r) => !pins.includes(r.w.id) && !underPin(r));
     const rows = this.ordered(all);
-    const draw = (r) => (collapsed ? this.compact(r, t) : this.row(r, t));
+    // On the rail: one number per space, worktree spaces after their repo's.
+    const flat = (list) => list.flatMap((r) => [r, ...r.kids.filter((k) => k.space).map((k) => k.space)]);
     // A machine's spaces: those in no section first, then its sections (the rail has none).
-    const body = (m, mine) => (collapsed ? mine.map(draw) : this.sectioned(m, all.filter((r) => (r.w.machine ?? null) === m), t));
+    const body = (m, mine) => (collapsed ? flat(mine).map((r) => this.compact(r, t)) : this.sectioned(m, all.filter((r) => (r.w.machine ?? null) === m), t));
     const remote = [...new Set([...rows.map(r => r.w.machine).filter(Boolean), ...this.machines.map(m => m.name)])].sort();
     const loading = m => {
       const layout = machines().find(k => k.name === m)?.layout;
@@ -342,7 +429,7 @@ export default class Spaces extends View {
         || spaces().some(s => (s.machine ?? null) === m && !this.shown.has(s.id));
     };
     const loadingRow = m => div().id(`machine-loading-${m ?? "local"}`).h(28).flex_none().px(8).flex().items_center().text_size(TEXT.label).text_color(t.dim).child(collapsed ? "…" : "Loading…");
-    const pinned = this.pinned(visible, pins, Boolean(remote.length), t);
+    const pinned = this.pinned(visible, pins, Boolean(remote.length), t, visible.filter(underPin));
     if (!remote.length) return [...pinned, ...(loading(null) && !rows.length && !pinned.length ? [loadingRow(null)] : body(null, rows))];
     const machineNames = [null, ...remote];
     return [...pinned, ...machineNames.flatMap((m) => {
@@ -357,12 +444,10 @@ export default class Spaces extends View {
       const health = this.stats?.[m ?? ""];
       // A space dropped on its machine's header leaves its section, for the top.
       const out = this.pressed && (sectionOf(this.pressed) || data().pinned.includes(this.pressed)) && this.over === `top:${m}`;
-      // The machine's header: its group's title (12, medium, the text color), above its sections
-      // and spaces. Connected: its + (New space, New section) and its meter; a red dot only when its
-      // health couldn't be read. Offline: the word, dimmed, nothing else.
-      const head = h_flex().relative().id(`machine-${m ?? "local"}`).h(28).flex_none().px(collapsed ? 2 : 8).gap(7).items_center()
-        .rounded(RADIUS.card).text_size(TEXT.label).font_medium().text_color(offline ? t.dim : t.foreground)
-        .cursor_pointer().hover(s => s.bg(t.hover))
+      // The machine's header, as the design's group headings: its icon and its name in small mono capitals, dim,
+      // above its sections and spaces. Connected: its + (New space, New section) and its meter; a red dot only
+      // when its health couldn't be read. Offline: the word, dimmed, nothing else.
+      const head = this.groupHead(`machine-${m ?? "local"}`, t).px(collapsed ? 2 : 8).when(offline, (el) => el.opacity(0.7))
         .on_click((_e, cx) => {
           if (offline) this.openOffline.has(m) ? this.openOffline.delete(m) : this.openOffline.add(m);
           else {
@@ -377,20 +462,16 @@ export default class Spaces extends View {
         // Its emoji, or the server / monitor; and the name it was given (Rename), else its own.
         .child(machineLook(m).icon
           ? div().w(14).flex_none().flex().justify_center().text_size(12).when(offline, el => el.opacity(0.5)).child(machineLook(m).icon)
-          : svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(14).flex_none().text_color(offline ? t.dim : t.muted))
-        .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().child(machineLook(m).name))
-          .when(offline, el => el.child(div().flex_none().font_normal().child(state === "connecting" ? "Connecting\u2026" : "Offline")))
+          : svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(12).flex_none())
+        .when(!collapsed, el => el.child(this.capitals(machineLook(m).name))
+          .when(offline, el => el.child(div().flex_none().child(state === "connecting" ? "Connecting…" : "Offline")))
           // + (New space or New section, there) hugging its one meter. HERD-70.
           .when(connected, el => el.child(h_flex().flex_none().gap(2).items_center()
-            .child(div().id(`machine-add-${m ?? "local"}`).size(20).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
-              .text_color(t.muted).cursor_pointer().hover(s => s.bg(t.raised).text_color(t.foreground)).tooltip("New space or section")
-              .on_mouse_down("left", (e) => { this.addAt = rectOf(e); })
-              .on_click((_e, cx) => { cx.stop_propagation(); this.addMenu(m); })
-              .child(svg("mods/workspace-chrome/plus.svg").size(14)))
+            .child(this.plus(`machine-add-${m ?? "local"}`, "New space or section", (e) => { this.addAt = rectOf(e); }, () => this.addMenu(m), t))
             .child(this.meter(m, t))))
           .when(connected && Boolean(health?.error), el => el.child(div().id(`machine-dot-${m ?? "local"}`).size(6).rounded(3).flex_none().bg(red())
             .tooltip(healthErrorWords(health.error))))
-          .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(12).flex_none().text_color(t.dim)));
+          .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(12).flex_none()));
       const own = !collapsed && sectionsOf(m).length;
       // An empty machine is just its header: its + makes a space.
       return [head, ...(folded ? [] : mine.length || own ? body(m, mine) : loading(m) ? [loadingRow(m)] : [])];
@@ -418,7 +499,7 @@ export default class Spaces extends View {
   // Pinned, as Shepherdr's: a heading like a section's (its pin, no menu), shown while it holds
   // any, then its spaces in their own order, each with its machine after its name once there
   // are several. Folded, it still shows the space you're in and its unread ones.
-  pinned(list, pins, many, t) {
+  pinned(list, pins, many, t, trees = []) {
     const byId = new Map(list.map((r) => [r.w.id, r]));
     const members = pins.map((id) => byId.get(id)).filter(Boolean);
     if (!members.length) return [];
@@ -428,14 +509,16 @@ export default class Spaces extends View {
     const head = this.groupHead("section-pinned", t)
       .on_click(() => foldPinned())
       .on_mouse_move((_e, cx) => this.drag("pinned", ANY, cx))
-      .child(div().w(18).flex_none().flex().justify_center().child(svg("mods/workspace-chrome/pin.svg").size(14)))
-      .child(div().flex_1().min_w(0).truncate().child("Pinned"))
+      .child(svg("mods/workspace-chrome/pin.svg").size(12).flex_none())
+      .child(this.capitals("Pinned"))
       .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, t.chrome)))
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none())
       .when(this.pressed !== null && this.over === "pinned" && !open, (el) => el.child(this.line(t, "bottom")));
     const shown = open ? members : members.filter((r) => r.w.active || this.unread.has(r.w.id));
-    return [head, ...shown.map((r, n) => this.row({ ...r, tree: null, pinned: true, tag: many ? machineLook(r.w.machine ?? null).name : null,
-      end: open && n === shown.length - 1 ? "pinned" : null }, t))];
+    // Each pinned space keeps its worktrees under it.
+    const tops = shown.map((r) => ({ ...r, kids: r.g && !r.g.linked ? this.kidsOf(r, trees.filter((k) => k.g.repo === r.g.repo)) : [] }));
+    return [head, ...this.drawList("pinned", tops, t, (r, n, len) => ({ pinned: true, tag: many ? machineLook(r.w.machine ?? null).name : null,
+      end: open && n === len - 1 ? "pinned" : null }))];
   }
 
   // The + menu under its button: its right edge at the button's.
@@ -450,7 +533,7 @@ export default class Spaces extends View {
     const sections = sectionsOf(m);
     const byId = new Map(list.map((r) => [r.w.id, r]));
     const filed = new Set(sections.flatMap((s) => s.spaces));
-    const out = this.ordered(list.filter((r) => !filed.has(r.w.id))).map((r) => this.row(r, t));
+    const out = this.drawList(`top:${m ?? ""}`, this.ordered(list.filter((r) => !filed.has(r.w.id))), t);
     for (const s of sections) {
       const members = s.spaces.map((id) => byId.get(id)).filter(Boolean);
       const open = !s.folded || (this.pressed !== null && this.peek === s.id);
@@ -458,7 +541,7 @@ export default class Spaces extends View {
       // Folded, it still shows the space you're in and its unread ones, as Slack does.
       const shown = this.ordered(open ? members : members.filter((r) => r.w.active || this.unread.has(r.w.id)));
       // Dropped on the header, a space goes to the section's end: the line shows under its last row.
-      shown.forEach((r, n) => out.push(this.row({ ...r, end: open && n === shown.length - 1 ? `section:${s.id}` : null }, t)));
+      out.push(...this.drawList(`section:${s.id}`, shown, t, (_r, n, len) => ({ end: open && n === len - 1 ? `section:${s.id}` : null })));
       if (open && !members.length) out.push(this.emptySection(s, t));
     }
     return out;
@@ -474,20 +557,75 @@ export default class Spaces extends View {
       .on_click(() => foldSection(s.id))
       .on_mouse_down("right", (e) => openMenu("section", { section: s.id, row: rectOf(e) }))
       .on_mouse_move((_e, cx) => this.drag(`section:${s.id}`, s.machine, cx))
-      // Its icon in the spaces' "#" column: the folder, or the emoji picked for it.
-      .child(div().w(18).flex_none().flex().justify_center()
-        .child(s.icon ? div().text_size(13).child(s.icon) : svg("mods/workspace-chrome/folder.svg").size(14)))
-      .child(div().flex_1().min_w(0).truncate().child(s.name))
+      // Its emoji when one was picked for it; the design's headings have no folder icon.
+      .when(Boolean(s.icon), (el) => el.child(div().flex_none().text_size(12).child(s.icon)))
+      .child(this.capitals(s.name))
       .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, t.chrome)))
+      // Its + makes a space in it (the New space dialog on its machine, the new space filed here).
+      .child(this.plus(`section-add-${s.id}`, `New space in ${s.name}`, null, () => this.newIn(s), t))
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none())
       .when(line, (el) => el.child(this.line(t, "bottom")));
   }
 
-  // A section's or Pinned's heading, inside its machine: its icon in the spaces' "#" column and its
-  // name where theirs start (so it reads as one of the machine's), 12, medium, dim.
+  // A group's heading (Pinned, a section, a machine), as the design's: small mono capitals, dim, a little air above
+  // it so groups read apart. Its icon (12), then capitals(), then what sits at its right.
   groupHead(id, t) {
-    return h_flex().relative().id(id).h(28).flex_none().px(8).gap(9).items_center().rounded(RADIUS.card)
-      .text_size(TEXT.label).font_medium().text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover));
+    return h_flex().relative().id(id).h(28).mt(6).flex_none().px(8).gap(6).items_center().rounded(RADIUS.card)
+      .text_size(TEXT.id).font_family(MONO).font_medium().text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover));
+  }
+
+  // A heading's name: capitals on one line, cut at its end (R1), the whole name on hover.
+  capitals(name) {
+    return div().flex_1().min_w(0).truncate().child(String(name ?? "").toUpperCase());
+  }
+
+  // A heading's + (a machine's: New space or section; a section's: New space in it): quiet until hovered.
+  plus(id, tip, onDown, onClick, t) {
+    return div().id(id).size(20).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
+      .text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.raised).text_color(t.foreground)).tooltip(tip)
+      .when(Boolean(onDown), (el) => el.on_mouse_down("left", (e) => onDown(e)))
+      .on_click((_e, cx) => { cx.stop_propagation(); onClick(); cx.notify(); })
+      .child(svg("mods/workspace-chrome/plus.svg").size(13));
+  }
+
+  // "N more" under a folded list (`hidden` rows), or "Show fewer" once it's open. `indent`: a worktree list's.
+  moreRow(key, hidden, t, indent) {
+    const open = this.more.has(key);
+    return h_flex().id(`more-${key}`).h(24).flex_none().pl(8 + indent).pr(8).gap(9).items_center().rounded(RADIUS.card)
+      .text_size(TEXT.id).font_family(MONO).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.muted))
+      .on_click((_e, cx) => { open ? this.more.delete(key) : this.more.add(key); cx.notify(); })
+      .child(div().w(indent ? 12 : 18).flex_none())
+      .child(open ? "Show fewer" : `${hidden} more`);
+  }
+
+  // A repo's worktrees under its row (Doop App 02): a guide line, and per worktree its branch (cut in the middle
+  // to fit, R2) and how far ahead of the repo's own branch it is. One open as a space is that space: a click
+  // shows it, a right-click its menu, its counts at the right, a flat fill while shown. Past 5 the rest fold,
+  // except one you're in or that needs you.
+  treeRows(r, t) {
+    if (!r.kids?.length) return [];
+    const key = `tree:${r.w.id}`;
+    const { shown, hidden } = foldList(r.kids, { limit: FOLD, open: this.more.has(key), keep: (k) => this.keeps(k.space) });
+    const max = fits(8 * 2 + 18 + 8 * 2 + 12 + 7 + 64);
+    const rows = shown.map((k) => {
+      const s = k.space, on = Boolean(s?.w.active);
+      const label = k.branch ?? "detached";
+      const needs = s ? this.needs(s.w) : 0, ready = s ? this.readyIn(s.w) : 0;
+      return h_flex().id(`tree-${r.w.id}-${k.path}`).h(TREE).flex_none().px(8).gap(7).items_center().rounded(RADIUS.card)
+        .text_size(TEXT.id).font_family(MONO).text_color(on ? t.foreground : s ? t.muted : t.dim)
+        .tooltip(`${label} · ${tilde(k.path)}`)
+        .when(on, (el) => el.bg(t.selected))
+        .when(Boolean(s) && !on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
+        .when(Boolean(s), (el) => el.on_click(() => run("space.select", { id: s.w.id }))
+          .on_mouse_down("right", (e) => this.menu(s.w, s.g, s.name, e)))
+        .child(svg("mods/workspace-chrome/branch.svg").size(12).flex_none().text_color(on ? working() : t.dim))
+        .child(div().flex_1().min_w(0).truncate().child(midCut(label, max)))
+        .when(k.ahead > 0, (el) => el.child(div().flex_none().text_color(green()).child(`↑${k.ahead > 99 ? "99+" : k.ahead}`)))
+        .when(Boolean(s) && muted(s.w.id), (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(12).flex_none().text_color(t.dim)))
+        .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, on ? t.selected : t.chrome)));
+    });
+    if (hidden || (this.more.has(key) && r.kids.length > FOLD)) rows.push(this.moreRow(key, hidden, t, 0));
+    return [v_flex().id(`trees-${r.w.id}`).flex_none().ml(16).pl(4).border_l(1).border_color(t.border).children(rows)];
   }
 
   emptySection(s, t) {
@@ -613,26 +751,28 @@ export default class Spaces extends View {
 
   // `pinned`: in Pinned, `tag` its machine there; `end`: the drag key (a section's, Pinned) a
   // drop under this last row goes to.
-  row({ w, i, g, tree, end, pinned, tag, at, name }, t) {
+  // As the design's (Doop App 01): its folder (or the emoji picked for it), its name on one line (R1) over its
+  // parent folder in mono, cut in the middle to fit (R2), the repo's branch only when unusual, its counts at the
+  // right. Shown, a flat fill one step up (no edge, glow or border).
+  row({ w, g, end, pinned, tag, at, name }, t) {
     const on = w.active;
-    // Another space here has its name: its folder, dim, says which.
-    const label = [tag, this.dup?.has(w.id) && at ? tilde(at) : null].filter(Boolean).join(" \u00b7 ") || null;
     const fresh = this.unread.has(w.id);
     // Notify Off (notify.js): muted, as Slack's muted channels: dimmed, a crossed-out bell; its
     // counts still show.
     const quiet = muted(w.id);
-    const colors = shared("space.colors") ?? {};
-    const color = colors[w.id] ?? "ansi6";
-    const fill = color.startsWith("#") ? color : (MARK[color] ?? t[color]);
+    const parent = at ? parentOf(at) : "";
+    const sub = [tag, parent ? midCut(parent, fits(8 * 2 + 8 * 2 + 18 + 9 + 8 + (tag ? tag.length * MONO_CHAR : 0))) : null].filter(Boolean).join(" · ");
+    const needs = this.needs(w), ready = this.readyIn(w);
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
       .px(8)
-      .h(rowHeight({ tree }))
+      .h(sub ? ROW_SUB : ROW)
       .flex_none()
       .justify_center()
       .rounded(RADIUS.card)
       .cursor_pointer()
+      .tooltip(at ? `${name} · ${tilde(at)}` : name)
       .when(on, (el) => el.bg(t.selected))
       .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .when(this.pressed === w.id && this.over !== `space:${w.id}`, (el) => el.opacity(0.5))
@@ -648,19 +788,40 @@ export default class Spaces extends View {
         h_flex()
           .gap(9)
           .items_center()
-          .when(Boolean(tree), el => el.pl(22).child(svg("mods/workspace-chrome/branch.svg").size(13).text_color(t.dim)))
-          // Slack's channels: a quiet # and the name, bright when it's the shown space.
-          // Or the emoji picked for it (Change icon), in the same slot so names stay aligned.
-          .when(!tree, el => el.child(div().w(18).flex_none().text_center().text_size(iconOf(w.id) ? 14 : 15).text_color(fresh ? t.foreground : w.active && !quiet ? t.muted : t.dim)
-            .when(quiet && Boolean(iconOf(w.id)), (el) => el.opacity(0.5)).child(iconOf(w.id) ?? "#")))
-          .child(nameText(name, fresh, quiet ? t.dim : w.active ? t.foreground : t.muted, t))
-          .child(g ? this.gitTail(g, tree, name, t, label) : h_flex().flex_1().min_w(0).justify_end().text_size(TEXT.label).text_color(t.dim)
-            .when(Boolean(label), (el) => el.child(div().min_w(0).truncate().child(label))))
+          // Its folder, or the emoji picked for it (Change icon), in one slot so names stay aligned.
+          .child(div().w(18).flex_none().flex().justify_center()
+            .child(iconOf(w.id)
+              ? div().text_size(14).when(quiet, (el) => el.opacity(0.5)).child(iconOf(w.id))
+              : svg("mods/workspace-chrome/folder.svg").size(15).text_color(fresh || on ? t.foreground : t.dim)))
+          .child(v_flex().flex_1().min_w(0)
+            .child(h_flex().min_w(0).gap(6).items_center()
+              .child(nameText(name, fresh, quiet ? t.dim : on ? t.foreground : t.muted, t))
+              .child(g ? this.gitTail(g, false, name, t, null) : div().flex_1()))
+            .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(sub))))
           .when(quiet, (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(13).flex_none().text_color(t.dim)))
-          // What needs the person in this space (the Inbox's items in its tabs), red, and its
-          // tasks in Ready, green.
-          .when(this.needs(w) > 0 || this.readyIn(w) > 0, el => el.child(countBadge(this.needs(w), this.readyIn(w), on ? t.selected : t.chrome))),
+          // What needs the person in this space (the Inbox's items in its tabs), and its tasks in Ready, green.
+          .when(needs > 0 || ready > 0, el => el.child(countBadge(needs, ready, on ? t.selected : t.chrome))),
       );
+  }
+
+  // Needs you, above every group (Doop App 01): a raised row with the bell and how many things wait for you across
+  // every space and machine (inbox.js), opening Tasks' Needs you. It sits above the list, so it never scrolls or
+  // folds away (R5). Its count stops at 99+ (R3). On the rail: the bell and the count.
+  needsRow(t, collapsed) {
+    const n = needsCount();
+    const pill = div().h(18).min_w(20).px(6).flex_none().flex().items_center().justify_center().rounded(9).bg(need())
+      .text_color(onStatus()).font_family(MONO).text_size(TEXT.id).font_semibold().child(n > 99 ? "99+" : String(n));
+    const bell = svg("mods/spaces-chat/bell.svg").size(15).flex_none().text_color(n ? need() : t.dim);
+    if (collapsed)
+      return h_flex().id("needs-you").h(30).mx(6).mt(8).mb(2).flex_none().gap(4).items_center().justify_center().rounded(RADIUS.card)
+        .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(n ? `Needs you: ${n}` : "Needs you").on_click(() => showInbox())
+        .child(bell).when(n > 0, (el) => el.child(pill.min_w(16).px(4)));
+    const label = h_flex().flex_1().min_w(0).gap(9).items_center()
+      .child(bell)
+      .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child("Needs you"))
+      .when(n > 0, (el) => el.child(pill));
+    return div().flex_none().px(8).pt(10).pb(4)
+      .child(button("needs-you", label, { kind: "secondary", size: "lg", onClick: () => showInbox() }).w_full().h(34).pl(10).pr(8));
   }
 
   compact({ w, i }, t) {
@@ -704,14 +865,8 @@ export default class Spaces extends View {
     }
     if (changed) setShared("space.colors", kept);
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
-      .child(h_flex().h(31).pl(16).pr(10).items_center().justify_between().text_size(TEXT.label).font_medium().text_color(t.dim)
-        .when(!collapsed, el => el.child("Spaces"))
-        // As a machine's +: New space, New section, on the shown space's machine.
-        .child(div().id("space-new").size(H.sm).flex_none().flex().items_center().justify_center().rounded(RADIUS.control).cursor_pointer()
-          .hover(s => s.bg(t.hover).text_color(t.foreground)).tooltip("New space or section")
-          .on_mouse_down("left", (e) => { this.addAt = rectOf(e); })
-          .on_click(() => this.addMenu(sp.find(s => s.active)?.machine ?? null))
-          .child(svg("mods/workspace-chrome/plus.svg").size(14))))
+      // Needs you on top; New space moved to the sidebar's footer (workspace-chrome-shepherdr), as the design has it.
+      .child(this.needsRow(t, collapsed))
       .child(v_flex().flex_1().min_h(0).px(8).pb(14).overflow_y_scrollbar().mode("always")
         .on_mouse_up("left", (_e, cx) => this.release(cx))
         .children(this.grouped(t, collapsed)));
