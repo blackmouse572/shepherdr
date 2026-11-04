@@ -13,7 +13,7 @@
 // The window draws its own frame (frame: "none"), most of Herdr's height, at most 900.
 
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, Scrollbar, TextareaState, Textarea } from "gpui-base";
+import { v_flex, h_flex, Scrollbar, TextareaState, Textarea, InputState, Input } from "gpui-base";
 import { props, theme, spaces, machines, home, exec, readTextFile, writeTextFile, closeOverlay, openOverlay, shared } from "herdr";
 import { SHEPHERDR_FILE, SHEPHERDR_DEFAULTS, LOCAL_MACHINE, shepherdrFor, shepherdrLayers, machineOfSpace } from "./coordinator.js";
 import * as models from "./settings.js";
@@ -26,7 +26,7 @@ import { spaceName } from "./core/spaces.js";
 import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, notifyOwn, notifyEverywhere,
   setNotifyEverywhere, setNotifyMachine, setNotify } from "./notify.js";
 import { machinesSection } from "./machines-section.js";
-import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented, dialogTitle } from "./ui.js";
+import { TEXT, RADIUS, H, HEAD, button, link, toggleSwitch, segmented, dialogTitle, fieldFrame } from "./ui.js";
 import { webSection } from "./web-section.js";
 import { accountsInit, accountsSection } from "./accounts-section.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
@@ -45,6 +45,9 @@ const rowTitle = (key) => TASK_ROWS.find(([s, f]) => `${s}.${f}` === key)[2];
 const MOVED = { layout: "window", instructions: "agents", automations: "tasks" };
 // The Settings header's padding: the dialogs' 18, so its title lines up with theirs.
 const HEAD_PAD = 18;
+// The header's search: what each page holds, so a word finds its page (the nav keeps the pages that match).
+const pageWords = (s) => [s.title, ...(s.id === "agents" ? ROLES.map((r) => r.title)
+  : s.id === "tasks" ? [...TASK_ROWS.map((r) => r[2]), ...NOTES.map((n) => n.title)] : [])].join(" ").toLowerCase();
 const TEMPLATES = () => `${home()}/.config/herdr-core/templates`;
 const CLI_CHECK = () => `${home()}/.herdr/cli-check.json`;
 const tilde = (p) => (p && p.startsWith(home() + "/") ? "~" + p.slice(home().length) : p ?? "");
@@ -77,6 +80,11 @@ export default class ShepherdrSettings extends View {
     this.folders = {}; // space id -> its task folder (repo root)
     this.handle = cx.focus_handle();
     this.handle.focus();
+    // The header's "Search settings": filters the nav's pages as you type; / gets to it.
+    this.search = InputState.new({ placeholder: "Search settings" });
+    this.search.on("change", (_e, cx) => cx.notify());
+    this.search.on("focus", (_e, cx) => { this.searching = true; cx.notify(); });
+    this.search.on("blur", (_e, cx) => { this.searching = false; cx.notify(); });
     // Secrets: its boxes and list (secrets-section.js); a space's settings add for that space.
     this.sec = secretsInit(cx);
     // Accounts: the new account's name box and a rename's (accounts-section.js).
@@ -582,15 +590,27 @@ export default class ShepherdrSettings extends View {
       .child(div().flex_1().text_size(TEXT.body).text_color(on ? t.foreground : t.muted).child(title));
     // The window's header (the banner and serif title, as every dialog's) runs across the top, over
     // the nav and the body: the wrapper's padding is what dialogTitle's negative margins take back.
+    // Doop App 05: where the settings are kept, the search and the X.
+    const q = this.search.value().trim().toLowerCase();
+    const searchBox = fieldFrame(h_flex().id("sh-search").w(280).h(H.lg).pl(10).pr(5).gap(8).items_center(), { focused: this.searching })
+      .child(svg("mods/workspace-chrome/search.svg").size(13).flex_none().text_color(t.dim))
+      .child(Input.new(this.search).flex_1().min_w(0).text_size(12.5).text_color(t.foreground))
+      .when(!q && !this.searching, (el) => el.child(div().h(18).min_w(18).px(5).flex_none().flex().items_center().justify_center()
+        .rounded(5).border_1().border_color(t.border).bg(t.raised).text_size(10).text_color(t.dim).child("/")));
     const head = div().flex_none().w_full().pt(HEAD_PAD).px(HEAD_PAD)
-      .child(dialogTitle("sh-title", this.scope ? SPACE_TITLE : TITLE, { pad: HEAD_PAD }));
+      .child(dialogTitle("sh-title", this.scope ? SPACE_TITLE : TITLE, { pad: HEAD_PAD, size: HEAD.window,
+        sub: `Saved as you go · ${tilde(SHEPHERDR_FILE())}`, right: searchBox, onClose: () => this.close() }));
+    const pages = SECTIONS.filter((s) => this.shows(s.id) && (!q || pageWords(s).includes(q)));
+    // Searching moves to the first page that matches when the shown one doesn't.
+    if (q && pages.length && !pages.some((s) => s.id === this.section)) { this.section = pages[0].id; this.listOpen = null; }
     const nav = v_flex().flex_none().w(190).h_full().p(10).pt(12).gap(2).border_r(1).border_color(t.border)
-      .children(SECTIONS.filter((s) => this.shows(s.id)).map((s) => navRow(s.id, s.title, I(s.icon), s.id === this.section, (_e, cx) => {
+      .children(pages.map((s) => navRow(s.id, s.title, I(s.icon), s.id === this.section, (_e, cx) => {
         this.section = s.id;
         this.listOpen = null;
         this.handle.focus();
         cx.notify();
-      })));
+      })))
+      .when(!pages.length, (el) => el.child(div().px(10).py(6).text_size(TEXT.label).text_color(t.dim).child("No settings match")));
     const body = this.section === "agents" ? this.agents(t, cx)
       : this.section === "tasks" ? this.tasks(t)
       : this.section === "secrets" ? secretsSection(this, t)
@@ -605,8 +625,10 @@ export default class ShepherdrSettings extends View {
       // A click inside stays inside: only one beside the window closes it.
       .on_click((_e, cx) => cx.stop_propagation())
       .on_key_down((e, cx) => {
+        if (e.key === "/" && this.handle.is_focused()) { cx.stop_propagation(); this.search.focus(); cx.notify(); return; }
         if (e.key !== "escape") return;
-        if (this.sec?.open) { this.sec.open = false; cx.stop_propagation(); cx.notify(); }
+        if (this.search.value()) { this.search.set_value(""); cx.stop_propagation(); cx.notify(); }
+        else if (this.sec?.open) { this.sec.open = false; cx.stop_propagation(); cx.notify(); }
         else if (this.acc?.renaming || this.acc?.confirm) { this.acc.renaming = null; this.acc.confirm = null; cx.stop_propagation(); cx.notify(); }
         else this.close();
       })

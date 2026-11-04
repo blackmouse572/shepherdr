@@ -6,6 +6,7 @@
 
 export const WORDS = {
   title: "Add machine",
+  sub: "Hosts from ~/.ssh/config",
   about: "A VPS, a Mac mini, a box at home: Herdr reaches it over ssh, and agents there keep running while your laptop sleeps.",
   fromConfig: "From your ssh config",
   noHosts: "Your ssh config lists no hosts",

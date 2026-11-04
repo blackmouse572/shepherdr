@@ -6,6 +6,7 @@
 
 export const WORDS = {
   title: "New space",
+  sub: "Pick a folder. Tabs and agents live inside it.",
   on: (machine) => `on ${machine}`,
   label: "Icon and folder",
   placeholder: "~/path/to/folder",
