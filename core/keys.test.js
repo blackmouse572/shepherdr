@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { grouped, keyText, keyFound, flatKeys, WEB_KEYS, NAMES } from "./keys.js";
+import { grouped, keyText, keyCaps, keyFound, flatKeys, WEB_KEYS, NAMES } from "./keys.js";
 
 const repoKeys = JSON.parse(readFileSync(new URL("../keys.json", import.meta.url), "utf8"));
 
@@ -10,6 +10,14 @@ test("keys as people read them, as the window's Keybinds shows them", () => {
   expect(keyText("ctrl--")).toBe("Ctrl+-");
   expect(keyText("alt-escape")).toBe("Alt+Esc");
   expect(keyText("ctrl-shift-k", true)).toBe("⌃⇧K");
+});
+
+test("a key as caps, one key each (the command bar)", () => {
+  expect(keyCaps("ctrl-shift-p")).toEqual(["Ctrl", "Shift", "P"]);
+  expect(keyCaps("ctrl-shift-p", true)).toEqual(["⌃", "⇧", "P"]);
+  expect(keyCaps("ctrl--")).toEqual(["Ctrl", "-"]);
+  expect(keyCaps("alt-enter", true)).toEqual(["⌥", "Enter"]);
+  expect(keyCaps("f2")).toEqual(["F2"]);
 });
 
 test("Shepherdr's keys.json grouped: the layout's own key replaces the global one, Alt+1–9 folds, Chat is its own group", () => {
