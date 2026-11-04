@@ -376,6 +376,14 @@ class Accounts(unittest.TestCase):
         with self.assertRaises(self.acc.Fail):
             self.acc.folder("Bad Name")
 
+    def test_switching_rule_and_the_old_off(self):
+        self.assertEqual(self.acc.switching(), {"auto": True, "switch_at": 95, "running": "stays", "order": [], "skipped": []})
+        self.pick({"switch_at": 100})
+        self.assertEqual(self.acc.switching()["auto"], False, "switch_at 100 used to mean off")
+        self.assertEqual(self.acc.switching()["switch_at"], 95)
+        self.pick({"auto": True, "switch_at": 72, "running": "moves", "order": ["work", 1], "skipped": ["client"]})
+        self.assertEqual(self.acc.switching(), {"auto": True, "switch_at": 70, "running": "moves", "order": ["work"], "skipped": ["client"]})
+
     def test_prepare_copies_only_our_hooks_once(self):
         path, made, hooks = self.acc.prepare("work")
         self.assertTrue(made)
