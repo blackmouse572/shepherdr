@@ -57,6 +57,8 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+// A slim sidebar (not the rail): machine heads keep their name, the counts go to the tooltip.
+const slim = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 250;
 
 // Checkouts made for work (~/.herdr/worktrees/<repo>/<branch>, on any machine): a coordinator's
 // task workers run in them, and a worktree space is made in one.
@@ -545,10 +547,11 @@ export default class Spaces extends View {
     const id = `machine-meter-${m ?? "local"}`;
     const n = this.terminalCount?.get(m ?? null) ?? 0;
     const load = typeof s?.health?.load === "number" ? `load ${s.health.load.toFixed(2)}` : null;
-    const words = m ? ["ssh", load].filter(Boolean).join(" · ") : `${n} terminal${n === 1 ? "" : "s"}`;
+    const all = m ? ["ssh", load].filter(Boolean).join(" · ") : `${n} terminal${n === 1 ? "" : "s"}`;
+    const words = slim() ? "" : all;
     return h_flex().id(id).flex_none().h(20).px(4).gap(6).items_center().rounded(RADIUS.control).cursor_pointer()
       .hover((st) => st.bg(t.hover))
-      .tooltip(s?.error ? healthErrorWords(s.error) : s?.health ? meterWords(s) : words)
+      .tooltip(s?.error ? healthErrorWords(s.error) : s?.health ? meterWords(s) : all)
       .on_mouse_down("left", (e) => { this.meterAt = rectOf(e); })
       .on_click((_e, cx) => { cx.stop_propagation(); openMachine(m, this.meterAt); })
       .when(Boolean(m) || Boolean(s?.error), (el) => el.child(div().size(6).rounded(3).flex_none().bg(s?.error ? red() : green())))

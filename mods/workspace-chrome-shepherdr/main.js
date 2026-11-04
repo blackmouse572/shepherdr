@@ -15,6 +15,8 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+// A slim sidebar: the Jump field drops its keycaps so its word fits.
+const slim = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 250;
 const mac = () => window()?.platform === "macos";
 
 // To the rail (on macOS wide enough for the traffic lights), or back to the width it had.
@@ -61,7 +63,7 @@ export default class WorkspaceChrome extends View {
       .child(svg("mods/workspace-chrome-shepherdr/search.svg").size(14).flex_none())
       // Note: short words, the brand row leaves ~120 after the traffic lights (design's 380 titlebar field has no room here)
       .child(div().flex_1().min_w(0).truncate().child("Jump"))
-      .when(Boolean(caps), el => el.child(kbd(caps, t)));
+      .when(Boolean(caps) && !slim(), el => el.child(kbd(caps, t)));
   }
 
   render() {
