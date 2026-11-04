@@ -38,13 +38,20 @@ export default class WorkspaceChrome extends View {
         .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
         .on_click(action).child(svg(`mods/workspace-chrome-shepherdr/${icon}.svg`).size(14))
         .when(!collapsed, el => el.child(label));
+      // New space, as the design's footer (Doop App 01): the accent +, the words bright, a chevron, since it opens
+      // the sidebar's menu (spaces-chat: New space, New worktree, New section, Add machine) at the pointer.
+      const add = h_flex().id("new-space").h(28).px(8).gap(9).items_center().rounded(8).text_color(t.foreground)
+        .hover(s => s.bg(t.hover)).cursor_pointer().on_click(() => run("spaces-chat.new-menu"))
+        .child(svg("mods/workspace-chrome-shepherdr/plus.svg").size(14).text_color(t.accent))
+        .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().child("New space"))
+          .child(svg("mods/workspace-chrome-shepherdr/chevron-down.svg").size(12).text_color(t.muted)));
       return v_flex().size_full().bg(t.chrome).border_t(1).border_color(t.border).px(8).pt(4).pb(8).text_size(13)
+        .child(add)
         // Herdr's own settings, as shipped (with its update dot), then Shepherdr's
         // (mods/shepherdr-settings) under Shepherdr's mark, the crook.
         .child(row("settings", "settings", "Settings", () => run("app.settings"))
           .when(Boolean(updates().app.ready), el => el.child(div().size(6).rounded_full().bg(t.accent))))
-        .child(row("shepherdr", "crook", "Shepherdr", () => openSettings()))
-        .child(row("machine", "plus", "Add machine", () => run("mod.open", { name: "machine-add-chat" })));
+        .child(row("shepherdr", "crook", "Shepherdr", () => openSettings()));
     }
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(4).items_center().text_size(13.5)
       .when(window()?.platform === "macos" && !window()?.fullscreen && !collapsed, el => el.pl(76))

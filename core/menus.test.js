@@ -13,6 +13,9 @@ test("a space's menu is the window's: Notify, Mark as read when unread, Pin, Ren
 
 test("the sidebar's other menus and a task row's", () => {
   expect(words(addMenu())).toEqual(["New space", "New section"]);
+  // the sidebar footer's New space menu: a worktree in the shown space's repo, and a machine
+  expect(words(addMenu({ worktree: true, machine: true }))).toEqual(["New space", "New worktree", "New section", "—", "Add machine…"]);
+  expect(words(addMenu({ machine: true }))).toEqual(["New space", "New section", "—", "Add machine…"]);
   expect(words(machineMenu())).toEqual(["Rename…"]);
   expect(words(sectionMenu())).toEqual(["Rename…", "Delete"]);
   expect(words(taskMenu())).toEqual(["Pin"]);
