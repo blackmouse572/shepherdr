@@ -1,7 +1,8 @@
 // Jump (Ctrl+K), as the window's command bar: one box over spaces, tasks and artifacts (and machines, once there are
 // others). Nothing typed: Needs you (every one), then Recent (the five latest). Typed: each group with its count, newest
 // first, eight rows and then "Show N more"; every word typed is in the row somewhere, and each match is underlined in
-// the primary text colour. Tab and Shift+Tab jump between sections. The window's Herdr commands (panes, splits, zoom)
+// the primary text colour. Tab and Shift+Tab jump between sections. Commands (">" first, or Ctrl/Cmd+Shift+P for
+// commands only): what the web can do (client.tsx's setCommands); the window's Herdr commands (panes, splits, zoom)
 // have no web form.
 import clsx from 'clsx'
 import { useEffect, useMemo, useState } from 'react'
@@ -12,15 +13,28 @@ import { Dot, ic, PageIcon, SearchIcon, ServerIcon } from '@client/ui.tsx'
 import { showInPanel } from '@plugins/artifacts/client.tsx'
 import type { Snapshot, TaskStatus } from '@shared/types.ts'
 
-type Kind = 'space' | 'task' | 'artifact' | 'machine'
+type Kind = 'space' | 'task' | 'artifact' | 'machine' | 'command'
 type Sec = Kind | 'needs' | 'recent'
-const KINDS: Kind[] = ['task', 'space', 'artifact', 'machine']
-const GROUP: Record<Sec, string> = { space: 'Spaces', task: 'Tasks', artifact: 'Artifacts', machine: 'Machines', needs: 'Needs you', recent: 'Recent' }
+const KINDS: Kind[] = ['task', 'space', 'artifact', 'machine', 'command']
+const GROUP: Record<Sec, string> = { space: 'Spaces', task: 'Tasks', artifact: 'Artifacts', machine: 'Machines', command: 'Commands', needs: 'Needs you', recent: 'Recent' }
+const SHOWN_CMDS = 4
+
+/** a command the web can run: its name, its key as people read it, what it does */
+export type Command = { id: string; label: string; keys?: string | null; go: () => void }
+let commandsOf: (ui: UI, snap: Snapshot) => Command[] = () => []
+/** the keyboard plugin's commands (client.tsx) */
+export const setCommands = (f: typeof commandsOf) => { commandsOf = f }
+let commandsNext = false
+/** Ctrl/Cmd+Shift+P: Jump on commands only */
+export function openCommands() {
+  commandsNext = true
+  setUI({ search: true, searchScope: undefined, focus: null })
+}
 const RECENT = 5
 const SHOWN = 8
 const STATUS: Record<TaskStatus, string> = { need: 'Needs you', work: 'Working', merging: 'Merging', ready: 'Ready', queued: 'Queued', todo: 'To do', done: 'Done' } as Record<TaskStatus, string>
 
-type Item = { kind: Kind; key: string; label: string; sub: string; at: number; meta?: string | null; icon?: string; ref?: string; status?: TaskStatus; pct?: number; active?: boolean; go: () => void; sec?: Sec }
+type Item = { kind: Kind; key: string; label: string; sub: string; at: number; meta?: string | null; keys?: string | null; icon?: string; ref?: string; status?: TaskStatus; pct?: number; active?: boolean; go: () => void; sec?: Sec }
 type More = { more: Sec; count: number; sec: Sec }
 
 /** where each word typed first shows in a text, as parts (hit: underlined); overlapping hits merge (the window's matchParts) */
@@ -125,17 +139,24 @@ export function Search({ onClose }: { onClose: () => void }) {
   // the keyboard was in a chat's box as Jump opened: an artifact opens over that chat, as its card there would
   const [fromChat] = useState(() => !!document.activeElement?.closest('[data-composer]'))
   const [q, setQ] = useState('')
+  const [mode] = useState<'all' | 'commands'>(() => { const m = commandsNext ? 'commands' : 'all'; commandsNext = false; return m })
   const [more, setMore] = useState<Set<Sec>>(new Set())
   const [sel, setSel] = useState<string | null>(null)
-  const query = q.trim()
+  // a ">" first: commands only, as the window's bar
+  const cmdsOnly = mode === 'commands' || q.trim().startsWith('>')
+  const query = q.trim().replace(/^>\s*/, '')
   const rows = useMemo(() => {
     if (!snap) return []
-    const all = itemsOf(snap, query, { ...getState().ui, place }, fromChat)
-    // nothing typed: what needs you (never folded), then the latest work; typed: the groups
-    const secs: [Sec, Item[], number][] = query
+    const ui = { ...getState().ui, place }
+    const cmds: Item[] = commandsOf(ui, snap).filter((c) => !query || matches(query, c.label))
+      .map((c) => ({ kind: 'command' as const, key: `c:${c.id}`, label: c.label, sub: '', at: 0, keys: c.keys, go: c.go }))
+    const all = cmdsOnly ? [] : [...itemsOf(snap, query, ui, fromChat), ...cmds]
+    // nothing typed: what needs you (never folded), then the latest work, then the commands; typed: the groups
+    const secs: [Sec, Item[], number][] = cmdsOnly ? [['command', cmds, 0]] : query
       ? KINDS.map((kind) => [kind, all.filter((x) => x.kind === kind), SHOWN])
       : [['needs', all.filter((x) => x.kind === 'task' && x.status === 'need'), 0],
-        ['recent', all.filter((x) => x.at > 0 && x.kind !== 'machine' && !(x.kind === 'task' && (x.status === 'need' || x.status === 'done'))).slice(0, RECENT), 0]]
+        ['recent', all.filter((x) => x.at > 0 && x.kind !== 'machine' && !(x.kind === 'task' && (x.status === 'need' || x.status === 'done'))).slice(0, RECENT), 0],
+        ['command', cmds, SHOWN_CMDS]]
     const list: ({ head: Sec; count: number | null } | More | Item)[] = []
     for (const [sec, mine, fold] of secs) {
       if (!mine.length) continue
@@ -145,7 +166,7 @@ export function Search({ onClose }: { onClose: () => void }) {
       if (mine.length > shown.length) list.push({ more: sec, count: mine.length - shown.length, sec })
     }
     return list
-  }, [snap, query, more, place, fromChat])
+  }, [snap, query, cmdsOnly, more, place, fromChat])
   const words = query.toLowerCase().split(/\s+/).filter(Boolean)
   const pickable = rows.filter((r) => !('head' in r)) as (Item | More)[]
   const keyOf = (r: Item | More) => ('more' in r ? `more:${r.more}` : r.key)
@@ -185,8 +206,8 @@ export function Search({ onClose }: { onClose: () => void }) {
           aria-expanded="true"
           aria-controls="jump-list"
           aria-activedescendant={cur ? `jump-${keyOf(cur)}` : undefined}
-          aria-label="Search spaces, tasks, artifacts"
-          placeholder="Search spaces, tasks, artifacts"
+          aria-label={cmdsOnly ? 'Type a command' : 'Search spaces, tasks, artifacts'}
+          placeholder={cmdsOnly ? 'Type a command' : 'Type a command or search'}
           value={q}
           onChange={(e) => { setQ(e.target.value); setSel(null); setMore(new Set()) }}
           onKeyDown={(e) => {
@@ -223,7 +244,7 @@ export function Search({ onClose }: { onClose: () => void }) {
               <div key={k} id={`jump-${k}`} role="option" tabIndex={-1} aria-selected={cur && keyOf(cur) === k} onClick={() => go(r)}
                 className="flex min-h-10 cursor-pointer items-center gap-3 rounded-row px-3 py-1.5 hover:bg-hover aria-selected:bg-hover phone:min-h-14">
                 <span className="grid w-4 shrink-0 place-items-center text-fg3">
-                  {r.kind === 'task' ? <Dot s={r.status ?? 'todo'} p={r.status === 'work' ? r.pct : undefined} />
+                  {r.kind === 'command' ? null : r.kind === 'task' ? <Dot s={r.status ?? 'todo'} p={r.status === 'work' ? r.pct : undefined} />
                     : r.kind === 'artifact' ? <PageIcon className={ic} />
                       : r.kind === 'machine' ? <ServerIcon className={ic} />
                         : <span className="text-[0.9375rem]">{r.icon}</span>}
@@ -233,7 +254,8 @@ export function Search({ onClose }: { onClose: () => void }) {
                   <span className={clsx('max-w-[300px] shrink-0 truncate text-[0.875rem] phone:max-w-none phone:text-[1rem]', r.active && 'font-semibold')}><Marked text={r.label} words={words} /></span>
                   {r.sub ? <span className="min-w-0 flex-1 truncate text-[0.8125rem] text-fg3 phone:text-[0.8125rem]"><Marked text={r.sub} words={words} /></span> : null}
                 </span>
-                {r.meta ? <span className="shrink-0 font-mono text-[0.6875rem] text-fg3">{r.meta}</span> : null}
+                {r.keys ? <kbd className="grid h-5.5 min-w-5.5 shrink-0 place-items-center rounded-md border border-line bg-bg px-1.5 font-sans text-[0.75rem] font-medium text-fg2">{r.keys}</kbd>
+                  : r.meta ? <span className="shrink-0 font-mono text-[0.6875rem] text-fg3">{r.meta}</span> : null}
               </div>
             )
           })
