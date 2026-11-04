@@ -111,27 +111,31 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Gone from its list | nothing | nothing (was "This artifact was deleted.") | ✓ |
 | On another machine | read from the agent's machine | the service's other machines' artifacts, matched per chat by machine (service/compat.ts) | ✓ |
 
-## Jump (mods/jump)
+## Jump (mods/jump): the command bar
 
 | Element | Window | Web | State |
 |---|---|---|---|
-| Box: magnifier, "Search spaces, tasks, artifacts" | main.js:110,322-324 | S:150-151 | ✓ |
-| Groups Spaces, Tasks, Artifacts, Machines with counts | main.js:33-34,218,269-271 | S:170-174 | ✓ |
-| Eight rows, then "Show N more" | main.js:35,221,273-278 | S:176-181 | ✓ |
-| Space row: icon or #, name, bold when shown | main.js:179,286 | S:46,195 (bold was missing) | ✓ |
-| Space name | main.js `nameOf()`: core/spaces.js `spaceName` with its folder's git repo, the sidebar's rule, never "~" (was Herdr's raw name, "~") | compat.ts `spaceName`, the same rule | ✓ |
-| Space second line | main.js:176 "<machine> · <folder>" only with other machines | S:45 (was always the machine) | ✓ |
-| Spaces' order | main.js:178 newest tab `changed_at` first (when something in a tab last changed state), ties in the sidebar's order | S:46 `changedAt`: service/model.ts takes the latest `status_ms` of the tabs' terminals | ✓ (Herdr's counts from the window's start, herdr-core's from the terminal's: after a window restart the window keeps the sidebar's order until something changes) |
-| Task row: id in a monospace column, dot with its pie | main.js:262,285,294 | S:187,194 (`Dot`; one id width) | ✓ |
-| Task second line: status, its line, place | main.js:188-192 | S:52-56 | ✓ |
-| Archived only once something is typed | main.js:182 | S:49 | ✓ |
-| Tasks newest first | main.js:190 | S:57 `t.at` (service/compat.ts) | ✓ |
-| Task opens its chat or the Tasks list | main.js:246-252 | `openTask` | ✓ |
-| Artifact row: title, "task · place · v3 · 2h ago" | main.js:194-199 | S:63-70 (task was guessed from the maker) | ✓ |
-| Artifact opens over the chat, else in the sidebar | main.js:255-259 | S:73 (was always the viewer) | ✓ |
-| Machine row: "N spaces · Offline", opens its first space else Settings › Machines | main.js:201-206,237-239 | S:76-90 (was Settings' first page) | ✓ |
-| ↑/↓, Ctrl+N/P, Enter, Esc, click | main.js:112,315-321 | S:155-158 | ✓ |
-| "Reading tasks and artifacts…" / "Nothing found. Try fewer words." / "Nothing here." | main.js:310 | S:165 | ✓ |
+| The search field is the header (magnifier, no banner) | main.js `render()` | S: the Sheet's first row | ✓ |
+| Placeholder "Type a command or search" (commands only: "Type a command") | main.js `placeholder()` | S: "Search spaces, tasks, artifacts" | ◇ the web has no Herdr commands to type |
+| Nothing typed: Needs you (every one, never folded), then Recent (five latest tasks, spaces, artifacts) | main.js `sections()` | S: `secs` | ✓ |
+| Typed: Tasks, Spaces, Artifacts, Machines with counts, eight rows then "Show N more" | main.js `sections()`, `rows()` | S: `secs`, `list` | ✓ |
+| Commands: This space (tabs, panes, splits, zoom) and App (spaces, keybinds, settings, layouts, zoom, all Herdr commands), keys in caps at the right; Ctrl+Shift+P or a ">" first: commands only | main.js `commandList()`, `footer()`; tabs-tasks `commands`; keys.json | none | ◇ panes, splits and Herdr's commands are the window's; the web's keys are in Keybinds |
+| One-line row: name, a quieter part, the time at the right; task id leads the quieter part | main.js `row()` | S: the row (two lines on a phone) | ◇ a phone's width keeps two lines |
+| Matches: a thin underline in the primary text colour, never amber | main.js `marked()`, `matchParts()` | S: `Marked`, `matchParts` | ✓ |
+| Selected row: a flat fill one step lighter, no edge, glow or amber | main.js `row()` (`theme().selected`) | S: `aria-selected:bg-hover` | ✓ |
+| Space row: icon or # in a tile, name, bold when shown, "N tabs" at the right | main.js `mark()`, `items()` | S: icon, name, bold (no tab count in the snapshot) | ◇ the web's snapshot has no tab count |
+| Space name | main.js `nameOf()`: core/spaces.js `spaceName` with its folder's git repo, the sidebar's rule, never "~" | compat.ts `spaceName`, the same rule | ✓ |
+| Space second part | main.js "<machine> · <folder>" only with other machines | S: the same | ✓ |
+| Spaces' order | newest tab `changed_at` first, ties in the sidebar's order | S: `changedAt` (service/model.ts) | ✓ (Herdr's counts from the window's start, herdr-core's from the terminal's) |
+| Task row: dot with its pie, "ID · status · its line · place" | main.js `items()`, `mark()` | S: `Dot`, `sub` | ✓ |
+| Archived only once something is typed | main.js `items()` | S: `itemsOf` | ✓ |
+| Task opens its chat or the Tasks list | main.js `openTask()` | `openTask` | ✓ |
+| Artifact row: title, "task · place · v3", time at the right | main.js `items()` | S: the same | ✓ |
+| Artifact opens over the chat, else in the sidebar | main.js `openArtifact()` | S: `fromChat` | ✓ |
+| Machine row: "N spaces · Offline", opens its first space else Settings › Machines | main.js `items()`, `go()` | S: the machine rows | ✓ |
+| ↑/↓, Ctrl+N/P, Tab and Shift+Tab between sections, Enter, Esc, click | main.js `render()` | S: `onKeyDown`, `jump` | ✓ |
+| Foot: "Tab to jump between sections" | main.js `footer()` | S: the foot (not on a phone or touch) | ◇ a phone has no Tab key |
+| "Reading tasks and artifacts…" / "Nothing found. Try fewer words." / "Nothing here." | main.js `render()` | S: the empty line | ✓ |
 | Ctrl+K again closes | keys.json | K:151 | ✓ |
 | Popup at the top of the window | mod.json | a sheet (a phone's full screen) | ◇ phone navigation |
 

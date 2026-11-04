@@ -29,7 +29,7 @@ core/worktree.js: task-changes task-pr
 core/recipe.js: artifacts
 core/newspace.js: newspace
 core/machine-add.js: machine-add-chat
-core/keys.js: keybinds
+core/keys.js: keybinds jump
 core/machines.js: spaces-chat shepherdr-settings
 usage-data.js: workspace-status-chat shepherdr-settings
 core/usage.js: workspace-status-chat shepherdr-settings

@@ -37,6 +37,7 @@ export const NAMES = {
   "tabs-tasks.newspace": () => "New space",
   "tabs-tasks.rename-tab": () => "Rename tab",
   "tabs-tasks.rename-space": () => "Rename space",
+  "tabs-tasks.commands": () => "Commands",
   "chat.dictate": () => "Dictate",
   "chat.call": () => "Start a call",
   "chat.find": () => "Find in the chat",
@@ -84,6 +85,15 @@ export function keyText(stroke, mac = false) {
     const label = SPECIAL[key.toLowerCase()] ?? (key.length === 1 ? key.toUpperCase() : key[0].toUpperCase() + key.slice(1).toLowerCase());
     return [...Object.keys(names).filter((m) => held.has(m)).map((m) => names[m]), label].join(mac ? "" : "+");
   }).join(" ");
+}
+
+// One stroke as keycaps, a key each: "ctrl-shift-p" -> ["Ctrl", "Shift", "P"] (["⌃", "⇧", "P"] on macOS), for a
+// key shown as separate caps (the command bar). Only the first stroke of a chord.
+export function keyCaps(stroke, mac = false) {
+  const text = keyText(String(stroke ?? "").trim().split(/\s+/)[0] ?? "", mac);
+  if (!mac) return text.split(/\+(?=.)/).filter(Boolean);
+  const [, held = "", key = ""] = /^([⌃⌥⇧⌘]*)(.*)$/u.exec(text) ?? [];
+  return [...held, key].filter(Boolean);
 }
 
 // The rows, grouped: [{ group, rows: [{ name, keys: [text] }] }]. list: [{ section, keys, action }] (Herdr's keys());
