@@ -35,7 +35,8 @@ import { accountsInit, accountsSection, accountsEscape } from "./accounts-sectio
 // into its starting prompt; Herdr runs nothing itself.
 import { SECTIONS, ROLES, NOTES, MERGE, MUST_FIX, ROUNDS, ARCHIVE, ABOUT, BACKUP, NOTIFY_ABOUT, TITLE, SPACE_TITLE,
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
-  spacesOwn, onlyFor, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, BASE, MACHINES } from "./core/settings.js";
+  spacesOwn, onlyFor, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, BASE, MACHINES, WEB } from "./core/settings.js";
+import { WORDS as ACC } from "./core/usage.js";
 import { ROWS as AP_ROWS } from "./core/autopilot.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
@@ -53,6 +54,8 @@ const ROW_WORDS = {
   tasks: () => [...TASK_ROWS.map((r) => r[2]), BASE.title, ...NOTES.map((n) => n.title)],
   autopilot: () => Object.values(AP_ROWS).map((r) => r.label),
   machines: () => [...MACHINES.limits.map((l) => l.title), MACHINES.low.title, MACHINES.cap.title, MACHINES.home.title],
+  accounts: () => [ACC.claude, ACC.codex, ACC.addAccount, ACC.switching, ACC.auto, ACC.switchAbove, ACC.running, ACC.undoToast, "Default", "Sign in"],
+  web: () => [WEB.title, WEB.link, WEB.phone, "Serve from"],
 };
 const pageWords = (s) => [s.title, ...(ROW_WORDS[s.id]?.() ?? [])].join(" ").toLowerCase();
 const TEMPLATES = () => `${home()}/.config/herdr-core/templates`;
@@ -626,7 +629,8 @@ export default class ShepherdrSettings extends View {
         cx.notify();
       })))
       .when(!pages.length, (el) => el.child(div().px(10).py(6).text_size(TEXT.label).text_color(t.dim).child("No settings match")));
-    const body = this.section === "agents" ? this.agents(t, cx)
+    const body = q && !pages.length ? div().p(4).text_size(TEXT.body).text_color(t.dim).child(`Nothing matches “${this.search.value().trim()}”.`)
+      : this.section === "agents" ? this.agents(t, cx)
       : this.section === "tasks" ? this.tasks(t)
       : this.section === "secrets" ? secretsSection(this, t)
       : this.section === "window" ? layoutSection(this, t)
