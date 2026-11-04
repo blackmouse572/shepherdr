@@ -21,7 +21,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { machines, panes, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand, spaces as allSpaces, terminals, agents } from "herdr";
-import { countsByTab, readyByTab, count as needsCount, showInbox } from "./inbox.js";
+import { countsByTab, readyByTab, count as needsCount } from "./inbox.js";
 import { spacesWithChats } from "./parked.js";
 import { sectionsOf, sectionOf, iconOf, placeSpace, foldSection, prune, data, pin, foldPinned, machineLook, restoreSection } from "./sections.js";
 import { Menu, openMenu, rectOf, newSpace } from "./popups.js";
@@ -30,6 +30,8 @@ import { Rename } from "./rename.js";
 import { unreadSpaces, readShown } from "./unread.js";
 import { muted } from "./notify.js";
 import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.js";
+import { NeedsDrawer, openNeeds } from "./needs-drawer.js";
+import { BranchMenu } from "./branch-menu.js";
 import { startPolling, allStats } from "./machines.js";
 // The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
 import { meterWords, healthErrorWords } from "./core/machines.js";
@@ -39,7 +41,7 @@ import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { autoPrefix } from "./core/tasks.js";
 import { taskDot } from "./dot.js";
 
-const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup };
+const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer, branch: BranchMenu };
 
 // Spaces with agents showing as a chat counted in their status.
 const spaces = spacesWithChats;
@@ -1030,7 +1032,8 @@ export default class Spaces extends View {
   }
 
   // Needs you, above every group (Doop App 01): a raised row with the bell and how many things wait for you across
-  // every space and machine (inbox.js), opening Tasks' Needs you. It sits above the list, so it never scrolls or
+  // every space and machine (inbox.js), opening the Needs you drawer beside the sidebar (needs-drawer.js, App 03; its
+  // Show in Tasks goes on to Tasks' Needs you). It sits above the list, so it never scrolls or
   // folds away (R5). Its count stops at 99+ (R3). On the rail: the bell and the count.
   needsRow(t, collapsed) {
     const n = needsCount();
@@ -1039,14 +1042,16 @@ export default class Spaces extends View {
     const bell = svg("mods/spaces-chat/bell.svg").size(15).flex_none().text_color(n ? need() : t.dim);
     if (collapsed)
       return h_flex().id("needs-you").h(30).mx(6).mt(8).mb(2).flex_none().gap(4).items_center().justify_center().rounded(RADIUS.card)
-        .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(n ? `Needs you: ${n}` : "Needs you").on_click(() => showInbox())
+        .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(n ? `Needs you: ${n}` : "Needs you")
+        .on_mouse_down("left", (e) => { this.needsAt = rectOf(e); }).on_click(() => openNeeds(this.needsAt))
         .child(bell).when(n > 0, (el) => el.child(pill.min_w(16).px(4)));
     const label = h_flex().flex_1().min_w(0).gap(9).items_center()
       .child(bell)
       .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child("Needs you"))
       .when(n > 0, (el) => el.child(pill));
     return div().flex_none().px(8).pt(10).pb(4)
-      .child(button("needs-you", label, { kind: "secondary", size: "lg", onClick: () => showInbox() }).w_full().h(34).pl(10).pr(8));
+      .child(button("needs-you", label, { kind: "secondary", size: "lg", onClick: () => openNeeds(this.needsAt) }).w_full().h(34).pl(10).pr(8)
+        .on_mouse_down("left", (e) => { this.needsAt = rectOf(e); }));
   }
 
   // The rail's space: its icon (emoji or folder) on a 34 tile, the roll's status dot on its corner, the name as a tip.

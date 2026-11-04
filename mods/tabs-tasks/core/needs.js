@@ -33,3 +33,28 @@ export function reportReason(msg) {
   if (!m) return null;
   return fit(m[1] === "Bash" ? `Run: ${m[2]}` : m[1] === "WebFetch" ? `Fetch ${m[2]}` : `${m[1]} ${m[2]}`);
 }
+
+// Needs you's filters (the sidebar's drawer, Doop App 03): what an item wants from the person.
+export const NEED_FILTERS = [["all", "All"], ["plan", "Plans"], ["permission", "Permissions"], ["signin", "Sign-in"], ["other", "Other"]];
+// item: an inbox item's { kind, why }; ask: its ask's words kind ("plan", "permission", "questions") once read;
+// report: its agent's status report kind ("permission", "auth", ...).
+export function needFilter(item, { ask = null, report = null } = {}) {
+  if (item?.kind === "ask") return ask === "plan" || ask === "permission" ? ask : "other";
+  if (report === "auth" || item?.why === REASONS.signedOut) return "signin";
+  if (item?.kind === "blocked" && report === "permission") return "permission";
+  return "other";
+}
+
+// An item's time in ms: asks give ms, herdr-task seconds or an ISO date; null when unknown.
+export function atMs(at) {
+  const n = typeof at === "string" && !/^\d+(\.\d+)?$/.test(at) ? Date.parse(at) : Number(at);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n < 1e12 ? n * 1000 : n;
+}
+
+// The drawer's line under its title: "3 waiting across 2 spaces · oldest 9m". oldest: an age ("9m"), or null.
+export function waitingLine(n, spaces, oldest = null) {
+  if (!n) return "Nothing waits for you";
+  const where = spaces > 1 ? ` across ${spaces} spaces` : spaces === 1 ? " in 1 space" : "";
+  return `${n} waiting${where}${oldest ? ` · oldest ${oldest}` : ""}`;
+}

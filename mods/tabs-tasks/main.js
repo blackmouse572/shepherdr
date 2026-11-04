@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home } from "herdr";
+import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec } from "herdr";
 import { spacesWithChats as spaces, sweep } from "./parked.js";
 import { agentIn, isCoordinatorTab, closeTab, watchNewSpaces, newSpace, openCoordinator, renameTab, renameSpace } from "./coordinator.js";
 import { startTick, tickOnChange } from "./tick.js";
@@ -8,7 +8,9 @@ import { startInbox, count as inboxCount, countsByTab, readyCount, readyByTab, s
 import { serveRemote } from "./secrets.js";
 import { watchService } from "./service.js";
 import { startBridge } from "./bridge.js";
-import { countBadge, H, TEXT, RADIUS, openSettings } from "./ui.js";
+import { countBadge, H, TEXT, RADIUS, MONO, working, openSettings } from "./ui.js";
+// The branch chip's git and its menu's size (Doop App 02b; the menu is spaces-chat's branch-menu.js).
+import { BRANCH_STATE, BRANCH_MENU, branchState, branchMenuHeight } from "./core/worktree.js";
 import { on as addonOn } from "./addons.js";
 // A tab's name (what runs in it while Herdr named it): core/menus.js, as the web app's tab bar names it.
 import { tabName } from "./core/menus.js";
@@ -94,6 +96,53 @@ export default class Tabs extends View {
         if (c.startsWith("alert-")) toAlert({ terminal: c.slice(6).replace(/~/g, "/") });
       }
     });
+  }
+
+  // Where the shown tab's code lives: its focused pane's folder and branch (else its first pane with a branch, else the
+  // space's), read
+  // with git when it changes and every 15 s (BRANCH_STATE: base, ahead, changes, the other checkouts).
+  branchOf(space, cx) {
+    const tab = space?.tabs.find((c) => c.active)?.id;
+    const tabs = new Set((space?.tabs ?? []).map((c) => c.id));
+    const ps = panes().filter((p) => p.tab === tab && p.cwd && p.branch);
+    // A tab of chats only (an Assistant's): the space's other panes say where its code is.
+    const p = ps.find((x) => x.focused) ?? ps[0] ?? panes().find((x) => tabs.has(x.tab) && x.cwd && x.branch);
+    if (!p) return null;
+    const machine = space.machine ?? null, key = JSON.stringify([machine, p.cwd]);
+    if (this.branchKey !== key || Date.now() - (this.branchAt ?? 0) > 15000) {
+      if (this.branchKey !== key) this.branch = null;
+      this.branchKey = key;
+      this.branchAt = Date.now();
+      cx.spawn(async (cx) => {
+        const r = await exec("sh", ["-c", BRANCH_STATE, "sh"], { cwd: p.cwd, on: machine }).catch(() => null);
+        if (this.branchKey !== key) return;
+        this.branch = r?.code === 0 ? branchState(r.stdout) : null;
+        cx.notify();
+      });
+    }
+    return { name: p.branch, machine, state: this.branch };
+  }
+
+  // The chip: the branch and how far ahead of the repo's own branch; a click opens its menu under it.
+  branchChip(b, t, roomy, files) {
+    const s = b.state;
+    return h_flex().id("branch-chip").h(H.sm).px(7).gap(6).flex_none().items_center().rounded(RADIUS.control)
+      .border(1).border_color(t.border).bg(t.raised).font_family(MONO).text_size(TEXT.label).text_color(t.foreground)
+      .when(Boolean(s), (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
+      .tooltip(s ? (s.linked ? `Worktree of ${s.repo}` : s.repo) : b.name)
+      .on_mouse_down("left", (e, cx) => {
+        cx.stop_propagation();
+        this.chipAt = { x: e.position.x - (e.local_position?.x ?? 0), y: e.position.y - (e.local_position?.y ?? 0), h: e.bounds?.height ?? H.sm };
+      })
+      .on_click(() => {
+        if (!s) return;
+        const at = this.chipAt ? { x: this.chipAt.x, y: this.chipAt.y + this.chipAt.h + 6 } : "pointer";
+        openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, height: branchMenuHeight(s, files ? 3 : 2), at,
+          props: { view: "branch", state: s, branch: b.name, machine: b.machine, files } });
+      })
+      .child(svg("mods/workspace-chrome-shepherdr/git-branch.svg").size(13).flex_none().text_color(working()))
+      .child(div().max_w(roomy ? 240 : 140).truncate().child(b.name))
+      .when(s?.linked && s.ahead > 0, (el) => el.child(div().flex_none().text_color(t.dim).child(`↑${s.ahead}`)));
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -182,6 +231,7 @@ export default class Tabs extends View {
     // (the open one keeps its label); a count after the icon (Tasks': what needs the person, red,
     // and what's Ready, green: [need, ready]).
     const roomy = (this.width ?? 0) >= 1100;
+    const branch = this.branchOf(space, cx);
     const panelButton = (id, label, icon, [need, ready] = [0, 0]) => {
       const badge = need + ready;
       const on = panel && !panel.hidden && body?.active === id;
@@ -201,6 +251,7 @@ export default class Tabs extends View {
       // The bar runs to the window's right edge: menus opened from it place their submenus by it.
       .on_mouse_move((e) => { this.right = e.position.x - e.local_position.x + e.bounds.width; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
+      .when(Boolean(branch), (el) => el.child(this.branchChip(branch, t, roomy, enabled.includes("files"))).child(div().w(6).flex_none()))
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(tabsShown ? shown.map(item) : []))
       .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu-tasks", kind: "popup", width: 250, height: 543, props: { right: this.right } })))
       .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))

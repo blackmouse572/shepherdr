@@ -1,7 +1,7 @@
 // A pane's header, for layouts that frame their panes:
 //   { "tab": "active", "pane": { "header": { "content": { "mod": "pane-chat" } } } }
-// Shows the program's icon (the app's program table), the agent's name or
-// the terminal's title, the folder, and the agent's status; buttons split, zoom and close
+// Shows the program's icon (the app's program table), the agent's name or the terminal's title over a mono line (its
+// task, folder and branch: Doop App 08's two-line header), and the agent's status; buttons split, zoom and close
 // this pane. Props from the app: { pane, terminal }. Click: focus the pane.
 //
 // Agent panes (Claude Code, Codex) also get a Chat / Terminal switch. Chat puts the `chat`
@@ -14,10 +14,10 @@
 // sees it, and the agents list, tab bar, spaces and status bar read it (chat/parked.js).
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
 import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
-import { button as uiButton, segmented, TEXT, RADIUS, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, SERIF } from "./ui.js";
+import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
 import { endAgent } from "./core/menus.js";
@@ -223,6 +223,10 @@ export default class Pane extends View {
     apWatch(this, apFor, cx);
     // Dark: the header is a duotone banner in the agent's state (ui.js bannerBg/bannerDots), its name in the serif.
     const banner = isDark() ? agentBanner(st) : null;
+    // Its line: its task's id, the folder, the branch there (a parked agent's from a pane in the same folder).
+    const k = terminals().find((x) => x.address === (agent ?? self.terminal));
+    const branch = self.branch ?? (p.cwd ? panes().find((x) => x.cwd === p.cwd && x.branch)?.branch : null);
+    const sub = [k?.labels?.["herdr.task"] ? toastWho(k) : null, folder(p.cwd), branch].filter(Boolean).join(" · ");
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
@@ -240,12 +244,13 @@ export default class Pane extends View {
       .on_size_change((size, cx) => { if (Math.round(size.width) !== this.width) { this.width = Math.round(size.width); cx.notify(); } })
       .on_click(() => run("pane.focus", { pane }))
       .when(Boolean(pic), (el) => el.child(pic))
-      .child(div().flex_none().truncate().max_w(260).text_color(t.foreground)
-        .when(Boolean(banner), (el) => el.font_family(SERIF).text_size(TEXT.body + 1))
-        .when(!banner, (el) => el.font_medium())
-        .child(name))
-      // The folder gives way first; the switch keeps its width; the gap after pushes the rest right.
-      .child(div().flex_shrink_1().min_w(0).truncate().text_color(t.dim).child(folder(p.cwd)))
+      // The name over its line; the line gives way first, the switch keeps its width.
+      .child(v_flex().flex_shrink_1().min_w(0).gap(2)
+        .child(div().truncate().max_w(260).text_color(t.foreground)
+          .when(Boolean(banner), (el) => el.font_family(SERIF).text_size(HEAD.small))
+          .when(!banner, (el) => el.font_medium())
+          .child(name))
+        .when(Boolean(sub), (el) => el.child(div().truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(sub))))
       .when(Boolean(apFor), (el) => el.child(apChip(this, t, apFor, pane, (this.width ?? Infinity) < COMPACT_BELOW))
         .child(apHeartbeatLink(this, apFor, pane) ?? div()))
       .child(div().flex_1())
