@@ -14,7 +14,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, shared, spaces } from "herdr";
 import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook, thisComputer } from "./sections.js";
 import { logSpace } from "./spacelog.js";
-import { dialogFooter, dialogTitle, fieldFrame, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
+import { dialogFooter, dialogTitle, isSubmitKey, submitKeys, fieldFrame, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
 
 // As New space's (tabs-tasks/coordinator.js NEWSPACE): the app's one dialog footer (ui.js), 32 tall.
 const K = { pad: 18, title: 20, label: 16, gap: 4, field: H.lg, buttons: H.lg, section: 16 };
@@ -120,7 +120,7 @@ export class Rename {
         ? svg("mods/workspace-chrome/folder.svg").size(14).text_color(t.muted)
         : div().text_size(16).text_color(t.muted).child("#");
     const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(TEXT.body)
-      .on_key_down((e) => { if (e.key === "escape") this.cancel(); })
+      .on_key_down((e) => { if (e.key === "escape") this.cancel(); else if (isSubmitKey(e)) this.save(); })
       // The design's banner header (ui.js dialogTitle): the space under it gives up what it adds, so RENAME's height holds.
       .child(dialogTitle("rename-title", this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space", { pad: K.pad, radius: RADIUS.dialog - 1, onClose: () => this.cancel() }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
@@ -136,7 +136,7 @@ export class Rename {
           .text_color(t.foreground)))
       .child(div().h(K.section).flex_none())
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.cancel(), note: this.error, error: true,
-        primary: { id: "save", label: this.p.new ? "Create section" : "Save", onClick: () => this.save() } }));
+        primary: { id: "save", label: this.p.new ? "Create section" : "Save", keys: submitKeys(), onClick: () => this.save() } }));
     return v_flex().size_full().justify_center().child(panel);
   }
 }
