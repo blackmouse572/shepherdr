@@ -25,8 +25,8 @@ import { autopilotInit, autopilotSection, autopilotFlush } from "./autopilot-sec
 import { spaceName } from "./core/spaces.js";
 import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, notifyOwn, notifyEverywhere,
   setNotifyEverywhere, setNotifyMachine, setNotify } from "./notify.js";
-import { machinesSection } from "./machines-section.js";
-import { TEXT, RADIUS, H, HEAD, button, link, toggleSwitch, segmented, dialogTitle, fieldFrame } from "./ui.js";
+import { machinesSection, machinesNeedYou } from "./machines-section.js";
+import { TEXT, RADIUS, H, HEAD, button, link, toggleSwitch, segmented, dialogTitle, fieldFrame, need } from "./ui.js";
 import { webSection } from "./web-section.js";
 import { accountsInit, accountsSection, accountsEscape } from "./accounts-section.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
@@ -597,12 +597,15 @@ export default class ShepherdrSettings extends View {
 
   render(cx) {
     const t = theme();
+    // Machines gets the lantern dot while one needs the person (Doop App 09).
+    const dotted = { machines: machinesNeedYou() };
     const navRow = (id, title, icon, on, onClick) => h_flex().id(`sh-s-${id}`).h(30).gap(10).px(10).flex_none()
       .items_center().rounded(RADIUS.card).bg(on ? t.raised : "#00000000")
       .when(!on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
       .on_click(onClick)
       .child(svg(icon).size(15).text_color(on ? t.accent : t.dim))
-      .child(div().flex_1().text_size(TEXT.body).text_color(on ? t.foreground : t.muted).child(title));
+      .child(div().flex_1().text_size(TEXT.body).text_color(on ? t.foreground : t.muted).child(title))
+      .when(Boolean(dotted[id]), (el) => el.child(div().size(7).flex_none().rounded(4).bg(need())));
     // The window's header (the banner and serif title, as every dialog's) runs across the top, over
     // the nav and the body: the wrapper's padding is what dialogTitle's negative margins take back.
     // Doop App 05: where the settings are kept, the search and the X.

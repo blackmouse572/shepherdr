@@ -70,11 +70,13 @@ const failed = (title) => (e) => toast({ title, body: plainError(e), level: "err
 const signInNow = (a) => signIn(a.id, a.name).catch(failed("Couldn't open the sign-in"));
 
 // A card with the design's banner header: icon, title in the serif, a dim mono line, controls at the right.
-function card(t, id, { lead, title, sub, right = null }, body) {
+// state: the banner's ("attention" gets the lantern wash and an amber edge; Settings > Machines uses it too).
+export function card(t, id, { lead, title, sub, right = null, state = "neutral" }, body) {
   const d = isDark();
-  return v_flex().id(id).w_full().rounded(RADIUS.card + 4).overflow_hidden().bg(t.raised).border_1().border_color(t.border)
+  return v_flex().id(id).w_full().rounded(RADIUS.card + 4).overflow_hidden().bg(t.raised).border_1()
+    .border_color(state === "attention" ? `${need()}66` : t.border)
     .child(div().relative().w_full().h(54).flex_none().overflow_hidden().border_b(1).border_color(t.border)
-      .when(d, (el) => el.bg(bannerBg("neutral")).child(bannerDots("neutral")))
+      .when(d, (el) => el.bg(bannerBg(state)).child(bannerDots(state)))
       .child(h_flex().absolute().inset_0().px(14).gap(10).items_center()
         .child(lead)
         .child(v_flex().flex_1().min_w(0).gap(3)
