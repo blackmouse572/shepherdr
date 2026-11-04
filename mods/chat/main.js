@@ -35,7 +35,7 @@ import { WORDS, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsi
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
-import { button, red, green, amber, H, RADIUS, TEXT, toast, toastWho, plainError } from "./ui.js";
+import { button, red, green, need, working, H, RADIUS, TEXT, toast, toastWho, plainError } from "./ui.js";
 import { openViewer, noteChatArea } from "./artview.js";
 import { SecretCards } from "./secret-card.js";
 import * as secrets from "./secrets.js";
@@ -2754,18 +2754,18 @@ export default class Chat extends View {
       }
       case "tasknews": {
         // A task's news line (newsLines()): its mark, the id, what happened, then its words, dim;
-        // a needs-you line still waiting in red. The whole line opens the task (clickRow()); a
+        // a needs-you line still waiting in amber. The whole line opens the task (clickRow()); a
         // Ready one's Accept sits at its right end, found by where the press was (rows take no
         // handlers).
         const tick = (c) => div().size(12).flex_none().rounded(6).bg(c).child(svg("mods/tasks/tick.svg").size(12).flex_none().text_color("#ffffff"));
         const dot = (c) => div().size(8).flex_none().rounded(4).bg(c);
         const mark = x.mark === "ready" ? tick(green()) : x.mark === "done" ? tick(t.dim)
-          : dot(x.mark === "started" ? amber() : x.mark === "needs" ? (x.live ? red() : t.dim) : t.dim);
+          : dot(x.mark === "started" ? working() : x.mark === "needs" ? (x.live ? need() : t.dim) : t.dim);
         return col(h_flex().w_full().px(6).py(QUIET_PY).gap(6).items_center().rounded(RADIUS.card).cursor_pointer()
           .text_size(TEXT.label).text_color(t.dim).hover((s) => s.bg(t.hover))
           .child(h_flex().w(14).h(14).flex_none().items_center().justify_center().child(mark))
           .child(div().flex_none().font_medium().text_color(t.muted).child(x.ref))
-          .child(div().flex_none().text_color(x.live ? red() : t.muted).child(x.what))
+          .child(div().flex_none().text_color(x.live ? need() : t.muted).child(x.what))
           .when(Boolean(x.text), (el) => el.child(div().flex_none().child("·")).child(div().flex_1().min_w(0).truncate().child(x.text)))
           .when(!x.text, (el) => el.child(div().flex_1()))
           // The Tasks panel's own Accept (ui.js: primary, 20 in a row's line); its press comes
@@ -3684,7 +3684,7 @@ export default class Chat extends View {
                 else { this.pinned = true; this.stick = true; }
                 cx.notify();
               })
-              .when(below.length > 0, (el) => el.child(div().size(6).flex_none().rounded(3).bg(red())))
+              .when(below.length > 0, (el) => el.child(div().size(6).flex_none().rounded(3).bg(need())))
               .child(svg("mods/workspace-chrome/chevron-down.svg").size(12).flex_none()).child(label)));
         });
     return root

@@ -17,14 +17,18 @@ export const TEXT = { id: 11, label: 12, body: 13, title: 15 };
 export const RADIUS = { control: 6, card: 8, bubble: 12 };
 
 // Status colors -----------------------------------------------------------
-// Shepherdr's own, light and dark, the same as the task dots (dot.js uses these): red needs
-// you (and alerts), green ready, amber working.
+// The design system's status colours (night pasture), light and dark, the same as the task dots (dot.js uses
+// these): need() needs you (lantern amber, the accent), working() working (dusk blue), green() ready and done
+// (moss), red() errors, danger and failed checks only (ember). amber() is need()'s colour for a warning.
 const dark = () => settings()?.dark !== false;
-export const red = () => (dark() ? "#ff6369" : "#e5484d");
-export const green = () => (dark() ? "#3dd68c" : "#30a46c");
-export const amber = () => (dark() ? "#f5b544" : "#e2a336");
-// Text on a red, green or amber fill: white on light's deep fills, black on dark's bright ones
-// (Shepherdr's AttentionBadge).
+export const isDark = dark;
+export const need = () => (dark() ? "#F5B544" : "#B86E00");
+export const working = () => (dark() ? "#8FA8FF" : "#4062D8");
+export const green = () => (dark() ? "#7DC28A" : "#30a46c");
+export const red = () => (dark() ? "#F07167" : "#e5484d");
+export const amber = need;
+const needColor = need;
+// Text on a status fill: white on light's deep fills, black on dark's bright ones (Shepherdr's AttentionBadge).
 export const onStatus = () => (dark() ? "#000000" : "#ffffff");
 
 // Banners -------------------------------------------------------------------
@@ -35,12 +39,20 @@ export const onStatus = () => (dark() ? "#000000" : "#ffffff");
 // below the dots. state: "attention" (needs you), "working", "done" or "neutral".
 // Dark only for now: light mode keeps the plain header colour and no dots.
 const BANNER_BG = { attention: "#24170A", working: "#0E1330", done: "#0B1B11", neutral: "#1A1B18" };
+const bannerState = (state) => (BANNER_BG[state] ? state : "neutral");
 export function banner(id, state, height) {
-  const known = BANNER_BG[state] ? state : "neutral";
   return div().id(id).relative().w_full().h(height).flex_none().overflow_hidden()
-    .when(dark(), (el) => el.bg(BANNER_BG[known])
-      .child(image(`mods/tasks/banners/${known}.svg`).absolute().top(0).right(0).w(1000).h(96)));
+    .when(dark(), (el) => el.bg(bannerBg(state)).child(bannerDots(state)));
 }
+// The same two parts for a header that is already its own row (a pane's header): its wash, and its dots as the
+// row's first child (absolute, so the row's flow and gaps don't see it; the row needs relative() and
+// overflow_hidden()). Dark only: check isDark() first.
+export const bannerBg = (state) => BANNER_BG[bannerState(state)];
+export const bannerDots = (state) => image(`mods/tasks/banners/${bannerState(state)}.svg`).absolute().top(0).right(0).w(1000).h(96);
+// An agent's status as a banner state: blocked needs you, working, done; anything else neutral.
+export const agentBanner = (status) => ({ blocked: "attention", working: "working", done: "done" })[status] ?? "neutral";
+// Headers' titles: the design's serif (Geist Serif, shipped in mods/pane-chat/fonts/, loaded by Herdr at start).
+export const SERIF = "Geist Serif";
 
 // Hover and pointer --------------------------------------------------------
 // Only what a click does something on gets the pointer and a hover; everything else gets
@@ -52,6 +64,12 @@ export function clickable(el, onClick, { radius = RADIUS.card } = {}) {
 }
 
 // Buttons -------------------------------------------------------------------
+// The raised look's colours (dark only): the outline, the lit top hairline and the shaded bottom one, and the
+// secondary's own fill and hover (the primary's fill is the theme's solid, the accent).
+const RAISED = {
+  primary: { border: "#5C3504", lit: "#FFF4D6D9", shade: "#964A0059" },
+  secondary: { border: "#000000", lit: "#FFFFFF17", shade: "#00000073", bg: "#22231E", hover: "#2A2B26" },
+};
 // kind: "primary" (solid; one per panel or dialog), "secondary" (bordered), "plain" (words
 // only, a hover behind them). size: "xs" 20 (in a row's second line), "sm" 24 or "lg" 32. Sized
 // to its words, never cut.
@@ -63,12 +81,24 @@ export function button(id, label, { kind = "secondary", size = "sm", icon = null
   const iconSize = lg ? 16 : xs ? 12 : 14;
   const pad = lg ? 12 : xs ? 6 : 8;
   const live = !disabled && Boolean(onClick);
+  // Dark: the design's raised (skeuomorphic) buttons, as near as a mod can draw them. Mods have no inset shadow or
+  // gradient fill, so the lit top edge and the shaded bottom are two hairlines inside the button, kept off the
+  // rounded corners; a small drop shadow lifts it, and a press dims it (motion is opacity only).
+  const raised = dark() && (kind === "primary" || kind === "secondary");
+  const R = RAISED[kind] ?? RAISED.secondary;
+  const edge = (top, color, px) => div().absolute().left(RADIUS.control).right(RADIUS.control).h(px).bg(color)
+    .when(top, (el) => el.top(0)).when(!top, (el) => el.bottom(0));
   return h_flex().id(id).h(h).flex_none().gap(6).items_center().rounded(RADIUS.control).whitespace_nowrap()
     .text_size(lg ? TEXT.body : TEXT.label).font_medium()
     // An icon's side is padded like its top, so it sits square in the corner.
     .pl(icon ? (h - iconSize) / 2 : pad).pr(pad)
-    .when(kind === "primary", (el) => el.bg(t.solid).text_color(t.solid_foreground).when(live, (el) => el.hover((s) => s.opacity(0.88))))
-    .when(kind === "secondary", (el) => el.border_1().border_color(t.input).bg(t.background).text_color(t.foreground)
+    .when(raised, (el) => el.relative().overflow_hidden().border_1().border_color(R.border).shadow_sm()
+      .child(edge(true, R.lit, 1)).child(edge(false, R.shade, kind === "primary" ? 2 : 1))
+      .when(live, (el) => el.active((s) => s.opacity(0.8))))
+    .when(raised && kind === "primary", (el) => el.bg(t.solid).text_color(t.solid_foreground).when(live, (el) => el.hover((s) => s.opacity(0.92))))
+    .when(raised && kind === "secondary", (el) => el.bg(R.bg).text_color(t.foreground).when(live, (el) => el.hover((s) => s.bg(R.hover))))
+    .when(!raised && kind === "primary", (el) => el.bg(t.solid).text_color(t.solid_foreground).when(live, (el) => el.hover((s) => s.opacity(0.88))))
+    .when(!raised && kind === "secondary", (el) => el.border_1().border_color(t.input).bg(t.background).text_color(t.foreground)
       .when(live, (el) => el.hover((s) => s.bg(t.hover))))
     .when(kind === "plain", (el) => el.text_color(t.muted).when(live, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground))))
     .when(disabled, (el) => el.opacity(0.5))
@@ -185,10 +215,10 @@ export function countBadge(need, ready, line) {
   const part = (n, bg) => div().h(16).flex().items_center().justify_center().bg(bg).child(num(n));
   const badge = h_flex().h(16).flex_none().text_color(onStatus()).text_size(TEXT.id).font_semibold();
   if (need > 0 && ready > 0)
-    return badge.child(part(need, red()).w(need > 9 ? 19 : 15).rounded_l(8)).child(div().w(1).h(16).bg(line))
+    return badge.child(part(need, needColor()).w(need > 9 ? 19 : 15).rounded_l(8)).child(div().w(1).h(16).bg(line))
       .child(part(ready, green()).w(ready > 9 ? 19 : 15).rounded_r(8));
   const n = need || ready;
-  return badge.child(part(n, need ? red() : green()).min_w(16).px(n > 9 ? 4 : 0).rounded(8));
+  return badge.child(part(n, need ? needColor() : green()).min_w(16).px(n > 9 ? 4 : 0).rounded(8));
 }
 
 // Settings ---------------------------------------------------------------------------------

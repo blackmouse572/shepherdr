@@ -22,7 +22,7 @@ import { taskDot, ownProgress } from "./dot.js";
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
   queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { button, banner, TEXT, H, RADIUS, red, amber } from "./ui.js";
+import { button, banner, TEXT, H, RADIUS, red, working } from "./ui.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
@@ -855,7 +855,7 @@ export default class Tasks extends View {
       .child(v_flex().w(14).flex_none().items_center()
         .child(h_flex().w(14).h(18).items_center().justify_center().child(glyph))
         .when(Boolean(left), (el) => el.child(div().h(16).mt(2).flex().items_center().flex_none().font_family(ID_FONT).text_size(TEXT.id)
-          .font_semibold().text_color(amber()).child(left))))
+          .font_semibold().text_color(working()).child(left))))
       .child(v_flex().flex_1().min_w(0).gap(2).child(first.h(18)).child(second));
   }
 
