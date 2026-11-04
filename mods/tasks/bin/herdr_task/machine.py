@@ -276,14 +276,26 @@ def _ask_claude(argv, env, cwd=None):
     return parse_claude(result, now_ms())
 
 
-def claude():
+def keychain_service(config):
+    """The Keychain item a Mac's Claude Code keeps a folder's sign-in under: the plain name for ~/.claude, and for any
+    other CLAUDE_CONFIG_DIR the name with a short hash of that folder (an account of Settings > Accounts)."""
+    if not config or os.path.abspath(config) == os.path.join(HOME, ".claude"):
+        return "Claude Code-credentials"
+    import hashlib
+    return "Claude Code-credentials-" + hashlib.sha256(config.encode()).hexdigest()[:8]
+
+
+def claude(config=None):
+    """Claude Code's plan limits. `config`: one account's folder (~/.claude-<name>, herdr-usage) instead of the one
+    this process uses."""
     binary = which("claude")
     if not binary:
         return None
     missing = _no_seal()
     if missing:
         return {"state": "unknown", "why": missing}
-    config = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
+    own = bool(config) and os.path.abspath(config) != os.path.join(HOME, ".claude")
+    config = config or os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(HOME, ".claude")
     if not os.path.isdir(config):
         return {"state": "signed-out"}
     login = _json_file(os.path.join(config, ".credentials.json"))
@@ -291,7 +303,8 @@ def claude():
     extra = {}
     if oauth.get("subscriptionType"):
         extra["plan"] = str(oauth["subscriptionType"])[:30]
-    account = ((_json_file(os.path.join(HOME, ".claude.json")) or {}).get("oauthAccount") or {}).get("emailAddress")
+    account = ((_json_file(os.path.join(config, ".claude.json") if own else os.path.join(HOME, ".claude.json")) or {})
+               .get("oauthAccount") or {}).get("emailAddress")
     if account:
         extra["account"] = str(account)[:80]
     command = _quiet([binary, "-p", "/usage", "--output-format", "json", "--no-session-persistence",
@@ -299,14 +312,14 @@ def claude():
     if not MAC:
         if login is not None and _claude_due(login, now_ms()):
             return DUE
-        got = _ask_claude(_seal(command), dict(os.environ, TZ="UTC", TMPDIR="/tmp"))
+        got = _ask_claude(_seal(command), dict(os.environ, TZ="UTC", TMPDIR="/tmp", **({"CLAUDE_CONFIG_DIR": config} if own else {})))
         return dict(got, **extra) if got["state"] == "ok" else got
     # A Mac keeps the login in the Keychain (and maybe the file): the CLI gets that login, without
     # its way to renew, in a throwaway folder, and the Keychain stays out of reach.
     keychain = None
     user = os.environ.get("USER") or "claude-code-user"
     try:
-        r = subprocess.run(["/usr/bin/security", "find-generic-password", "-a", user, "-w", "-s", "Claude Code-credentials"],
+        r = subprocess.run(["/usr/bin/security", "find-generic-password", "-a", user, "-w", "-s", keychain_service(config if own else None)],
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                            universal_newlines=True, timeout=5)
         if r.returncode == 0:

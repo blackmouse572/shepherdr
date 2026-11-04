@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""herdr-usage: what each Claude account and the Codex sign-in on this computer has used, as one JSON on stdout.
+
+The status bar's usage pill (mods/workspace-status-chat/usage.js) runs it every 5 minutes and on Refresh. It reads,
+never writes:
+
+  Claude accounts  ~/.claude is "Default"; every ~/.claude-<name> folder is the account <name> (an account is a
+                   Claude Code config folder, used with CLAUDE_CONFIG_DIR).
+  meters           herdr-task's machine.py reads each account's plan limits as Settings > Machines does: Claude
+                   Code's own /usage, in a sealed process that can write nothing real and never renews a sign-in.
+                   The 5 hour session, the week, and each model's own week, as percentages with their reset times.
+  last 7 days      the account's own transcripts (<folder>/projects/*/*.jsonl): tokens per local day, and per space
+                   (the --spaces folders, longest match; else the folder's last part).
+  Codex            its one sign-in (~/.codex), its limits read the same way (Codex's account/rateLimits/read).
+
+Usage: herdr-usage [--spaces JSON] [--home DIR] [--no-fetch]
+  --spaces  [{"name": ..., "folder": ...}]: the window's spaces on this computer, to name the per-space split.
+  --home    read another home (tests); --no-fetch reads no limits, only folders and transcripts (tests).
+"""
+import argparse
+import datetime as dt
+import glob
+import json
+import os
+import re
+import sys
+import threading
+
+DAYS = 7
+
+
+def read_json(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def tilde(path, home):
+    return "~" + path[len(home):] if path == home or path.startswith(home + "/") else path
+
+
+# ---- Claude accounts ------------------------------------------------------------------------------------------
+
+def claude_folders(home):
+    """[(id, name, folder)]: ~/.claude first, then ~/.claude-<name> by name."""
+    out = []
+    base = os.path.join(home, ".claude")
+    if os.path.isdir(base):
+        out.append(("default", "Default", base))
+    for d in sorted(glob.glob(os.path.join(home, ".claude-*"))):
+        tail = os.path.basename(d)[len(".claude-"):]
+        if not tail or not os.path.isdir(d):
+            continue
+        out.append((tail, tail[:1].upper() + tail[1:], d))
+    return out
+
+
+def load_machine():
+    """herdr-task's machine.py (mods/tasks/bin/herdr_task), which reads each CLI's plan limits in a sealed process."""
+    import importlib.util
+    here = os.path.dirname(os.path.realpath(__file__))
+    for path in (os.path.join(here, "..", "..", "tasks", "bin", "herdr_task", "machine.py"),):
+        if os.path.isfile(path):
+            spec = importlib.util.spec_from_file_location("herdr_machine", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    return None
+
+
+PLANS = {"max": "Max", "pro": "Pro", "team": "Team", "enterprise": "Enterprise", "free": "Free", "plus": "Plus"}
+
+
+def plan_name(s):
+    s = str(s or "").strip()
+    return PLANS.get(s.lower(), s[:1].upper() + s[1:]) if s else None
+
+
+def pct(v):
+    try:
+        return max(0.0, min(100.0, float(v)))
+    except (TypeError, ValueError):
+        return None
+
+
+def iso_ms(ms):
+    try:
+        return dt.datetime.fromtimestamp(float(ms) / 1000, dt.timezone.utc).isoformat()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return None
+
+
+def meter_of(w):
+    """One of machine.py's windows ({name, used, resets_at ms}) as a meter: the 5-hour session, the week (all
+    models), or one model's or limit's own week ("Weekly (Fable only)", "GPT-5 · Weekly")."""
+    name = str(w.get("name") or "")
+    p = pct(w.get("used"))
+    if p is None:
+        return None
+    at = iso_ms(w["resets_at"]) if w.get("resets_at") else None
+    base = {"pct": p, "resets_at": at}
+    if name == "5-hour":
+        return dict(base, id="session", label="Session")
+    if name in ("Weekly", "Weekly (all models)"):
+        return dict(base, id="weekly", label="Weekly")
+    m = re.match(r"^Weekly \((.+?)(?: only)?\)$", name) or re.match(r"^(.+?) · (?:Weekly|5-hour)$", name)
+    label = (m.group(1) if m else name).strip()[:24] or "Limit"
+    return dict(base, id=re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-") or "limit", label=label, model=True)
+
+
+ERRORS = {"signed-out": "signed-out", "no-plan": "no-plan"}
+
+
+def meters_from(got):
+    """(meters, plan, error) from what machine.py read: session, week, then the rest in its order."""
+    if not got:
+        return [], None, "no-cli"
+    if got.get("state") != "ok":
+        return [], plan_name(got.get("plan")), ERRORS.get(got.get("state"), "error")
+    ms = [m for m in (meter_of(w) for w in got.get("windows") or []) if m]
+    order = {"session": 0, "weekly": 1}
+    ms.sort(key=lambda m: order.get(m["id"], 2))
+    seen, out = set(), []
+    for m in ms:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            out.append(m)
+    return out, plan_name(got.get("plan")), None
+
+
+def local_day(ts):
+    try:
+        t = dt.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    return t.astimezone().date()
+
+
+def space_of(cwd, spaces):
+    best = None
+    for s in spaces:
+        f = str(s.get("folder") or "").rstrip("/")
+        if f and (cwd == f or cwd.startswith(f + "/")) and (best is None or len(f) > len(best[0])):
+            best = (f, s.get("name") or os.path.basename(f))
+    return best[1] if best else (os.path.basename(cwd.rstrip("/")) or cwd)
+
+
+def history(folder, spaces, today=None):
+    """(days, spaces): tokens per local day for the last 7 days, oldest first, and per space over them, most first.
+    Counts what each answer read fresh and wrote (input, output, cache writes), not cache reads; one answer's
+    several lines share its message id and count once."""
+    today = today or dt.date.today()
+    first = today - dt.timedelta(days=DAYS - 1)
+    cutoff = dt.datetime.combine(first, dt.time()).timestamp() - 86400
+    per_day = {first + dt.timedelta(days=i): 0 for i in range(DAYS)}
+    per_space, seen = {}, set()
+    for path in glob.glob(os.path.join(folder, "projects", "*", "*.jsonl")):
+        try:
+            if os.path.getmtime(path) < cutoff:
+                continue
+            f = open(path, encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                if '"usage"' not in line:
+                    continue
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                msg = e.get("message") if isinstance(e, dict) else None
+                u = msg.get("usage") if isinstance(msg, dict) else None
+                if not isinstance(u, dict):
+                    continue
+                key = (msg.get("id"), e.get("requestId"))
+                if key[0] and key in seen:
+                    continue
+                seen.add(key)
+                day = local_day(e.get("timestamp"))
+                if day not in per_day:
+                    continue
+                n = sum(int(u.get(k) or 0) for k in ("input_tokens", "output_tokens", "cache_creation_input_tokens"))
+                per_day[day] += n
+                name = space_of(str(e.get("cwd") or ""), spaces) if e.get("cwd") else "Other"
+                per_space[name] = per_space.get(name, 0) + n
+    days = [{"date": d.isoformat(), "tokens": n} for d, n in sorted(per_day.items())]
+    split = [{"name": k, "tokens": v} for k, v in sorted(per_space.items(), key=lambda kv: (-kv[1], kv[0])) if v > 0]
+    return days, split
+
+
+def claude_accounts(home, spaces, fetch=True, machine=None):
+    found = claude_folders(home)
+    got = {}
+    if fetch and machine:
+        def one(aid, folder):
+            try:
+                got[aid] = machine.claude(None if aid == "default" else folder)
+            except Exception:
+                got[aid] = {"state": "unknown"}
+        jobs = [threading.Thread(target=one, args=(aid, folder)) for aid, _n, folder in found]
+        for j in jobs:
+            j.start()
+        for j in jobs:
+            j.join()
+    out = []
+    for aid, name, folder in found:
+        a = {"id": aid, "name": name, "folder": tilde(folder, home), "plan": None, "meters": [], "error": None}
+        if fetch:
+            a["meters"], a["plan"], a["error"] = meters_from(got.get(aid))
+            if got.get(aid, {}).get("state") == "unknown" and got[aid].get("why"):
+                a["why"] = str(got[aid]["why"])[:120]
+        a["days"], a["spaces"] = history(folder, spaces)
+        out.append(a)
+    return out
+
+
+# ---- Codex ----------------------------------------------------------------------------------------------------
+
+def codex(home, fetch=True, machine=None):
+    folder = os.path.join(home, ".codex")
+    out = {"folder": tilde(folder, home), "signed_in": os.path.isfile(os.path.join(folder, "auth.json")), "plan": None,
+           "meters": [], "error": None}
+    if fetch and machine:
+        try:
+            got = machine.codex()
+        except Exception:
+            got = {"state": "unknown"}
+        out["meters"], out["plan"], out["error"] = meters_from(got)
+        if out["error"] == "signed-out":
+            out["signed_in"] = False
+    return out
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(prog="herdr-usage")
+    ap.add_argument("--spaces", default="[]")
+    ap.add_argument("--home", default=os.path.expanduser("~"))
+    ap.add_argument("--no-fetch", action="store_true")
+    a = ap.parse_args(argv)
+    try:
+        spaces = [s for s in json.loads(a.spaces) if isinstance(s, dict)]
+    except ValueError:
+        spaces = []
+    home = os.path.abspath(a.home)
+    machine = None if a.no_fetch else load_machine()
+    out = {"at": dt.datetime.now(dt.timezone.utc).isoformat(), "claude": claude_accounts(home, spaces, not a.no_fetch, machine),
+           "codex": codex(home, not a.no_fetch, machine)}
+    json.dump(out, sys.stdout)
+    sys.stdout.write("\n")
+
+
+if __name__ == "__main__":
+    main()

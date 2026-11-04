@@ -81,3 +81,12 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
 
 Already on these parts: the count badges (`tabs-tasks`, `spaces-chat`), the task dots
 (`dot.js`), the New space dialog's footer (`newspace`). Everything else moves area by area.
+
+## Usage parts (lib/usage-data.js)
+
+The status bar's usage pill and popover and Settings > Accounts share these, not ui.js (only those two mods copy it):
+
+- `logo(provider, size)`: Claude's logo in its colour, OpenAI's in the text colour. Accounts show these, never avatars.
+- `meterBar(id, pct, { width, height, switchAt })`: a fixed-width meter, green, amber within 20 of the switch point,
+  red past it, with a tick at the switch point. Its percent and reset sit in fixed mono columns beside it, never cut.
+- `activeBadge()`: the filled amber ACTIVE badge on the account new work starts on (that card also gets an amber edge).

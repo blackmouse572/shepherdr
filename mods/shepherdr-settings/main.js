@@ -1,6 +1,6 @@
 // Settings: Shepherdr's settings window (the sidebar foot's Shepherdr; lib/ui.js openSettings). How
 // Assistants, workers and reviewers run, how tasks are reviewed, merged and queued, Autopilot,
-// Notify, Secrets, Machines and the Window's switches; Herdr's own settings are the sidebar foot's
+// Notify, Secrets, Machines, Accounts and the Window's switches; Herdr's own settings are the sidebar foot's
 // other button, Settings. Props: { space?: that space's own settings, section? }.
 // One scope (DECISIONS.md, "UI/UX review decisions"): it edits Everywhere. A space's own values
 // are set from that space ("Space settings…" in its sidebar menu): the same window with a banner,
@@ -28,6 +28,7 @@ import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, noti
 import { machinesSection } from "./machines-section.js";
 import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented } from "./ui.js";
 import { webSection } from "./web-section.js";
+import { accountsSection } from "./accounts-section.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
 // herdr-task's merge policy (MERGE): "ask" waits for the person's Accept (which merges), the others merge without it.
 // NOTES: what a task's agent is told to do first and last (tasks.start_notes / finish_notes): herdr-task puts them
@@ -589,6 +590,7 @@ export default class ShepherdrSettings extends View {
       : this.section === "secrets" ? secretsSection(this, t)
       : this.section === "window" ? layoutSection(this, t)
       : this.section === "web" ? webSection(this, t)
+      : this.section === "accounts" ? accountsSection(this, t)
       : this.section === "notify" ? this.notify(t)
       : this.section === "autopilot" ? autopilotSection(this, t, cx)
       : machinesSection(this, t, cx);
