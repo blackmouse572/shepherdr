@@ -16,7 +16,7 @@ picker, peek, help, ...) are read-only: clone them first.
 | `TEXT.id` 11 | IDs, times, badges |
 | `TEXT.label` 12 | second lines, labels, small headings, button words (24) |
 | `TEXT.body` 13 | body, row titles, menu rows, button words (32) |
-| `TEXT.title` 15 | page and dialog titles |
+| `TEXT.title` 15 | page and dialog titles (light; dark headers use `HEAD`: 20, 16 small, 22 Settings, in the serif) |
 | `RADIUS.control` 6 | buttons, fields, segmented, menu rows |
 | `RADIUS.card` 8 | cards, popovers, every hover background |
 | `RADIUS.bubble` 12 | chat bubbles |
@@ -51,11 +51,12 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   so a choice list lines up).
 - `heading(text, right?)`: small dim heading, 12 medium, sentence case. Never uppercase.
 - `cardHeader(title, [actions])`: title left (13 medium), links or small buttons right.
-- `dialogTitle(id, title, { pad, state, sub, right, lead, onClose })`: a dialog's title as the design's header, a duotone banner
-  across the dialog's top (negative margins past the root's `pad`) with the title in the serif, an optional dim line
-  and a right-hand control (`radius` for a dialog that draws its own rounded frame). `lead` puts a 16 icon left of
-  the title (`DIALOG_ICON` folder, server, branch, as Doop App 06); `onClose` adds the top-right X (`closeX`), which
-  closes as Cancel and Esc do. New space, Rename and Add machine have the X; New space and Add machine lead with an icon. Dark only; light keeps the
+- `dialogTitle(id, title, { pad, state, sub, right, lead, onClose, size })`: a dialog's title as the design's header, a duotone
+  banner across the dialog's top (negative margins past the root's `pad`; neutral is the wool hatch) with the title in
+  the serif at `HEAD.title` 20 (`HEAD.small` 16 for small headers, `HEAD.window` 22 for Settings), an optional line
+  under it in `MONO` 11, secondary text, and a right-hand control (`radius` for a dialog that draws its own rounded
+  frame). `lead` puts a 16 icon left of the title (`DIALOG_ICON` folder, server, branch, as Doop App 06); `onClose`
+  adds the top-right X (`closeX`: 28 square, 16 icon), which closes as Cancel and Esc do. New space, Rename and Add machine have the X; New space and Add machine lead with an icon. Dark only; light keeps the
   plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
   On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine,
   Settings (across the top, over its nav) and the instructions editor over Settings.
@@ -69,7 +70,9 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   On: New space, Rename / New section, Add machine, the name prompt.
 - `countBadge(need, ready, line)`: the red / green / split count badge (Tasks, tabs, spaces).
 - `banner(id, state, height)`: the duotone header (`attention`, `working`, `done`, `neutral`): a dark wash with halftone
-  dots fading toward the left, a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`).
+  dots fading toward the left (`.bn.half`), or for `neutral` the wool banner's diagonal hatch at .22 (`.bn.wool.hatch`),
+  a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`). The hatch's fade is set
+  in px from the right as a 460 dialog draws it, so wider headers show plain wash at their left.
   Put the header's content in an `.absolute().inset_0()` child. Dark only for now.
 - `keycaps(caps)`: a shortcut as caps, one key each (`core/keys.js` `keyCaps("ctrl-shift-p", mac)` gives the list), 22
   tall, never cut. The command bar's rows and foot.

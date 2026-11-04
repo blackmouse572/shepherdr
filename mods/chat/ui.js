@@ -33,10 +33,11 @@ export const onStatus = () => (dark() ? "#000000" : "#ffffff");
 
 // Banners -------------------------------------------------------------------
 // The duotone header behind a card's, panel's or dialog's title: a dark wash of a state colour with halftone dots
-// that fade out toward the left (the design system's .bn.half). Mods can't mask a pattern, so the dots and their
-// fade are a picture (mods/tasks/banners/<state>.svg, drawn by scripts/banners.py), 1000 x 96 and pinned to the
-// right edge: a narrow header crops it from the left instead of squashing the dots. Taller than 96 shows plain wash
-// below the dots. state: "attention" (needs you), "working", "done" or "neutral".
+// that fade out toward the left (the design system's .bn.half), or, for "neutral", the wool banner's diagonal hatch
+// lines (.bn.wool.hatch). Mods can't mask a pattern, so the pattern and its fade are a picture
+// (mods/tasks/banners/<state>.svg and hatch.svg, drawn by scripts/banners.py), 1000 x 96 and pinned to the right
+// edge: a narrow header crops it from the left instead of squashing it. Taller than 96 shows plain wash below.
+// state: "attention" (needs you), "working", "done" or "neutral".
 // Dark only for now: light mode keeps the plain header colour and no dots.
 const BANNER_BG = { attention: "#24170A", working: "#0E1330", done: "#0B1B11", neutral: "#1A1B18" };
 const bannerState = (state) => (BANNER_BG[state] ? state : "neutral");
@@ -48,26 +49,32 @@ export function banner(id, state, height) {
 // row's first child (absolute, so the row's flow and gaps don't see it; the row needs relative() and
 // overflow_hidden()). Dark only: check isDark() first.
 export const bannerBg = (state) => BANNER_BG[bannerState(state)];
-export const bannerDots = (state) => image(`mods/tasks/banners/${bannerState(state)}.svg`).absolute().top(0).right(0).w(1000).h(96);
+// Neutral draws the hatch, the states their dots.
+export const bannerDots = (state) => image(`mods/tasks/banners/${bannerState(state) === "neutral" ? "hatch" : bannerState(state)}.svg`)
+  .absolute().top(0).right(0).w(1000).h(96);
 // An agent's status as a banner state: blocked needs you, working, done; anything else neutral.
 export const agentBanner = (status) => ({ blocked: "attention", working: "working", done: "done" })[status] ?? "neutral";
 // Headers' titles: the design's serif (Geist Serif, shipped in mods/pane-chat/fonts/, loaded by Herdr at start).
 export const SERIF = "Geist Serif";
 
-// A dialog's title as the design's header: a duotone banner across the dialog's whole top, the title in the serif
-// (dark), an optional dim line under it and something at the right (a close button). Put it first in a dialog
-// whose root is padded `pad` on every side: it reaches past that padding with negative margins, and its title
-// sits where the plain title did, so the content below moves down by only 8px. Light keeps the plain title.
+// A dialog's title as the design's header: a duotone banner across the dialog's whole top (neutral: the wool hatch),
+// the title in the serif (dark, 20), an optional line under it (11 mono) and something at the right (a close
+// button). Put it first in a dialog whose root is padded `pad` on every side: it reaches past that padding with
+// negative margins, and its title sits where the plain title did, so the content below moves down by only 8px.
+// Light keeps the plain title.
 // opts: { pad (the root's padding, 18), state (banner state, "neutral"), sub, right, radius (the dialog's own
 // corner radius less its border, for a dialog that draws its own rounded frame), lead (an icon path left of the
-// title, DIALOG_ICON), onClose (the top-right X, after `right`) }.
+// title, DIALOG_ICON), onClose (the top-right X, after `right`), size (the serif title's size: HEAD.title 20,
+// HEAD.small 16, HEAD.window 22) }.
 // TITLE_SHIFT: how much lower the content sits than under a plain title; a dialog of fixed height takes it off the
 // space under the title so its height stays.
 export const TITLE_SHIFT = 8;
+// Header title sizes (dark, the serif): dialogs and panes 20, small headers (cards, Tasks) 16, Settings 22.
+export const HEAD = { title: 20, small: 16, window: 22 };
 // The X (closeX) and the icons dialogs lead with: every add-on is installed, so one mod's icon serves all.
 const CLOSE_ICON = "mods/chat/x.svg";
 export const DIALOG_ICON = { folder: "mods/workspace-chrome-shepherdr/folder.svg", server: "mods/workspace-chrome-shepherdr/server.svg", branch: "mods/workspace-chrome-shepherdr/git-branch.svg" };
-export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null, radius = 0, lead = null, onClose = null } = {}) {
+export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null, radius = 0, lead = null, onClose = null, size = HEAD.title } = {}) {
   const t = theme();
   const d = dark();
   return div().id(id).relative().flex_none().h(pad + 20 + TITLE_SHIFT + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
@@ -77,23 +84,23 @@ export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null
       .when(Boolean(lead), (el) => el.child(svg(lead).size(16).flex_none().text_color(t.muted)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().min_w(0).truncate().text_color(t.foreground)
-          .when(d, (el) => el.font_family(SERIF).text_size(TEXT.title + 3))
+          .when(d, (el) => el.font_family(SERIF).text_size(size))
           .when(!d, (el) => el.text_size(TEXT.title).font_semibold())
           .child(title))
-        .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.label).text_color(t.muted).child(sub))))
+        .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(sub))))
       .when(Boolean(right), (el) => el.child(right))
-      .when(Boolean(onClose), (el) => el.child(closeX(`${id}-x`, onClose).mr(-6))));
+      .when(Boolean(onClose), (el) => el.child(closeX(`${id}-x`, onClose))));
 }
 
-// A dialog's top-right X (dialogTitle's onClose): closes as Cancel and Esc do. 24 square, the hover
-// only on the X itself.
+// A dialog's top-right X (dialogTitle's onClose): closes as Cancel and Esc do. 28 square with a 16 icon (the
+// design's .ib), the hover only on the X itself.
 export function closeX(id, onClose) {
   const t = theme();
-  return div().id(id).size(H.sm).flex_none().flex().items_center().justify_center()
-    .rounded(RADIUS.control).text_color(t.muted).cursor_pointer()
+  return div().id(id).size(28).flex_none().flex().items_center().justify_center()
+    .rounded(RADIUS.control + 1).text_color(t.muted).cursor_pointer()
     .hover((s) => s.bg(t.hover).text_color(t.foreground))
     .on_click((e, cx) => { cx.stop_propagation(); onClose(e, cx); })
-    .child(svg(CLOSE_ICON).size(14));
+    .child(svg(CLOSE_ICON).size(16));
 }
 
 // Hover and pointer --------------------------------------------------------
