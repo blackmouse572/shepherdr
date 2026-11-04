@@ -29,8 +29,8 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
-import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused, window } from "herdr";
-import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, segmented, fieldFrame, MONO, TEXT, RADIUS } from "./ui.js";
+import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
+import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, segmented, fieldFrame, MONO, TEXT, RADIUS, submitKeys, isSubmitKey } from "./ui.js";
 import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
@@ -259,7 +259,7 @@ export default class NewSpace extends View {
 
   // Esc closes the suggestions first, then the dialog. Up and Down open them and walk them.
   key(e, cx) {
-    if (e.keystroke === "cmd-enter" || e.keystroke === "ctrl-enter") { cx.stop_propagation(); return this.create(cx); }
+    if (isSubmitKey(e)) { cx.stop_propagation(); return this.create(cx); }
     if (e.key === "escape") {
       if (!this.listOpen) return this.close();
       this.listOpen = false; this.browse = null; this.hi = -1; cx.stop_propagation(); cx.notify(); return;
@@ -391,7 +391,7 @@ export default class NewSpace extends View {
       .child(div().h(K.section).flex_none())
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.close(), note: this.error, error: true,
         primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx),
-          keys: window()?.platform === "macos" ? ["⌘", "⏎"] : ["Ctrl", "⏎"] } }));
+          keys: submitKeys() } }));
     // The overlay is the panel at its tallest; the panel sits in its middle.
     return v_flex().size_full().justify_center().child(panel);
   }

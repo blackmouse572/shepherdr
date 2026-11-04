@@ -5,7 +5,7 @@
 // Edit lib/ui.js, never a mod's copy, then run bin/sync-shared.
 import { div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces } from "herdr";
+import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces, window as appWindow } from "herdr";
 
 // Sizes -------------------------------------------------------------------
 // Buttons: 24 in panels, rows and headers; 30 in dialogs and cards (H.button, the design's .btn); 20 only inside a
@@ -304,6 +304,10 @@ export function cardHeader(title, actions = []) {
 // opts: { onCancel, primary: { id, label, onClick, disabled, keys }, cancelLabel, note, error, pad (the root's, 18),
 // radius (the dialog's own corner radius less its border, for one that draws its own frame), esc (the Esc cap) }.
 const FOOT = "#0F100E";
+// A dialog's submit shortcut, ⌘⏎ (Ctrl+Enter off macOS): submitKeys() its caps for the primary's `keys`,
+// isSubmitKey(e) for the dialog's on_key_down.
+export const submitKeys = () => (appWindow()?.platform === "macos" ? ["⌘", "⏎"] : ["Ctrl", "⏎"]);
+export const isSubmitKey = (e) => e.keystroke === "cmd-enter" || e.keystroke === "ctrl-enter";
 export function dialogFooter({ onCancel, primary, cancelLabel = "Cancel", note = "", error = false, pad = 18, radius = 0, esc = true }) {
   const t = theme();
   const d = dark();

@@ -70,7 +70,8 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
 - `dialogFooter({ onCancel, primary: { id, label, onClick, disabled, keys }, note, error, pad, radius, esc })`: Doop
   App 06's footer, a full-bleed strip (negative margins past the root's `pad`) on a darker chrome with a top border:
   an Esc keycap left (`esc: false` drops it), an optional note (red when `error`), plain Cancel, then the solid
-  primary, with `keys` inside it (New space: ⌘⏎). It takes 32 of the flow, as the old row did; `radius` rounds its
+  primary, with `keys` inside it (`submitKeys()`, ⌘⏎: New space, the name prompt, Add machine's Add; the dialog
+  handles it with `isSubmitKey(e)`). It takes 32 of the flow, as the old row did; `radius` rounds its
   bottom in a dialog that draws its own frame.
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`
   needs an id).
