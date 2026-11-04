@@ -10,7 +10,8 @@ import { watchService } from "./service.js";
 import { startBridge } from "./bridge.js";
 import { countBadge, H, TEXT, RADIUS, MONO, working, openSettings } from "./ui.js";
 // The branch chip's git and its menu's size (Doop App 02b; the menu is spaces-chat's branch-menu.js).
-import { BRANCH_STATE, BRANCH_MENU, branchState, branchMenuHeight } from "./core/worktree.js";
+import { BRANCH_STATE, BRANCH_MENU, branchState, branchMenuHeight, BRANCH_EXTRAS, EDITOR_KEY, PR_KEEP, PR_WAIT, branchExtras,
+  editorTries, canUpdate, branchActions } from "./core/worktree.js";
 import { on as addonOn } from "./addons.js";
 // A tab's name (what runs in it while Herdr named it): core/menus.js, as the web app's tab bar names it.
 import { tabName } from "./core/menus.js";
@@ -118,9 +119,26 @@ export default class Tabs extends View {
         if (this.branchKey !== key) return;
         this.branch = r?.code === 0 ? branchState(r.stdout) : null;
         cx.notify();
+        if (this.branch) await this.readExtras(p.cwd, p.branch, machine, cx);
       });
     }
-    return { name: p.branch, machine, state: this.branch };
+    if (this.branch && this.extras?.key !== this.extrasKey(p.branch, machine)) cx.spawn((cx) => this.readExtras(p.cwd, p.branch, machine, cx));
+    const x = this.extras?.key === this.extrasKey(p.branch, machine) ? this.extras : null;
+    return { name: p.branch, machine, state: this.branch, editor: x?.editor ?? null, pr: x?.pr ?? null };
+  }
+
+  extrasKey(branch, machine) { return JSON.stringify([machine, this.branch?.top, branch, shared(EDITOR_KEY) ?? null]); }
+
+  // The menu's editor (the chosen one, if it's there) and the branch's PR (gh, if it's there): at most once a minute.
+  async readExtras(cwd, branch, machine, cx) {
+    const key = this.extrasKey(branch, machine);
+    if (this.extras?.key === key && Date.now() - this.extras.at < PR_KEEP) return;
+    this.extras = { ...(this.extras?.key === key ? this.extras : { editor: null, pr: null }), key, at: Date.now() };
+    const tries = editorTries(shared(EDITOR_KEY)).join(" ");
+    const r = await Promise.race([exec("sh", ["-c", BRANCH_EXTRAS, "sh", tries, branch ?? ""], { cwd, on: machine }).catch(() => null), cx.sleep(PR_WAIT)]);
+    if (this.extras.key !== key || !r || r.code !== 0) return;
+    Object.assign(this.extras, branchExtras(r.stdout));
+    cx.notify();
   }
 
   // The chip: the branch and how far ahead of the repo's own branch; a click opens its menu under it.
@@ -137,8 +155,10 @@ export default class Tabs extends View {
       .on_click(() => {
         if (!s) return;
         const at = this.chipAt ? { x: this.chipAt.x, y: this.chipAt.y + this.chipAt.h + 6 } : "pointer";
-        openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, height: branchMenuHeight(s, files ? 3 : 2), at,
-          props: { view: "branch", state: s, branch: b.name, machine: b.machine, files } });
+        const update = canUpdate(s, b.name);
+        openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, at,
+          height: branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr)),
+          props: { view: "branch", state: s, branch: b.name, machine: b.machine, files, editor: b.editor, update, pr: b.pr } });
       })
       .child(svg("mods/workspace-chrome-shepherdr/git-branch.svg").size(13).flex_none().text_color(working()))
       .child(div().max_w(roomy ? 240 : 140).truncate().child(b.name))

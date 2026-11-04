@@ -57,3 +57,41 @@ test("the branch menu is as tall as its rows, the shown checkout left out of the
   expect(branchMenuHeight(s, 3)).toBe(M.head + M.kv + M.sec + 3 * M.row + M.pad + M.sec + 2 * M.row + M.pad + 2);
   expect(branchMenuHeight({ top: "/a", trees: [{ path: "/a" }] }, 2)).toBe(M.head + M.kv + M.sec + 2 * M.row + M.pad + 2);
 });
+
+test("the branch menu's extras: the editor, the PR line and Update from its base", async () => {
+  const { branchExtras, prLine, editorTries, editorShown, editorName, installedEditors, canUpdate, updateArgv, updateLabel,
+    branchActions, branchMenuHeight, BRANCH_MENU: M } = await import("./worktree.js");
+  const out = 'editor\tzed\n{"isDraft":true,"number":48,"state":"OPEN","url":"https://github.com/o/r/pull/48"}\n';
+  expect(branchExtras(out)).toEqual({ editor: "zed", pr: { number: 48, url: "https://github.com/o/r/pull/48", state: "draft" } });
+  expect(prLine(branchExtras(out).pr)).toBe("#48 · draft");
+  expect(branchExtras('editor\t\n{"number":3,"state":"MERGED","isDraft":false,"url":"u"}').pr.state).toBe("merged");
+  // No editor there, no gh or no PR: neither shows.
+  expect(branchExtras("editor\t\n")).toEqual({ editor: null, pr: null });
+  expect(branchExtras("editor\topen\nno pull requests found")).toEqual({ editor: "open", pr: null });
+  // Unset: the first installed, else the system's.
+  expect(editorTries(undefined)).toEqual(["code", "cursor", "zed", "system"]);
+  expect(editorTries("zed")).toEqual(["zed"]);
+  expect(editorShown(null, ["cursor", "zed"])).toBe("cursor");
+  expect(editorShown(null, [])).toBe("system");
+  expect(editorShown("zed", [])).toBe("zed");
+  expect(installedEditors("code\nzed\nbogus\n")).toEqual(["code", "zed"]);
+  expect([editorName("zed"), editorName("xdg-open"), editorName("code")]).toEqual(["Zed", "System default", "VS Code"]);
+  // Not on the base itself.
+  expect(canUpdate({ base: "main" }, "work/12")).toBe(true);
+  expect(canUpdate({ base: "main" }, "main")).toBe(false);
+  expect(canUpdate({ base: "main" }, null)).toBe(false);
+  expect(updateLabel("main")).toBe("Update from main");
+  expect(updateArgv("main").slice(-2)).toEqual(["sh", "main"]);
+  expect(branchActions({ files: true, editor: "zed", update: true })).toBe(5);
+  expect(branchActions({})).toBe(2);
+  const s = { top: "/a", trees: [] };
+  expect(branchMenuHeight(s, 2, true) - branchMenuHeight(s, 2)).toBe(M.kvLine);
+});
+
+test("the extras script finds a command and stays quiet without gh", async () => {
+  const { BRANCH_EXTRAS, branchExtras } = await import("./worktree.js");
+  const { spawnSync } = await import("node:child_process");
+  const r = spawnSync("sh", ["-c", BRANCH_EXTRAS, "sh", "nope-editor sh", ""], { encoding: "utf8" });
+  expect(r.status).toBe(0);
+  expect(branchExtras(r.stdout)).toEqual({ editor: "sh", pr: null });
+});

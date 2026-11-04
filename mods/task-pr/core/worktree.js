@@ -177,11 +177,70 @@ export function changesLine(s) {
   return [files, s.dirty ? `${s.dirty} not committed` : ""].filter(Boolean).join(" · ");
 }
 
-// The menu's sizes (a popup is opened at its height): header, the Base/Path/Changes block, a section's heading, a row,
-// a list's bottom padding; at most `others` other checkouts.
-export const BRANCH_MENU = { width: 420, head: 58, kv: 88, sec: 30, row: 34, pad: 6, others: 6 };
+// The menu's sizes (a popup is opened at its height): header, the Base/Path/Changes block (kvLine more with a PR line),
+// a section's heading, a row, a list's bottom padding; at most `others` other checkouts.
+export const BRANCH_MENU = { width: 420, head: 58, kv: 88, kvLine: 24, sec: 30, row: 34, pad: 6, others: 6 };
 export const otherTrees = (s) => (s?.trees ?? []).filter((x) => x.path !== s.top).slice(0, BRANCH_MENU.others);
-export function branchMenuHeight(s, actions) {
+export function branchMenuHeight(s, actions, pr = false) {
   const M = BRANCH_MENU, o = otherTrees(s).length;
-  return M.head + M.kv + M.sec + actions * M.row + M.pad + (o ? M.sec + o * M.row + M.pad : 0) + 2;
+  return M.head + M.kv + (pr ? M.kvLine : 0) + M.sec + actions * M.row + M.pad + (o ? M.sec + o * M.row + M.pad : 0) + 2;
 }
+
+// ---- the branch menu's extras: Open in editor, Update from <base>, the PR line ------------------------------------
+
+// The editor a worktree opens with: Settings › Window's choice (shared EDITOR_KEY, an EDITORS id). Unset: the first
+// one installed, else the system's opener (open on macOS, xdg-open).
+export const EDITOR_KEY = "branch.editor";
+export const EDITORS = [
+  { id: "code", name: "VS Code" },
+  { id: "cursor", name: "Cursor" },
+  { id: "zed", name: "Zed" },
+  { id: "system", name: "System default" },
+];
+export const EDITOR_ROW = { title: "Editor", about: "Open in editor, in the branch menu, opens the worktree with it." };
+// sh -c DETECT_EDITORS: the editors' commands installed here, one a line.
+export const DETECT_EDITORS = 'for c in code cursor zed; do command -v "$c" >/dev/null 2>&1 && echo "$c"; done; true';
+export const installedEditors = (out) => String(out ?? "").split("\n").map((l) => l.trim()).filter((l) => EDITORS.some((e) => e.id === l));
+// The commands to try, in order, for a choice.
+export const editorTries = (pref) => (EDITORS.some((e) => e.id === pref) ? [pref] : EDITORS.map((e) => e.id));
+// What Settings shows chosen: the choice, else the first installed, else the system's.
+export const editorShown = (pref, installed) => (EDITORS.some((e) => e.id === pref) ? pref : installed?.[0] ?? "system");
+export const editorName = (cmd) => (cmd === "open" || cmd === "xdg-open" ? "System default" : EDITORS.find((e) => e.id === cmd)?.name ?? cmd);
+
+// `sh -c BRANCH_EXTRAS sh "<editor ids>" <branch>` in the worktree, on its machine: the first editor command there
+// ("editor\t<cmd>", empty when none), then gh's answer for the branch's PR when gh is there.
+export const BRANCH_EXTRAS = `ed=
+for c in $1; do
+  if [ "$c" = system ]; then
+    if [ "$(uname)" = Darwin ]; then ed=open; elif command -v xdg-open >/dev/null 2>&1; then ed=xdg-open; fi
+  elif command -v "$c" >/dev/null 2>&1; then ed=$c; fi
+  [ -n "$ed" ] && break
+done
+printf 'editor\\t%s\\n' "$ed"
+[ -n "$2" ] && command -v gh >/dev/null 2>&1 && gh pr view "$2" --json number,state,isDraft,url 2>/dev/null
+true`;
+// How long a branch's PR answer is kept, and how long gh may take.
+export const PR_KEEP = 60000, PR_WAIT = 6000;
+
+// BRANCH_EXTRAS's output: { editor: command or null, pr: { number, state, url } or null }.
+export function branchExtras(out) {
+  const text = String(out ?? "");
+  const ed = /^editor\t(.*)$/m.exec(text)?.[1]?.trim() || null;
+  let pr = null;
+  const json = text.split("\n").find((l) => l.startsWith("{"));
+  try {
+    const d = json ? JSON.parse(json) : null;
+    if (d?.number && d.url) pr = { number: d.number, url: d.url, state: d.state === "MERGED" ? "merged" : d.state === "CLOSED" ? "closed" : d.isDraft ? "draft" : "open" };
+  } catch {}
+  return { editor: ed, pr };
+}
+// "#48 · draft"
+export const prLine = (pr) => `#${pr.number} · ${pr.state}`;
+
+// Update from its base: fetch, then merge origin/<base> in a terminal, so a conflict is there to see. Not on the base.
+export const canUpdate = (s, branch) => Boolean(s?.base && branch && branch !== s.base);
+export const updateLabel = (base) => `Update from ${base}`;
+export const updateArgv = (base) => ["sh", "-c", 'git fetch && git merge "origin/$1"; exec "${SHELL:-/bin/sh}"', "sh", base];
+
+// The menu's action rows: terminal and copy, then those that apply.
+export const branchActions = ({ files = false, editor = null, update = false } = {}) => 2 + [files, editor, update].filter(Boolean).length;

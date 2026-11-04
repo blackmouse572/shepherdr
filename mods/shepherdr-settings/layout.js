@@ -9,32 +9,47 @@
 // - Status filters, Show space on task rows: shared "tasks.filters", "tasks.place" (mods/tasks).
 // - Show subagents above the chat box: shared "chat.helpers" (mods/chat).
 // - Assistant: shared "coordinator.auto" (coordinator.js watchNewSpaces, mods/newspace).
+// - Editor: shared EDITOR_KEY (core/worktree.js), what the branch menu's Open in editor runs.
 // Under them, Add-ons: a switch for each add-on lib/addons.json gives one (lib/addons.js). Off is
 // shared "addons.off" (the mods follow at once) and Everywhere's "off" in ~/.herdr/shepherdr.json
 // (herdr-task, here and on other machines). One that others need, or that needs one that's off,
 // can't flip until they do: its line says which.
 
 import { v_flex } from "gpui-base";
-import { shared, setShared } from "herdr";
-import { toggleSwitch } from "./ui.js";
+import { shared, setShared, exec } from "herdr";
+import { toggleSwitch, segmented } from "./ui.js";
 import { on, blockers, flip } from "./addons.js";
 // The switches, their words and an add-on's line: core/settings.js, shared with the web app.
 import { SWITCHES, ADDONS, SECTIONS, addonAbout } from "./core/settings.js";
 export { SWITCHES };
+import { EDITORS, EDITOR_KEY, EDITOR_ROW, DETECT_EDITORS, installedEditors, editorShown } from "./core/worktree.js";
 
 // A switch kept in shared state: on unless set to false.
 const flag = (key) => ({ on: shared(key) !== false, flip: (on) => setShared(key, !on) });
 
 // `view`: the settings window, for its title, heading, row and change; view.addons: lib/addons.json
 // once read (null until then).
-export function layoutSection(view, t) {
+export function layoutSection(view, t, cx) {
   const m = view.addons, title = (id) => m.addons.find((a) => a.id === id)?.title ?? id;
+  // The editors installed here, read once.
+  if (view._editors === undefined && cx) {
+    view._editors = null;
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", DETECT_EDITORS]).catch(() => null);
+      view._editors = installedEditors(r?.stdout);
+      cx.notify();
+    });
+  }
+  const pref = shared(EDITOR_KEY) ?? null;
+  const shown = editorShown(pref, view._editors);
+  const editors = EDITORS.filter((e) => e.id === "system" || e.id === shown || view._editors?.includes(e.id)).map((e) => [e.id, e.name]);
   return v_flex()
     .child(view.title(t, SECTIONS.find((s) => s.id === "window").title))
     .children(SWITCHES.map((s) => {
       const st = flag(s.key);
       return view.row(t, s.title, s.about, toggleSwitch(`layout-${s.id}`, st.on, () => st.flip(st.on)));
     }))
+    .child(view.row(t, EDITOR_ROW.title, EDITOR_ROW.about, segmented("layout-editor", editors, shown, (v) => setShared(EDITOR_KEY, v))))
     .when(Boolean(m?.addons?.some((a) => a.switch)), (el) => el
       .child(view.heading(t, ADDONS))
       .children(m.addons.filter((a) => a.switch).map((a) => {

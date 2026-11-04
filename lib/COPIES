@@ -26,7 +26,7 @@ core/spaces.js: chat spaces-chat shepherdr-settings jump
 core/autopilot.js: pane-chat shepherdr-settings
 core/automations.js: shepherdr-settings
 core/chat-reader.js: chat
-core/worktree.js: task-changes task-pr tabs-tasks spaces-chat
+core/worktree.js: task-changes task-pr tabs-tasks spaces-chat shepherdr-settings
 core/recipe.js: artifacts
 core/artifacts.js: artifacts
 core/newspace.js: newspace
