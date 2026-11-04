@@ -22,7 +22,7 @@ import { taskDot, ownProgress } from "./dot.js";
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
   queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { button, TEXT, H, RADIUS, red, amber } from "./ui.js";
+import { button, banner, TEXT, H, RADIUS, red, amber } from "./ui.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
@@ -366,14 +366,17 @@ export default class Tasks extends View {
     }
 
     return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      .child(h_flex().h(42).flex_none().pl(14).pr(8).gap(6).items_center().border_b(1).border_color(t.border)
+      // The header is a duotone banner (ui.js banner()) in the panel's state: amber while a task needs you, blue
+      // while one is working, else neutral.
+      .child(banner("tasks-head", needRows.length ? "attention" : tasksOf.working?.length ? "working" : "neutral", 42).border_b(1).border_color(t.border)
+        .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
         .child(div().font_semibold().child("Tasks"))
         .child(div().flex_1())
         .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
           // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
           .on_click(() => openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 200, height: 8 + 28 + (multi ? 4 : 2) * 32, props: { menu: "group", machines: multi } }))
-          .child(svg("mods/tasks/more.svg").size(14).flex_none())))
+          .child(svg("mods/tasks/more.svg").size(14).flex_none()))))
       .child(this.searchField(t))
       .when(!this.archivedOpen && filters, (el) => el.child(this.filterRow(chips, count, filter, t)))
       // A press in the list gives it the keyboard: F then goes to the search field.
