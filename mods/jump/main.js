@@ -1,10 +1,13 @@
-// Jump (Ctrl+K, as Shepherdr's ⌘K): one box that finds a space, a task, an artifact or a machine and
-// goes there. Opened with mod.open:jump (again closes it), a popup at the top of the window.
-// Type to filter: every word typed must be in the item somewhere, any case (Shepherdr's
-// matches()). Tasks by id, title, status line, summary and where they ran, Done and archived
-// ones too (archived only once something is typed); artifacts by title, the task that made them
-// and their folder; spaces by name, folder and machine. Each group newest first, so with nothing
-// typed the latest work is on top. ↑/↓ and Enter, or a click, go:
+// Jump (Ctrl+K, as Shepherdr's ⌘K): the command bar. One box that finds a space, a task, an artifact, a machine
+// or a command and goes there or does it. Opened with mod.open:jump (again closes it), a popup at the top of the
+// window; Ctrl+Shift+P in our layout (tabs-tasks.commands) opens it on commands only (props().mode "commands"), and
+// so does a ">" typed first. The search field is the header: no banner (Doop App 07b).
+// Nothing typed: Needs you first (every one, never folded), then Recent (the latest tasks, spaces and artifacts),
+// then the commands for this space and the app's. Typed: every word must be in the item somewhere, any case
+// (Shepherdr's matches()), and each match has a thin underline in the primary text colour. Tasks by id, title,
+// status line, summary and where they ran, Done and archived ones too (archived only once something is typed);
+// artifacts by title, the task that made them and their folder; spaces by name, folder and machine; commands by
+// name. Each group newest first. ↑/↓ (Ctrl+N/P) move, Tab and Shift+Tab jump between sections, Enter or a click go:
 //   space     space.select
 //   machine   its first space
 //   task      its worker's chat inside the Tasks panel (chat/panel.js's drill-in); a task with no
@@ -13,6 +16,8 @@
 //   artifact  the viewer over the focused pane when it's a chat (or the task's chat in the Tasks
 //             panel, when the keyboard was there), as a card there opens it (artview.js); else
 //             (a terminal, or its place not known yet) the Artifacts sidebar, else the whole window
+//   command   runs it, with its key shown in caps at the right
+// The selected row is a flat fill one step lighter than the bar (theme().selected): no edge, glow or amber.
 // Ctrl+Shift+K opens this too: it's the one switcher.
 // Tasks and artifacts are read from every machine's ~/.herdr/tasks and ~/.herdr/artifacts once
 // as it opens, as the Tasks and Artifacts panels read them.
@@ -20,27 +25,31 @@
 import { div, svg } from "gpui-kit";
 import { View } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input, VirtualListScrollHandle, v_virtual_list, Scrollbar } from "gpui-base";
-import { spaces, machines, terminals, agents, layout, layouts, exec, home, run, theme, props, closeOverlay, shared, setShared } from "herdr";
+import { spaces, machines, terminals, agents, layout, layouts, exec, home, run, theme, props, closeOverlay, shared, setShared, keys, window } from "herdr";
 import { taskDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { busyAgain } from "./core/tasks.js";
 // A space's name as the sidebar (and the web app) says it: never "~" (core/spaces.js).
 import { spaceName } from "./core/spaces.js";
+// Keys as caps, one key each (core/keys.js, the Keybinds dialog's words).
+import { keyCaps } from "./core/keys.js";
 import { openViewer, showViewer, chatArea } from "./artview.js";
 import { showInSidebar, hasSidebarView } from "./artifact-sidebar.js";
-import { TEXT, RADIUS } from "./ui.js";
+import { TEXT, RADIUS, keycaps, openSettings } from "./ui.js";
 
 // Our layout with the Tasks panel, for a task picked where the shown one has none.
 const TASKS_LAYOUT = "shepherdr";
 
-const KINDS = ["space", "task", "artifact", "machine"];
-const GROUP = { space: "Spaces", task: "Tasks", artifact: "Artifacts", machine: "Machines" };
-const SHOWN = 8; // rows a group shows before "Show N more"
-const ROW = 48, HEAD = 30, MORE = 32;
+const KINDS = ["task", "space", "artifact", "machine", "command"];
+const GROUP = { space: "Spaces", task: "Tasks", artifact: "Artifacts", machine: "Machines", command: "Commands" };
+const SHOWN = 8;  // rows a group shows before "Show N more"
+const SHOWN_CMDS = 4; // a commands group with nothing typed
+const RECENT = 5; // Recent's rows
+const ROW = 40, HEAD = 34, MORE = 32;
 // A popup is as tall as what it holds: the list gets its own height, up to this.
-const LIST_MAX = 420;
-// Task ids in a monospace column (JetBrains Mono: 0.6 em a character), so titles line up.
-const ID_FONT = "JetBrains Mono", ID_SIZE = TEXT.id, ID_CHAR = ID_SIZE * 0.6;
+const LIST_MAX = 440;
+const MONO = "JetBrains Mono";
+const WC = "mods/workspace-chrome";
 const STATUS = { needs: "Needs you", working: "Working", merging: "Merging", ready: "Ready", queued: "Queued", todo: "To do", done: "Done" };
 
 // The Tasks panel's reads (tasklists.js: READ_LISTS, taskLists); every artifact registry the
@@ -106,6 +115,66 @@ function showInTaskList(q) {
   run("layout.show", { id: "panel" });
 }
 
+// Where each word typed first shows in a text, as parts: [{ text, hit }] (hit: underlined). Overlapping hits merge.
+function matchParts(text, words) {
+  const s = String(text ?? ""), low = s.toLowerCase();
+  const spans = [];
+  for (const w of words ?? []) {
+    const i = w ? low.indexOf(w.toLowerCase()) : -1;
+    if (i >= 0) spans.push([i, i + w.length]);
+  }
+  spans.sort((a, b) => a[0] - b[0]);
+  const parts = [];
+  let at = 0;
+  for (const [a, b] of spans) {
+    if (b <= at) continue;
+    const from = Math.max(a, at);
+    if (from > at) parts.push({ text: s.slice(at, from), hit: false });
+    parts.push({ text: s.slice(from, b), hit: true });
+    at = b;
+  }
+  if (at < s.length) parts.push({ text: s.slice(at), hit: false });
+  return parts;
+}
+
+// The commands, in two groups: "space" (this space's tabs and panes) and "app". Each { id, group, label, icon, key
+// (the action as keys.json binds it, for its caps), go() }. ours: the shown layout is ours, whose tab bar
+// (tabs-tasks) takes the tabs-tasks.* commands; tasks: it has the Tasks panel.
+function commandList({ space, ours, tasks }) {
+  const cmd = (id, group, label, icon, key, go) => ({ kind: "command", key: `c:${id}`, id, group, label, icon, action: key, go });
+  const does = (name, args) => () => (args ? run(name, args) : run(name));
+  return [
+    cmd("tab.new", "space", "New terminal tab", `${WC}/terminal.svg`, "tab.new", () => run("tab.new", space ? { space: space.id } : {})),
+    cmd("split-right", "space", "Split right", "mods/pane-chat/split-right.svg", "pane.split:right", does("pane.split", { direction: "right" })),
+    cmd("split-down", "space", "Split down", "mods/pane-chat/split-down.svg", "pane.split:down", does("pane.split", { direction: "down" })),
+    cmd("pane.zoom", "space", "Zoom pane, or show all", "mods/pane-chat/zoom.svg", "pane.zoom", does("pane.zoom")),
+    cmd("pane.close", "space", "Close pane", `${WC}/x.svg`, "pane.close", does("pane.close")),
+    ours && cmd("rename-tab", "space", "Rename tab", `${WC}/square-pen.svg`, "tabs-tasks.rename-tab", does("tabs-tasks.rename-tab")),
+    ours && cmd("rename-space", "space", "Rename space", `${WC}/square-pen.svg`, "tabs-tasks.rename-space", does("tabs-tasks.rename-space")),
+    ours && cmd("close-tab", "space", "Close tab", `${WC}/x.svg`, "tabs-tasks.close", does("tabs-tasks.close")),
+    cmd("tab.next", "space", "Next tab", `${WC}/chevron-right.svg`, "tab.next", does("tab.next")),
+    cmd("tab.prev", "space", "Previous tab", `${WC}/chevron-left.svg`, "tab.prev", does("tab.prev")),
+    tasks && cmd("tasks", "space", "Show the Tasks list", "mods/shepherdr-settings/list-checks.svg", null, () => {
+      run("layout.select", { stack: "panel-body", child: "tasks" });
+      run("layout.select", { stack: "tasks", child: "tasks-list" });
+      run("layout.show", { id: "panel" });
+    }),
+    ours ? cmd("new-space", "app", "New space", `${WC}/plus.svg`, "tabs-tasks.newspace", does("tabs-tasks.newspace"))
+      : cmd("new-space", "app", "New space", `${WC}/plus.svg`, "space.new", does("space.new")),
+    cmd("space.next", "app", "Next space", `${WC}/chevron-down.svg`, "space.next", does("space.next")),
+    cmd("space.prev", "app", "Previous space", "mods/chat/chevron-up.svg", "space.prev", does("space.prev")),
+    cmd("add-machine", "app", "Add machine", `${WC}/server.svg`, null, does("mod.open", { name: "machine-add-chat" })),
+    cmd("keybinds", "app", "Keybinds", "mods/keybinds/keyboard.svg", "mod.open:keybinds", does("mod.open", { name: "keybinds" })),
+    cmd("shepherdr-settings", "app", "Shepherdr settings", "mods/shepherdr-settings/layout.svg", null, () => openSettings()),
+    cmd("app.settings", "app", "Herdr settings", `${WC}/settings.svg`, "app.settings", does("app.settings")),
+    layouts().length > 1 && cmd("layout.switch", "app", "Next layout", "mods/shepherdr-settings/layout.svg", "layout.switch", does("layout.switch")),
+    cmd("zoom-in", "app", "Zoom in", "mods/chat-image/zoom-in.svg", "app.zoom_in", does("app.zoom_in")),
+    cmd("zoom-out", "app", "Zoom out", "mods/chat-image/zoom-out.svg", "app.zoom_out", does("app.zoom_out")),
+    cmd("zoom-reset", "app", "Actual size", `${WC}/search.svg`, "app.zoom_reset", does("app.zoom_reset")),
+    cmd("palette", "app", "All Herdr commands", `${WC}/terminal.svg`, "app.palette", does("app.palette")),
+  ].filter(Boolean);
+}
+
 export default class Jump extends View {
   init(_props, cx) {
     this.openedAt = Date.now(); // a chat's box letting go of the keyboard about now had it (chatArea())
@@ -113,10 +182,12 @@ export default class Jump extends View {
     this.arts = new Map();  // the same -> its artifacts, each with { machine, folder }
     this.repos = new Map(); // "<machine>|<folder>" -> its git repo's name (null: not a repo)
     this.loading = new Set();
-    this.more = new Set();  // groups showing every row
+    this.more = new Set();  // sections showing every row
     this.sel = null;        // the selected row's key
-    this.input = InputState.new({ placeholder: "Search spaces, tasks, artifacts" });
-    this.input.on("change", (_e, cx) => { this.sel = null; this.more.clear(); this.scroll.scroll_to_item(0, "top"); cx.notify(); });
+    // "commands": commands only (Ctrl+Shift+P); else everything.
+    this.mode = props()?.mode === "commands" ? "commands" : "all";
+    this.input = InputState.new({ placeholder: this.placeholder() });
+    this.input.on("change", (_e, cx) => this.reset(cx));
     this.input.on("submit", (_e, cx) => this.go(this.current, cx));
     this.scroll = VirtualListScrollHandle.new();
     this.input.focus();
@@ -128,6 +199,23 @@ export default class Jump extends View {
   }
 
   close() { this.input.release(); this.scroll.release(); }
+
+  placeholder() { return this.mode === "commands" ? "Type a command" : "Type a command or search"; }
+
+  reset(cx) {
+    this.sel = null;
+    this.more.clear();
+    this.scroll.scroll_to_item(0, "top");
+    cx?.notify();
+  }
+
+  // Commands only, or everything again (the footer's switch).
+  setMode(mode, cx) {
+    this.mode = mode;
+    this.input.set_placeholder?.(this.placeholder());
+    this.reset(cx);
+    this.input.focus();
+  }
 
   // One machine's task lists and artifacts (null: this computer's).
   async read(cx, machine) {
@@ -198,7 +286,9 @@ export default class Jump extends View {
       const name = this.nameOf(s);
       if (q && !matches(q, name, s.folder, tilde(s.folder), machineName(s.machine))) continue;
       const at = Math.max(0, ...s.tabs.map((t) => t.changed_at ?? 0));
-      out.push({ kind: "space", key: `s:${s.id}`, id: s.id, icon: icons[s.id] ?? "#", label: name, sub: where, at, active: s.active, status: s.status });
+      const n = s.tabs.length;
+      out.push({ kind: "space", key: `s:${s.id}`, id: s.id, icon: icons[s.id] ?? "#", label: name, sub: where, at, active: s.active, status: s.status,
+        meta: n ? `${n} tab${n === 1 ? "" : "s"}` : null });
     }
     for (const [, lists] of this.lists) for (const list of lists) for (const task of list.tasks) {
       if (task.archived && !q) continue;
@@ -211,14 +301,14 @@ export default class Jump extends View {
       if (q && !matches(q, ref, task.title, task.progress?.text, task.summary, task.waits, task.attention, space ? this.nameOf(space) : null, list.name, machineName(list.machine))) continue;
       const at = Math.max(0, ...[task.archived, task.done_at, task.ready_at, task.progress?.at, task.started, task.created].filter((x) => typeof x === "number"));
       out.push({ kind: "task", key: `t:${list.machine ?? ""}:${list.slug}#${task.id}`, ref, label: task.title, live, status, pct: task.progress?.done,
-        sub: [task.archived ? "Archived" : STATUS[status], line && capital(String(line).split("\n")[0]), place].filter(Boolean).join(" · "), at });
+        sub: [ref, task.archived ? "Archived" : STATUS[status], line && capital(String(line).split("\n")[0]), place].filter(Boolean).join(" · "), at, meta: ago(at) });
     }
     for (const [, arts] of this.arts) for (const a of arts) {
       const space = this.spaceAt(a.machine, a.folder ?? a.regFolder);
       const place = space ? this.nameOf(space) : a.regName ?? tilde(a.folder);
       if (q && !matches(q, a.title, a.id, a.task, place, tilde(a.folder), remote ? machineName(a.machine) : null)) continue;
       out.push({ kind: "artifact", key: `a:${a.machine ?? ""}:${a.id}`, art: a, label: a.title || a.id,
-        sub: [a.task, place, remote ? machineName(a.machine) : null, `v${a.version ?? 1}`, ago(a.at)].filter(Boolean).join(" · "), at: a.at ?? 0 });
+        sub: [a.task, place, remote ? machineName(a.machine) : null, `v${a.version ?? 1}`].filter(Boolean).join(" · "), at: a.at ?? 0, meta: ago(a.at) });
     }
     if (remote) for (const m of machines()) {
       const n = spaces().filter((s) => (s.machine ?? null) === (m.name ?? null)).length;
@@ -230,19 +320,59 @@ export default class Jump extends View {
     return out.sort((a, b) => b.at - a.at);
   }
 
-  // The list as drawn: each non-empty group's heading, its rows, and "Show N more".
-  rows(q) {
-    const all = this.items(q);
+
+  // The commands this layout takes, each with its key as caps (the shown layout's own key first, then the global one).
+  commands() {
+    const ours = shared("layout") === TASKS_LAYOUT;
+    const list = commandList({ space: spaces().find((s) => s.active) ?? null, ours, tasks: Boolean(find(layout(), "tasks-list")) });
+    return list.map((c) => ({ ...c, caps: this.capsOf(c.action) }));
+  }
+
+  // An action's key as caps (core/keys.js keyCaps), or null when nothing binds it.
+  capsOf(action) {
+    if (!action) return null;
+    const all = keys(), shown = `layout:${shared("layout") ?? ""}`;
+    // A global key the shown layout binds to something else isn't this action's there.
+    const mine = new Set(all.filter((b) => b.section === shown).map((b) => b.keys));
+    const k = all.find((b) => b.section === shown && b.action === action) ?? all.find((b) => b.section === "global" && b.action === action && !mine.has(b.keys));
+    return k?.keys?.trim() ? keyCaps(k.keys, window()?.platform === "macos") : null;
+  }
+
+  // The bar's sections: [{ id, label, right, rows, fold }] (fold: rows shown before "Show N more"; 0 never folds).
+  sections(q, mode) {
+    const cmds = this.commands().filter((c) => !q || matches(q, c.label));
+    const here = spaces().find((s) => s.active);
+    const space = { id: "space", label: "This space", right: here ? this.nameOf(here) : null, rows: cmds.filter((c) => c.group === "space"), fold: q ? SHOWN : SHOWN_CMDS };
+    const app = { id: "app", label: "App", rows: cmds.filter((c) => c.group === "app"), fold: q ? SHOWN : SHOWN_CMDS };
+    if (mode === "commands") return [{ ...space, fold: 0 }, { ...app, fold: 0 }];
+    const items = this.items(q);
+    if (q) {
+      return KINDS.map((kind) => ({ id: kind, label: GROUP[kind], rows: kind === "command" ? cmds : items.filter((x) => x.kind === kind), fold: SHOWN }));
+    }
+    // Nothing typed: what needs you, then the latest work, then the commands.
+    const needs = items.filter((x) => x.kind === "task" && x.status === "needs");
+    const recent = items.filter((x) => x.at > 0 && x.kind !== "machine" && !(x.kind === "task" && (x.status === "needs" || x.status === "done"))).slice(0, RECENT);
+    return [{ id: "needs", label: "Needs you", rows: needs, fold: 0 }, { id: "recent", label: "Recent", rows: recent, fold: 0 }, space, app];
+  }
+
+  // The list as drawn: each non-empty section's heading, its rows (each knowing its section), and "Show N more".
+  rows(q, mode) {
     const rows = [];
-    for (const kind of KINDS) {
-      const mine = all.filter((x) => x.kind === kind);
-      if (!mine.length) continue;
-      rows.push({ kind: "head", key: `h:${kind}`, label: GROUP[kind], count: mine.length });
-      const shown = this.more.has(kind) ? mine : mine.slice(0, SHOWN);
-      rows.push(...shown);
-      if (mine.length > shown.length) rows.push({ kind: "more", key: `more:${kind}`, group: kind, count: mine.length - shown.length });
+    for (const sec of this.sections(q, mode)) {
+      if (!sec.rows.length) continue;
+      rows.push({ kind: "head", key: `h:${sec.id}`, label: sec.label, right: sec.right ?? (q || sec.id === "needs" ? String(sec.rows.length) : null), sec: sec.id });
+      const shown = sec.fold && !this.more.has(sec.id) ? sec.rows.slice(0, sec.fold) : sec.rows;
+      rows.push(...shown.map((r) => ({ ...r, key: `${sec.id}|${r.key}`, sec: sec.id })));
+      if (sec.rows.length > shown.length) rows.push({ kind: "more", key: `more:${sec.id}`, group: sec.id, sec: sec.id, count: sec.rows.length - shown.length });
     }
     return rows;
+  }
+
+  // What's typed: its words, and whether it asks for commands only (a ">" first).
+  query() {
+    const raw = this.input.value().trim();
+    const cmds = raw.startsWith(">");
+    return { q: (cmds ? raw.slice(1) : raw).trim(), mode: cmds ? "commands" : this.mode };
   }
 
   go(r, cx) {
@@ -260,6 +390,7 @@ export default class Jump extends View {
       if (s) run("space.select", { id: s.id });
       else run("app.settings", { section: "machines" });
     } else if (r.kind === "task") this.openTask(r);
+    else if (r.kind === "command") r.go();
     else if (r.kind === "artifact") this.openArtifact(r.art);
   }
 
@@ -280,76 +411,126 @@ export default class Jump extends View {
     openViewer({ id: a.id, title: a.title, version: a.version, machine: a.machine ?? null }, area, show);
   }
 
+
   mark(r, t) {
-    if (r.kind === "task") return taskDot(r.status, { pct: r.pct });
-    if (r.kind === "artifact") return svg("mods/artifacts/artifacts.svg").size(14).flex_none().text_color(t.muted);
-    if (r.kind === "machine") return svg("mods/workspace-chrome/server.svg").size(14).flex_none().text_color(t.muted);
-    return div().w(14).flex_none().text_center().text_size(r.icon === "#" ? 15 : 13).text_color(t.muted).child(r.icon);
+    // Things sit in a small tile; commands are a plain line icon.
+    const tile = (child) => div().size(26).flex_none().flex().items_center().justify_center().rounded(7)
+      .bg(t.background).border_1().border_color(t.border).child(child);
+    if (r.kind === "command") return div().size(26).flex_none().flex().items_center().justify_center()
+      .child(svg(r.icon).size(16).text_color(t.dim));
+    if (r.kind === "task") return tile(taskDot(r.status, { pct: r.pct }));
+    if (r.kind === "artifact") return tile(svg("mods/artifacts/artifacts.svg").size(14).text_color(t.muted));
+    if (r.kind === "machine") return tile(svg(`${WC}/server.svg`).size(14).text_color(t.muted));
+    return tile(div().text_size(r.icon === "#" ? 14 : 13).text_color(t.muted).child(r.icon));
   }
 
-  row(r, on, t) {
+  // A text with each word typed underlined where it first shows: a thin underline in the primary text colour,
+  // never amber. The last part takes the ellipsis.
+  marked(text, words, color, t) {
+    const parts = words.length ? matchParts(text, words) : [];
+    if (!parts.some((p) => p.hit)) return div().min_w(0).truncate().text_color(color).child(text);
+    return h_flex().min_w(0).overflow_hidden().whitespace_nowrap().text_color(color)
+      .children(parts.map((p, i) => div().when(i === parts.length - 1, (d) => d.min_w(0).truncate()).when(i < parts.length - 1, (d) => d.flex_none())
+        .when(p.hit, (d) => d.text_color(t.foreground).underline()).child(p.text)));
+  }
+
+  row(r, on, t, words) {
     if (r.kind === "head") {
-      return h_flex().w_full().h(HEAD).px(14).pt(10).gap(6).items_center().text_size(TEXT.label).font_medium().text_color(t.dim)
-        .child(r.label).child(div().text_color(t.dim).child(String(r.count)));
+      return h_flex().w_full().h(HEAD).px(20).pt(12).gap(8).items_center().text_size(TEXT.label).font_medium().text_color(t.dim)
+        .child(div().flex_1().min_w(0).truncate().child(r.label))
+        .when(Boolean(r.right), (el) => el.child(div().flex_none().max_w(200).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(r.right)));
     }
     if (r.kind === "more") {
-      return h_flex().w_full().h(MORE).px(6).child(
-        h_flex().flex_1().h_full().px(8).items_center().rounded(RADIUS.card).text_size(TEXT.label).text_color(t.accent).cursor_pointer()
-          .when(on, (el) => el.bg(t.hover)).hover((s) => s.bg(t.hover))
+      return h_flex().w_full().h(MORE).px(8).child(
+        h_flex().flex_1().h_full().px(12).items_center().rounded(RADIUS.card).text_size(TEXT.label).text_color(t.muted).cursor_pointer()
+          .when(on, (el) => el.bg(t.selected)).hover((s) => s.bg(on ? t.selected : t.hover))
           .child(`Show ${r.count} more`));
     }
-    return h_flex().w_full().h(ROW).px(6).child(
-      h_flex().flex_1().min_w(0).h_full().px(8).gap(10).items_center().rounded(RADIUS.card).cursor_pointer()
-        .when(on, (el) => el.bg(t.hover)).hover((s) => s.bg(t.hover))
+    // One line: the name, then a quieter second part, then the time or the key at the right (never cut).
+    return h_flex().w_full().h(ROW).px(8).child(
+      h_flex().flex_1().min_w(0).h_full().px(12).gap(12).items_center().rounded(RADIUS.card).cursor_pointer()
+        .when(on, (el) => el.bg(t.selected)).hover((s) => s.bg(on ? t.selected : t.hover))
         .child(this.mark(r, t))
-        .child(v_flex().flex_1().min_w(0).gap(2)
-          .child(h_flex().min_w(0).gap(8).items_center()
-            .when(r.kind === "task", (el) => el.child(div().flex_none().w(this.idWidth).font_family(ID_FONT).text_size(ID_SIZE).text_color(t.dim).child(r.ref)))
-            .child(div().flex_1().min_w(0).truncate().text_size(TEXT.body).text_color(t.foreground).when(Boolean(r.active), (d) => d.font_semibold()).child(r.label)))
-          .when(Boolean(r.sub), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.label).text_color(t.dim).child(r.sub)))));
+        .child(h_flex().flex_1().min_w(0).gap(10).items_center().text_size(TEXT.body + 1)
+          .child(div().flex_none().max_w(300).min_w(0).when(Boolean(r.active), (d) => d.font_semibold())
+            .child(this.marked(r.label, words, t.foreground, t)))
+          .when(Boolean(r.sub), (el) => el.child(div().flex_1().min_w(0).text_size(TEXT.body).child(this.marked(r.sub, words, t.dim, t)))))
+        .when(Boolean(r.caps), (el) => el.child(keycaps(r.caps)))
+        .when(!r.caps && Boolean(r.meta), (el) => el.child(div().flex_none().min_w(34).text_right().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(r.meta))));
+  }
+
+  // The foot: Tab's hint, and the switch between commands only and everything (with its key, when one is bound).
+  footer(mode, t) {
+    const toCmds = mode !== "commands";
+    const caps = this.capsOf(toCmds ? "tabs-tasks.commands" : "mod.open:jump");
+    return h_flex().h(44).flex_none().px(20).gap(8).items_center().border_t(1).border_color(t.border)
+      .text_size(TEXT.label).text_color(t.dim).whitespace_nowrap()
+      .child(keycaps(["Tab"])).child("to jump between sections")
+      .child(div().flex_1())
+      .child(h_flex().id("jump-mode").flex_none().gap(8).items_center().px(6).py(4).rounded(RADIUS.control).cursor_pointer()
+        .hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.setMode(toCmds ? "commands" : "all", cx))
+        .when(Boolean(caps), (el) => el.child(keycaps(caps)))
+        .child(toCmds ? "Commands only" : "Everything"));
   }
 
   render(cx) {
     const t = theme();
-    const q = this.input.value().trim();
-    const rows = this.rows(q);
-    this.idWidth = Math.ceil(Math.max(0, ...rows.map((r) => r.ref?.length ?? 0)) * ID_CHAR) + 1;
+    const { q, mode } = this.query();
+    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const rows = this.rows(q, mode);
     const pickable = rows.filter((r) => r.kind !== "head");
     const at = Math.max(0, pickable.findIndex((r) => r.key === this.sel));
     const cur = (this.current = pickable[at] ?? null);
-    const move = (d, cx) => {
-      if (!pickable.length) return;
-      const next = pickable[Math.max(0, Math.min(pickable.length - 1, at + d))];
+    const select = (next, cx, up = false) => {
+      if (!next) return;
       this.sel = next.key;
       const i = rows.indexOf(next);
-      // The group's heading stays in view over its first row.
-      this.scroll.scroll_to_item(rows[i - 1]?.kind === "head" && d < 0 ? i - 1 : i);
+      // The section's heading stays in view over its first row.
+      this.scroll.scroll_to_item(rows[i - 1]?.kind === "head" && up ? i - 1 : i);
       cx.notify();
+    };
+    const move = (d, cx) => {
+      if (pickable.length) select(pickable[Math.max(0, Math.min(pickable.length - 1, at + d))], cx, d < 0);
+    };
+    // Tab: the next section's first row (round to the first); Shift+Tab: this section's first, else the one before.
+    const jump = (d, cx) => {
+      const firsts = pickable.filter((r, i) => i === 0 || pickable[i - 1].sec !== r.sec);
+      if (!firsts.length) return;
+      const mine = firsts.findIndex((r) => r.sec === cur?.sec);
+      const next = d > 0 ? firsts[(mine + 1) % firsts.length]
+        : cur && firsts[mine] !== cur ? firsts[mine] : firsts[(mine - 1 + firsts.length) % firsts.length];
+      select(next, cx, true);
     };
     const loading = this.loading.size > 0;
     const empty = !rows.length
-      ? v_flex().h(120).items_center().justify_center().gap(4).text_size(13).text_color(t.dim)
-        .child(loading ? "Reading tasks and artifacts…" : q ? "Nothing found. Try fewer words." : "Nothing here.")
+      ? v_flex().h(120).items_center().justify_center().gap(4).text_size(TEXT.body).text_color(t.dim)
+        .child(loading && mode !== "commands" ? "Reading tasks and artifacts…" : q ? "Nothing found. Try fewer words." : "Nothing here.")
       : null;
     const sizes = rows.map((r) => (r.kind === "head" ? HEAD : r.kind === "more" ? MORE : ROW));
     const listH = Math.min(LIST_MAX, sizes.reduce((a, b) => a + b, 0));
-    return v_flex().id("jump").w_full().bg(t.popover).text_size(13)
+    const found = pickable.filter((r) => r.kind !== "more").length;
+    return v_flex().id("jump").w_full().bg(t.popover).text_size(TEXT.body)
       .on_key_down((e, cx) => {
         if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); return; }
         if (e.key === "down" || (e.key === "n" && e.modifiers.control)) move(1, cx);
         else if (e.key === "up" || (e.key === "p" && e.modifiers.control)) move(-1, cx);
+        else if (e.key === "tab") jump(e.modifiers.shift ? -1 : 1, cx);
         else return;
         cx.stop_propagation();
       })
-      .child(h_flex().h(48).flex_none().px(16).gap(10).items_center().border_b(1).border_color(t.border)
-        .child(svg("mods/workspace-chrome/search.svg").size(15).flex_none().text_color(t.dim))
-        .child(Input.new(this.input).flex_1().h_full().text_size(14).text_color(t.foreground)))
-      .child(empty ?? div().relative().h(listH + 8).py(4)
+      // The search field is the header: no banner.
+      .child(h_flex().h(56).flex_none().px(20).gap(12).items_center().border_b(1).border_color(t.border)
+        .child(svg(`${WC}/search.svg`).size(18).flex_none().text_color(t.dim))
+        .child(Input.new(this.input).flex_1().h_full().text_size(16).text_color(t.foreground))
+        .when(Boolean(q), (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim)
+          .child(`${found} result${found === 1 ? "" : "s"}`))))
+      .child(empty ?? div().relative().h(listH + 10).pt(2).pb(8)
         .child(v_virtual_list("jump-list", rows.length, sizes,
-          (i) => rows[i].key, (range) => rows.slice(range.start, range.end).map((r) => this.row(r, r === cur, t)))
+          (i) => rows[i].key, (range) => rows.slice(range.start, range.end).map((r) => this.row(r, r === cur, t, words)))
           .track_scroll(this.scroll).size_full()
           // Rows take no handlers: the list says which one was pressed.
-          .on_item_click((key, cx) => this.go(this.rows(this.input.value().trim()).find((r) => r.key === key && r.kind !== "head"), cx)))
-        .child(Scrollbar.vertical("jump-list").absolute().inset_0()));
+          .on_item_click((key, cx) => { const p = this.query(); this.go(this.rows(p.q, p.mode).find((r) => r.key === key && r.kind !== "head"), cx); }))
+        .child(Scrollbar.vertical("jump-list").absolute().inset_0()))
+      .child(this.footer(mode, t));
   }
 }

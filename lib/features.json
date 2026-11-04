@@ -845,7 +845,7 @@
         ]
       },
       "forms": {
-        "herdr": "Ctrl+K: spaces, tasks, artifacts, machines",
+        "herdr": "Ctrl+K: the command bar (Needs you, recent, spaces, tasks, artifacts, machines, commands); Ctrl+Shift+P: commands only",
         "desktop": "Ctrl+K or ⌘K",
         "tablet": "Same with a keyboard; Search button",
         "phone": "Search button in the bottom bar, full screen"

@@ -13,7 +13,7 @@ marked below off and on again, at once and on every machine (Everywhere's `off` 
 | Chat | always on in 3.1.0 | Agents as a chat, model choice, opened images | — |
 | Questions and permissions | always on in 3.1.0 | Question and permission cards from Claude Code and Codex hooks. Needs Chat | — |
 | Secrets | always on in 3.1.0 | `herdr-secret`, the masked card, Settings → Secrets | — |
-| Keyboard | always on in 3.1.0 | Jump (Ctrl+K), the keys list (Ctrl+Shift+?) | — |
+| Keyboard | always on in 3.1.0 | The command bar (Ctrl+K; commands only Ctrl+Shift+P), the keys list (Ctrl+Shift+?) | — |
 | Artifacts | yes | Agents' reports and draft screens beside the chat, `herdr-artifact` | No Artifacts button in the tab bar |
 | Voice and dictation | yes | Calls with an Assistant (ElevenLabs), dictation (whisper.cpp). Needs Chat | No call or mic buttons; their keys do nothing |
 | Reactions | yes | React to a message with an emoji. Needs Chat | No smiley on messages (agents' own reactions still show) |

@@ -3652,8 +3652,8 @@ export default class Chat extends View {
           return rows.slice(range.start, range.end).map((x, j) => {
             const flash = this.flash && (x.id === this.flash.id || String(x.id).startsWith(`${this.flash.id}:`));
             return div().relative().w_full().h(sizes[range.start + j]).when(!x.bar || x.kind === "band", (el) => el.overflow_hidden())
-              // Find: rows with matches tinted, the current one more.
-              .when(lit.has(x.id), (el) => el.child(div().absolute().inset_0().rounded(10).bg(t.accent + (current?.id === x.id ? "38" : "14"))))
+              // Find: rows with matches tinted, the current one the flat selected fill. Neutral, never amber (Doop App 07b).
+              .when(lit.has(x.id), (el) => el.child(div().absolute().inset_0().rounded(10).bg(current?.id === x.id ? t.selected : t.foreground + "0d")))
               // Ids carry the width's generation, as the measurer's do: a reply's words keep the
               // width they were first laid out at, so after a resize (a restart's first narrow
               // frames) they'd stay narrow and tall, spilling under the next row.
