@@ -3,7 +3,7 @@
 // header, dialog footer, hover). lib/UI.md lists them and the rules.
 // Shared: the source is lib/ui.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/ui.js, never a mod's copy, then run bin/sync-shared.
-import { div, svg, image } from "gpui-kit";
+import { div, svg, image, PathBuilder, Background } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces } from "herdr";
 
@@ -35,9 +35,11 @@ export const onStatus = () => (dark() ? "#000000" : "#ffffff");
 // Banners -------------------------------------------------------------------
 // The duotone header behind a card's, panel's or dialog's title: a dark wash of a state colour with halftone dots
 // that fade out toward the left (the design system's .bn.half), or, for "neutral", the wool banner's diagonal hatch
-// lines (.bn.wool.hatch). Mods can't mask a pattern, so the pattern and its fade are a picture
-// (mods/tasks/banners/<state>.svg and hatch.svg, drawn by scripts/banners.py), 1000 x 96 and pinned to the right
-// edge: a narrow header crops it from the left instead of squashing it. Taller than 96 shows plain wash below.
+// lines (.bn.wool.hatch). Mods can't mask a pattern, so the pattern is a picture (mods/tasks/banners/<state>.svg and
+// hatch.svg, drawn by scripts/banners.py), 96 tall and wider than any header, pinned to the right edge: a narrow header
+// crops it from the left instead of squashing it. Taller than 96 shows plain wash below. The dots' fade is baked in (the
+// same px from the right at any width); the hatch's is a share of the header's width, as the design's mask, so a
+// gradient of the wash is painted over it (opaque at the left, clear at the right).
 // state: "attention" (needs you), "working", "done" or "neutral".
 // Dark only for now: light mode keeps the plain header colour and no dots.
 const BANNER_BG = { attention: "#24170A", working: "#0E1330", done: "#0B1B11", neutral: "#1A1B18" };
@@ -50,9 +52,22 @@ export function banner(id, state, height) {
 // row's first child (absolute, so the row's flow and gaps don't see it; the row needs relative() and
 // overflow_hidden()). Dark only: check isDark() first.
 export const bannerBg = (state) => BANNER_BG[bannerState(state)];
-// Neutral draws the hatch, the states their dots.
-export const bannerDots = (state) => image(`mods/tasks/banners/${bannerState(state) === "neutral" ? "hatch" : bannerState(state)}.svg`)
-  .absolute().top(0).right(0).w(1000).h(96);
+// Neutral draws the hatch, the states their dots. radius: the header's top-left corner, so the hatch's fade stays
+// inside a rounded frame.
+export function bannerDots(state, radius = 0) {
+  const s = bannerState(state);
+  if (s !== "neutral") return image(`mods/tasks/banners/${s}.svg`).absolute().top(0).right(0).w(1000).h(96);
+  return div().absolute().inset_0()
+    .child(image("mods/tasks/banners/hatch.svg").absolute().top(0).right(0).w(2400).h(96))
+    .child(hatchFade(BANNER_BG.neutral, radius));
+}
+// The hatch's fade: the wash from opaque at the left to clear at the right, over the whole header (the design's
+// mask, transparent 5% to solid 100%, as one straight ramp).
+function hatchFade(bg, radius) {
+  const start = radius > 0 ? PathBuilder.fill().move_to(0, radius).curve_to(radius, 0, 0, 0) : PathBuilder.fill().move_to(0, 0);
+  const path = start.line_to("100%", 0).line_to("100%", "100%").line_to(0, "100%").close().build();
+  return window.paint_path(path, Background.linear_gradient(90, bg, `${bg}00`)).absolute().top(0).left(0).size_full();
+}
 // An agent's status as a banner state: blocked needs you, working, done; anything else neutral.
 export const agentBanner = (status) => ({ blocked: "attention", working: "working", done: "done" })[status] ?? "neutral";
 // Headers' titles: the design's serif (Geist Serif, shipped in mods/pane-chat/fonts/, loaded by Herdr at start).
@@ -80,7 +95,7 @@ export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null
   const d = dark();
   return div().id(id).relative().flex_none().h(pad + 20 + TITLE_SHIFT + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
     .when(radius > 0, (el) => el.rounded_t(radius))
-    .when(d, (el) => el.bg(bannerBg(state)).border_b(1).border_color(t.border).child(bannerDots(state)))
+    .when(d, (el) => el.bg(bannerBg(state)).border_b(1).border_color(t.border).child(bannerDots(state, radius)))
     .child(h_flex().absolute().inset_0().px(pad).gap(12).items_center()
       .when(Boolean(lead), (el) => el.child(svg(lead).size(16).flex_none().text_color(t.muted)))
       .child(v_flex().flex_1().min_w(0).gap(2)

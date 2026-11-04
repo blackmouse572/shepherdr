@@ -81,8 +81,9 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
 - `countBadge(need, ready, line)`: the red / green / split count badge (Tasks, tabs, spaces).
 - `banner(id, state, height)`: the duotone header (`attention`, `working`, `done`, `neutral`): a dark wash with halftone
   dots fading toward the left (`.bn.half`), or for `neutral` the wool banner's diagonal hatch at .22 (`.bn.wool.hatch`),
-  a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`). The hatch's fade is set
-  in px from the right as a 460 dialog draws it, so wider headers show plain wash at their left.
+  a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`). The dots' fade is baked in
+  px from the right; the hatch's is a share of the header's width (a gradient of the wash painted over it), so every
+  width fades out toward the left as DS 03. `bannerDots(state, radius)`: `radius` keeps that fade inside a rounded top.
   Put the header's content in an `.absolute().inset_0()` child. Dark only for now.
 - `keycaps(caps)`: a shortcut as caps, one key each (`core/keys.js` `keyCaps("ctrl-shift-p", mac)` gives the list), 22
   tall, never cut. The command bar's rows and foot.
