@@ -5,10 +5,16 @@ Shepherdr can use more than one Claude account on a machine. Each account is a C
 
 ## Where you see them
 
-- **The status bar's usage pill** shows the active account, its 5-hour session and its week. A click opens the usage
-  popover: one card per account, meters with the switch point, and a chevron for an account's detail (the last 7 days,
-  this week by space, when the week resets).
-- **Settings > Accounts** has the same cards and lets you add, rename, sign in again and remove accounts.
+- **The status bar** shows, after the machine, the usage pill (the active account, its 5-hour session and its week),
+  the switch rule ("switch at 95% · Personal next") and Codex's plan and session. A click opens the usage popover: one
+  card per account, meters with the switch point, and a chevron for an account's detail (the last 7 days, this week
+  by space, when the week resets, and Use for new work or Sign in).
+- **Settings > Accounts** lists the accounts in their switch order, one compact row each. A row's ⋯ renames it, sets it
+  as default (new work starts there), signs in again, opens its folder, moves it up or down in the order, skips it
+  when switching, or removes it. **Add account** sits in the Claude card's header. The Switching card holds the rule,
+  the Codex card signs Codex in and out (`codex login` / `codex logout`). With connected machines, a machine's own
+  ~/.claude and Codex show read-only, as Settings > Machines reads them.
+- **Tasks** show the account their Claude agent runs on: an initial in the task list, its name in the task's header.
 
 ## What "active" does
 
@@ -16,8 +22,11 @@ New task agents and reviewers that run Claude Code start on the **ACTIVE** accou
 `CLAUDE_CONFIG_DIR=~/.claude-<id>` when it starts them (`herdr_task/accounts.py`). A resumed task stays on the account
 its session started on, because the session lives in that account's folder. Assistants still start on Default.
 
-Past **Switch above** (95% by default, of the 5-hour session or the week), the status bar makes the emptiest other
-account active and says so in a toast. Running tasks keep their account. Off (100%) never switches.
+With **Switch automatically** on, past **Switch above** (95% by default, of the 5-hour session window only) the status
+bar makes the next account in the switch order active: the first that isn't skipped, works, and has room in its own
+5-hour window. A toast says so and names the next queued task; with **Toast with Undo** on, Undo (10 seconds) puts
+the old account back and leaves it until its window resets. Running tasks keep their account: **Work already
+running: Moves** is stored, but a running session can't move yet (it lives in its account's folder), so it stays.
 
 ## Adding, renaming, removing
 
@@ -28,8 +37,9 @@ account active and says so in a toast. Running tasks keep their account. Off (10
 - **Remove** hides the account from Shepherdr. Its folder and sign-in stay, and **Show again** brings it back. The
   default and the active account can't be removed.
 
-The picks live in `~/.herdr/accounts.json` (`active`, `switch_at`, `names`, `hidden`), one file per machine. A machine
-without one uses Default.
+The picks live in `~/.herdr/accounts.json` (`active`, `auto`, `switch_at`, `running`, `undo`, `names`, `hidden`,
+`order`, `skipped`), one file per machine; `herdr-task accounts` prints them. A machine without one uses Default. A
+`switch_at` of 100 from before `auto` reads as switching off.
 
 ## Where the numbers come from
 

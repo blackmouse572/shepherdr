@@ -156,7 +156,7 @@ function accountRow(t, s, a, i, list, pr) {
   const row = h_flex().id(`acc-row-${a.id}`).w_full().h(ROW_H).flex_none().px(14).gap(12).items_center()
     .when(i > 0, (el) => el.border_t(1).border_color(t.border))
     .when(open, (el) => el.bg(t.hover))
-    .child(div().w(COL.place).flex_none().text_center().font_family(MONO).text_size(TEXT.id).text_color(t.dim).tooltip("Switch order").child(String(i + 1)))
+    .child(div().w(COL.place).flex_none().text_center().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(String(i + 1)))
     .child(avatar(a.name, COL.avatar, dim))
     .child(v_flex().flex_1().min_w(0).gap(2)
       .child(nameEl)

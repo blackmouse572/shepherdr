@@ -31,6 +31,14 @@ import { on as addonOn } from "./addons.js";
 
 // The task header's shared left edge, and task ids in the Tasks list's monospace (mods/tasks).
 const EDGE = 12, ID_FONT = "JetBrains Mono";
+// The Claude account the task's agent runs on (herdr-task's record), by the person's name for it (Settings >
+// Accounts, shared "usage.prefs"); null with only one account here.
+function accountName(rec) {
+  if ((shared("usage")?.claude ?? []).length < 2) return null;
+  const id = [...(rec?.agents ?? [])].reverse().find((a) => typeof a?.account === "string")?.account;
+  if (!id) return null;
+  return shared("usage.prefs")?.names?.[id] || (id === "default" ? "Default" : id[0].toUpperCase() + id.slice(1));
+}
 
 export const STACK = "tasks", LIST = "tasks-list", THREAD = "tasks-thread";
 export const BODY = "tasks-thread-body", CHAT = "tasks-thread-chat", TERM = "tasks-thread-term";
@@ -389,11 +397,13 @@ export class PanelHost {
   // The task: its status dot (as its Tasks row, Needs you with its halo) beside the title line,
   // the id (the list's monospace) and title; under them what its agent says it's doing, with the
   // minutes left ("Fixing the two failing tests · ~6 min"), on the title's left edge. No agent
-  // logo or name: the chat input's model button says which agent it is. Both lines always keep
+  // logo or name: the chat input's model button says which agent it is. The second line ends with the Claude account
+  // it runs on (App 02's "· Default") when there is more than one. Both lines always keep
   // their height, so nothing jumps as reports come and go.
   taskBlock(t, { want, st, addr }) {
     const report = this.reportLine(st, t);
     const title = want?.title ?? this.rec?.title ?? "";
+    const acct = accountName(this.rec);
     return h_flex().id("thread-task").flex_none().px(EDGE).gap(8).items_start().text_color(t.foreground)
       .child(h_flex().w(16).h(22).flex_none().items_center().justify_center().child(this.dot(st, addr)))
       .child(v_flex().flex_1().min_w(0).gap(2)
@@ -401,7 +411,8 @@ export class PanelHost {
           .when(Boolean(want?.task), (el) => el.child(div().flex_none().font_family(ID_FONT).text_size(TEXT.label).text_color(t.dim).child(want.task)))
           .child(div().id("thread-title").flex_1().min_w(0).truncate().text_size(TEXT.title).font_medium()
             .when(Boolean(title), (el) => el.tooltip(title)).child(title)))
-        .child(h_flex().h(16).min_w(0).items_center()
-          .child(div().flex_1().min_w(0).when(Boolean(report), (el) => el.child(report)))));
+        .child(h_flex().h(16).min_w(0).gap(8).items_center()
+          .child(div().flex_1().min_w(0).when(Boolean(report), (el) => el.child(report)))
+          .when(Boolean(acct), (el) => el.child(div().flex_none().font_family(ID_FONT).text_size(TEXT.id).text_color(t.dim).child(acct)))));
   }
 }
