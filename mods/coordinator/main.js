@@ -113,9 +113,10 @@ export default class Coordinator extends View {
     const t = theme();
     const p = props();
     return v_flex().size_full().min_h(0).bg(t.background)
-      .when(Boolean(p?.overlay), (el) => el.child(h_flex().flex_none().h(44).pl(16).pr(8).gap(12).items_center().border_b(1).border_color(t.border)
-        .child(div().flex_1().min_w(0).truncate().text_size(TEXT.body).font_semibold().text_color(t.foreground).child(p.title ?? INSTRUCTIONS.title))
-        .child(uiButton("instructions-done", INSTRUCTIONS.done, { kind: "primary", onClick: () => closeOverlay(p.overlay) }))))
+      // The dialog's header, as every dialog's: 16 + 20 + TITLE_SHIFT, the 44 this bar always was.
+      .when(Boolean(p?.overlay), (el) => el.child(div().flex_none().w_full().pt(16).px(16)
+        .child(dialogTitle("instructions-title", p.title ?? INSTRUCTIONS.title, { pad: 16,
+          right: div().mr(-8).child(uiButton("instructions-done", INSTRUCTIONS.done, { kind: "primary", onClick: () => closeOverlay(p.overlay) })) }))))
       .child(this.code
         ? div().flex_1().min_h(0).px(6).pt(6).child(Editor.new(this.code))
         : div().flex_1())
