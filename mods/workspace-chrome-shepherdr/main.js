@@ -116,6 +116,6 @@ export default class WorkspaceChrome extends View {
       .when(mac() && !window()?.fullscreen && !collapsed, el => el.pl(86))
       .when(!collapsed, el => el.child(this.jumpField(t)))
       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
-      .when(!(collapsed && mac()), el => el.child(this.button("sidebar-toggle", svg("mods/workspace-chrome-shepherdr/sidebar.svg").size(15), toggleSidebar)));
+      .when(!(collapsed && mac()), el => el.child(this.button("sidebar-toggle", svg("mods/workspace-chrome-shepherdr/sidebar.svg").size(15), toggleSidebar).when(!collapsed, (b) => b.mt(TL_DROP))));
   }
 }
