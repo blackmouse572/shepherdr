@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { resetsIn, resetsLine, pctText, clampSwitch, meterTone, binding, activeOf, nextAccount, dueSwitch, switchLine,
+import { keepGood, resetsIn, resetsLine, pctText, clampSwitch, meterTone, binding, activeOf, nextAccount, dueSwitch, switchLine,
   midCut, accountSub, weekBars, spaceSplit, pillParts, updatedLine, capHeight, popoverHeight } from "./usage.js";
 
 const now = Date.parse("2026-11-04T12:00:00Z");
@@ -153,4 +153,16 @@ test("names of the person's own, accounts removed from Shepherdr, and new accoun
   expect(addProblem("Work", list)).toBe("There is already an account in ~/.claude-work.");
   expect(addProblem("Client A", list)).toBe("");
   expect(cleanName("  a\n  b ")).toBe("a b");
+});
+
+test("keepGood holds the last numbers through a failed read, not through a sign-out", () => {
+  const good = { at: "t1", claude: [{ id: "default", meters: [{ id: "session", pct: 25 }], plan: "Max", error: null }] };
+  const failed = { at: "t2", claude: [{ id: "default", meters: [], plan: null, error: "error", why: "no limits" }] };
+  const kept = keepGood(good, failed).claude[0];
+  expect(kept.meters).toEqual(good.claude[0].meters);
+  expect(kept.error).toBe(null);
+  expect(kept.stale).toBe("t1");
+  const out = { at: "t2", claude: [{ id: "default", meters: [], error: "signed-out" }] };
+  expect(keepGood(good, out).claude[0].error).toBe("signed-out");
+  expect(keepGood(null, failed)).toBe(failed);
 });

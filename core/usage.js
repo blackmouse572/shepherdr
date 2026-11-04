@@ -360,3 +360,13 @@ export function popoverHeight(accounts, tab = "claude") {
 }
 // The overlay's height: the popover's, at most 70% of the window (overflow rule R8); the list scrolls inside.
 export const capHeight = (px, windowHeight) => Math.round(Math.min(px, (n(windowHeight) ?? 860) * POP.maxShare));
+
+// A read that failed for a moment keeps an account's last good numbers (`stale`: when they were read); signed out
+// still shows as such, since the person must act.
+export function keepGood(prev, next) {
+  if (!prev || !next) return next;
+  const hold = (a, old) => (!a || !a.error || a.error === "signed-out" || (a.meters ?? []).length || !(old?.meters ?? []).length ? a
+    : { ...a, meters: old.meters, plan: a.plan ?? old.plan, error: null, why: null, stale: old.stale ?? prev.at ?? null });
+  const was = new Map((prev.claude ?? []).map((a) => [a.id, a]));
+  return { ...next, claude: (next.claude ?? []).map((a) => hold(a, was.get(a.id))), codex: hold(next.codex, prev.codex) };
+}

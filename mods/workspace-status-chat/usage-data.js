@@ -19,7 +19,7 @@ import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { exec, appHome, home, spaces, shared, setShared, readTextFile, writeTextFile, theme, run } from "herdr";
 import { TEXT, need, green, red, onStatus, toast } from "./ui.js";
-import { dueSwitch, meterTone, shown, accountId, cleanName, normPrefs, switchToast, nextQueued, session, initial, WORDS } from "./core/usage.js";
+import { keepGood, dueSwitch, meterTone, shown, accountId, cleanName, normPrefs, switchToast, nextQueued, session, initial, WORDS } from "./core/usage.js";
 
 export const USAGE = "usage";
 export const PREFS = "usage.prefs";
@@ -69,7 +69,7 @@ async function read() {
   try {
     const r = await exec("python3", [SCRIPT(), "--spaces", JSON.stringify(localSpaces())]);
     const lineOut = String(r.stdout ?? "").split("\n").find((l) => l.startsWith("{"));
-    if (lineOut) setShared(USAGE, JSON.parse(lineOut));
+    if (lineOut) setShared(USAGE, keepGood(shared(USAGE), JSON.parse(lineOut)));
   } catch {
     // Keeps what it read last; the popover's "Updated" line shows how old that is.
   } finally {
