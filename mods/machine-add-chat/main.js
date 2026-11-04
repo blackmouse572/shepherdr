@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { hc, exec, home, readTextFile, theme, props, closeOverlay, openOverlay } from "herdr";
-import { button, dialogTitle, TEXT, RADIUS, H, red, green } from "./ui.js";
+import { button, dialogTitle, DIALOG_ICON, fieldFrame, MONO, TEXT, RADIUS, H, red, green } from "./ui.js";
 
 // The words, the ssh config's hosts and when an add needs a terminal: core/machine-add.js, shared with
 // the web app's Add machine.
@@ -246,7 +246,7 @@ export default class MachineAdd extends View {
       .bg(t.popover)
       .text_color(t.foreground)
       // The design's banner header (ui.js dialogTitle); the hosts list below shrinks to make room for it.
-      .child(dialogTitle("ma-title", W.title))
+      .child(dialogTitle("ma-title", W.title, { lead: DIALOG_ICON.server, onClose: () => this.close() }))
       .child(
         div()
           .pt(12)
@@ -274,17 +274,10 @@ export default class MachineAdd extends View {
         h_flex()
           .gap(8)
           .child(
-            Input.new(this.input)
-              .flex_1()
-              .h(H.lg)
-              .px(10)
-              .gap(6)
-              .items_center()
-              .rounded(RADIUS.control)
-              .border_1()
-              .border_color(this.inputFocused ? t.accent : t.input)
-              .bg(t.background)
-              .text_size(TEXT.body)
+            // A host as typed (user@host, an ssh alias), in the monospace and the design's sunken field.
+            fieldFrame(Input.new(this.input).flex_1().h(H.lg).px(10).gap(6).items_center(), { focused: this.inputFocused })
+              .font_family(MONO)
+              .text_size(12.5)
               .text_color(t.foreground),
           )
           // The dialog's one primary.

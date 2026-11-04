@@ -59,24 +59,41 @@ export const SERIF = "Geist Serif";
 // whose root is padded `pad` on every side: it reaches past that padding with negative margins, and its title
 // sits where the plain title did, so the content below moves down by only 8px. Light keeps the plain title.
 // opts: { pad (the root's padding, 18), state (banner state, "neutral"), sub, right, radius (the dialog's own
-// corner radius less its border, for a dialog that draws its own rounded frame) }.
+// corner radius less its border, for a dialog that draws its own rounded frame), lead (an icon path left of the
+// title, DIALOG_ICON), onClose (the top-right X, after `right`) }.
 // TITLE_SHIFT: how much lower the content sits than under a plain title; a dialog of fixed height takes it off the
 // space under the title so its height stays.
 export const TITLE_SHIFT = 8;
-export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null, radius = 0 } = {}) {
+// The X (closeX) and the icons dialogs lead with: every add-on is installed, so one mod's icon serves all.
+const CLOSE_ICON = "mods/chat/x.svg";
+export const DIALOG_ICON = { folder: "mods/workspace-chrome-shepherdr/folder.svg", server: "mods/workspace-chrome-shepherdr/server.svg", branch: "mods/workspace-chrome-shepherdr/git-branch.svg" };
+export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null, radius = 0, lead = null, onClose = null } = {}) {
   const t = theme();
   const d = dark();
   return div().id(id).relative().flex_none().h(pad + 20 + TITLE_SHIFT + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
     .when(radius > 0, (el) => el.rounded_t(radius))
     .when(d, (el) => el.bg(bannerBg(state)).border_b(1).border_color(t.border).child(bannerDots(state)))
     .child(h_flex().absolute().inset_0().px(pad).gap(12).items_center()
+      .when(Boolean(lead), (el) => el.child(svg(lead).size(16).flex_none().text_color(t.muted)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().min_w(0).truncate().text_color(t.foreground)
           .when(d, (el) => el.font_family(SERIF).text_size(TEXT.title + 3))
           .when(!d, (el) => el.text_size(TEXT.title).font_semibold())
           .child(title))
         .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.label).text_color(t.muted).child(sub))))
-      .when(Boolean(right), (el) => el.child(right)));
+      .when(Boolean(right), (el) => el.child(right))
+      .when(Boolean(onClose), (el) => el.child(closeX(`${id}-x`, onClose).mr(-6))));
+}
+
+// A dialog's top-right X (dialogTitle's onClose): closes as Cancel and Esc do. 24 square, the hover
+// only on the X itself.
+export function closeX(id, onClose) {
+  const t = theme();
+  return div().id(id).size(H.sm).flex_none().flex().items_center().justify_center()
+    .rounded(RADIUS.control).text_color(t.muted).cursor_pointer()
+    .hover((s) => s.bg(t.hover).text_color(t.foreground))
+    .on_click((e, cx) => { cx.stop_propagation(); onClose(e, cx); })
+    .child(svg(CLOSE_ICON).size(14));
 }
 
 // Hover and pointer --------------------------------------------------------
@@ -86,6 +103,21 @@ export function clickable(el, onClick, { radius = RADIUS.card } = {}) {
   const t = theme();
   return el.rounded(radius).cursor_pointer().hover((s) => s.bg(t.hover))
     .on_click((e, cx) => { cx.stop_propagation(); onClick(e, cx); cx.notify(); });
+}
+
+// Fields ---------------------------------------------------------------------
+// A text field's frame (and the boxes beside one, as New space's icon), as Doop App 06 draws it: in dark a
+// sunken well darker than the dialog, a quiet border, the accent border while focused (red for an error).
+// Mods have no inset shadow or focus ring, so the well's depth is its colour. Light keeps the plain field.
+// The monospace for what is typed as a path or a host: MONO.
+export const MONO = "JetBrains Mono";
+const WELL = "#0A0B0A";
+export function fieldFrame(el, { focused = false, error = false } = {}) {
+  const t = theme();
+  const d = dark();
+  return el.rounded(RADIUS.control).border_1()
+    .border_color(error ? t.blocked : focused ? t.accent : d ? t.border : t.input)
+    .bg(d ? WELL : t.background);
 }
 
 // Buttons -------------------------------------------------------------------

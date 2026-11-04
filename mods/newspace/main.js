@@ -28,7 +28,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
-import { dialogFooter, dialogTitle, TITLE_SHIFT, button, TEXT, RADIUS } from "./ui.js";
+import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, fieldFrame, MONO, TEXT, RADIUS } from "./ui.js";
 import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
@@ -268,21 +268,20 @@ export default class NewSpace extends View {
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); onClick(cx); })
       .child(svg(up ? "mods/newspace/corner-left-up.svg" : "mods/workspace-chrome/folder.svg").size(14).flex_none().text_color(t.muted))
       .child(div().flex_none().max_w(200).truncate().text_color(t.foreground).child(up ? ".." : base(path)))
-      .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(tilde(path)));
+      .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.dim).child(tilde(path)));
   }
 
-  // Under the field: "Make it a git repo" (a checkbox) for a folder outside git, a quiet word
+  // Under the field: "Make it a git repo" (a switch) for a folder outside git, a quiet word
   // for one in a repo, else empty; always the same height.
   repoLine(t, folder) {
     const line = h_flex().h(20).flex_none().gap(8).items_center().text_size(12.5);
     if (this.offersRepo()) {
       const on = this.makeRepo;
+      // The design's switch row (App 06): the words, then the switch at the right; the whole row toggles.
       return line.id("make-repo").cursor_pointer().on_click((_e, cx) => { this.makeRepo = !this.makeRepo; cx.notify(); })
-        .child(div().size(14).flex_none().flex().items_center().justify_center().border_1().rounded(3)
-          .border_color(on ? t.accent : t.input).bg(on ? t.accent : t.background)
-          .when(on, (el) => el.child(svg("mods/workspace-chrome/check.svg").size(10).text_color(t.background))))
         .child(div().flex_none().text_color(t.foreground).child(W.makeRepo))
-        .child(div().min_w(0).truncate().text_color(t.dim).child(W.makeRepoWhy));
+        .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(W.makeRepoWhy))
+        .child(toggleSwitch("make-repo-switch", on, (v) => { this.makeRepo = v; }));
     }
     if (folder && this.repo.get(folder) === true)
       return line.text_color(t.dim).child(svg("mods/workspace-chrome/git-branch.svg").size(13).flex_none())
@@ -306,8 +305,9 @@ export default class NewSpace extends View {
     // Under the field, one quiet line: a folder that isn't there yet is made on Create. Its room is
     // kept, so the dialog keeps its height either way; an error goes beside the buttons, in red.
     const note = field && this.exists.get(field) === false ? W.missing : "";
-    const input = Input.new(this.input).w_full().h(K.field).px(10).items_center().rounded(RADIUS.control).border(1)
-      .border_color(this.focused ? t.accent : t.input).bg(t.background).text_color(t.foreground);
+    // The folder as typed, in the monospace (a path), in the design's sunken field.
+    const input = fieldFrame(Input.new(this.input).w_full().h(K.field).px(10).items_center(), { focused: this.focused })
+      .font_family(MONO).text_size(12.5).text_color(t.foreground);
     // The suggestions hang under the field in the window's top layer, only while they're open.
     const list = Popup.new("folder-list", input).flex_1().min_w(0).anchor("top_left")
       .when(rows.length > 0 || Boolean(empty), (el) => el.content(v_flex().id("folder-rows").w(LIST_W).max_h(K.row * 8 + 8).overflow_y_scrollbar().mt(4).p(4).rounded(8).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
@@ -318,7 +318,7 @@ export default class NewSpace extends View {
       .on_mouse_down("left", (_e, cx) => { if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); } })
       // The design's banner header (ui.js dialogTitle), its machine at the right; the space under it gives up what
       // the banner adds, so newSpaceHeight() holds.
-      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9,
+      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9, lead: DIALOG_ICON.folder, onClose: () => this.close(),
         right: this.machine ? div().min_w(0).max_w(200).truncate().text_size(TEXT.label).text_color(t.muted).child(W.on(this.machine)) : null }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.label))
@@ -326,7 +326,7 @@ export default class NewSpace extends View {
       // The icon (as the Rename dialog's), the field and Browse…: the desktop's own folder picker
       // here, the list on another machine.
       .child(h_flex().h(K.field).flex_none().gap(8).items_center()
-        .child(h_flex().id("icon").size(K.field).flex_none().justify_center().items_center().rounded(RADIUS.control).border(1).border_color(t.input).bg(t.background)
+        .child(fieldFrame(h_flex().id("icon").size(K.field).flex_none().justify_center().items_center())
           .cursor_pointer().hover((s) => s.bg(t.hover))
           .on_mouse_down("left", (e) => { this.iconAt = { x: e.position.x - (e.local_position?.x ?? 0), y: e.position.y - (e.local_position?.y ?? 0), width: e.bounds?.width ?? 0, height: e.bounds?.height ?? 0 }; })
           .on_click((_e, cx) => { this.pickIcon(this.iconAt); cx.notify(); })
