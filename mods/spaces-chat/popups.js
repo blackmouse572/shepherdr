@@ -39,8 +39,8 @@ export { rectOf } from "./rename.js";
 
 // New space, on `machine` (null: this computer): the New space dialog (mods/newspace) aimed there.
 // The tab bar (tabs-tasks) opens it: it knows how tall to make it.
-export function newSpace(machine) {
-  setShared("newspace.on", { machine: machine ?? null, at: Date.now() });
+export function newSpace(machine, section = null) {
+  setShared("newspace.on", { machine: machine ?? null, section, at: Date.now() });
   run("tabs-tasks.newspace-on");
 }
 

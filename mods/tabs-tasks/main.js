@@ -78,7 +78,7 @@ export default class Tabs extends View {
           if (!on || Date.now() - on.at >= 10000) {
             try { on = { ...JSON.parse(await readTextFile(`${appHome()}/data/newspace-on.json`) ?? "null"), at: Date.now() }; } catch { on = null; }
           }
-          newSpace(on?.machine ? { machine: on.machine } : null);
+          newSpace(on?.machine || on?.section ? { machine: on.machine ?? null, section: on.section ?? null } : null);
         }
         // A space's coordinator tab, opened (a script's way to the + menu's Coordinator): the space
         // in data/coordinator-openreq.json ({ space }), else the shown one.

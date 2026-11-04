@@ -65,7 +65,7 @@ export default class NewSpace extends View {
     this.busy = false;
     this.error = "";
     this.icon = null; // an emoji, null: "#"
-    this.section = null; // the sidebar section picked (its id), null: none
+    this.section = props()?.section ?? null; // the sidebar section picked (its id), null: none; a section's + fills it
     this.sectionOpen = false; // the Section's list
     // "Start a coordinator": the Assistant chat, on as Shepherdr settings' "Open the Assistant" says; this computer only.
     this.assistant = autoCoordinator() && !this.machine;

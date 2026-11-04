@@ -301,7 +301,7 @@ export default class Spaces extends View {
   // New space from a section header's +: the New space dialog on its machine, the new space filed in it.
   newIn(s) {
     this.into = { section: s.id, machine: s.machine ?? null, before: new Set(allSpaces().map((x) => x.id)), at: Date.now() };
-    newSpace(s.machine ?? null);
+    newSpace(s.machine ?? null, s.id);
   }
 
   // The footer's New space menu: New space and New section on the shown space's machine, New worktree when that

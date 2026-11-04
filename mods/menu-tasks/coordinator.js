@@ -183,7 +183,7 @@ export async function newSpace(space) {
   if (!at) return toast({ title: `Couldn't reach ${machine}`, body: "Try New space again once it's connected.", level: "error" });
   // The dialog draws its own panel (frame "none"), centered and as tall as what it shows now:
   // the overlay is the panel at its tallest.
-  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(recent.length, newSpaceMachines(machine).length > 1), props: { recent, machine, home: at } });
+  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(recent.length, newSpaceMachines(machine).length > 1), props: { recent, machine, home: at, section: space?.section ?? null } });
 }
 
 // A machine's home folder (null: this computer's).
