@@ -53,7 +53,7 @@
             }
           },
           "size": {
-            "px": 97
+            "px": 69
           }
         }
       ],
@@ -120,6 +120,9 @@
                 {
                   "id": "panel-body",
                   "type": "stack",
+                  "size": {
+                    "weight": 1
+                  },
                   "children": [
                     {
                       "id": "files",
