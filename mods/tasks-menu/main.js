@@ -88,6 +88,6 @@ export default class TasksMenu extends View {
     return menuRow(`tm-${x.key}`, x.label, { icon: x.icon ?? null, hint: x.count > 0 ? String(x.count) : null,
       check: s.checks === false ? null : x.key === s.current,
       onClick: () => this.choose(i) })
-      .when(this.keyed && i === this.at, (el) => el.bg(t.hover));
+      .when(this.keyed && i === this.at, (el) => el.bg(t.selected));
   }
 }
