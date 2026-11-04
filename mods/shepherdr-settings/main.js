@@ -26,7 +26,7 @@ import { spaceName } from "./core/spaces.js";
 import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, notifyOwn, notifyEverywhere,
   setNotifyEverywhere, setNotifyMachine, setNotify } from "./notify.js";
 import { machinesSection } from "./machines-section.js";
-import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented } from "./ui.js";
+import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented, dialogTitle } from "./ui.js";
 import { webSection } from "./web-section.js";
 import { accountsSection } from "./accounts-section.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
@@ -43,6 +43,8 @@ const page = (id) => SECTIONS.find((s) => s.id === id).title;
 const rowTitle = (key) => TASK_ROWS.find(([s, f]) => `${s}.${f}` === key)[2];
 // Pages that moved: older openers still name them.
 const MOVED = { layout: "window", instructions: "agents", automations: "tasks" };
+// The Settings header's padding: the dialogs' 18, so its title lines up with theirs.
+const HEAD_PAD = 18;
 const TEMPLATES = () => `${home()}/.config/herdr-core/templates`;
 const CLI_CHECK = () => `${home()}/.herdr/cli-check.json`;
 const tilde = (p) => (p && p.startsWith(home() + "/") ? "~" + p.slice(home().length) : p ?? "");
@@ -576,9 +578,11 @@ export default class ShepherdrSettings extends View {
       .on_click(onClick)
       .child(svg(icon).size(15).text_color(on ? t.accent : t.dim))
       .child(div().flex_1().text_size(TEXT.body).text_color(on ? t.foreground : t.muted).child(title));
-    const nav = v_flex().flex_none().w(190).h_full().p(10).gap(2).border_r(1).border_color(t.border)
-      .child(div().px(10).pt(6).pb(12).text_size(TEXT.title).font_semibold().text_color(t.foreground)
-        .child(this.scope ? SPACE_TITLE : TITLE))
+    // The window's header (the banner and serif title, as every dialog's) runs across the top, over
+    // the nav and the body: the wrapper's padding is what dialogTitle's negative margins take back.
+    const head = div().flex_none().w_full().pt(HEAD_PAD).px(HEAD_PAD)
+      .child(dialogTitle("sh-title", this.scope ? SPACE_TITLE : TITLE, { pad: HEAD_PAD }));
+    const nav = v_flex().flex_none().w(190).h_full().p(10).pt(12).gap(2).border_r(1).border_color(t.border)
       .children(SECTIONS.filter((s) => this.shows(s.id)).map((s) => navRow(s.id, s.title, I(s.icon), s.id === this.section, (_e, cx) => {
         this.section = s.id;
         this.listOpen = null;
@@ -594,7 +598,7 @@ export default class ShepherdrSettings extends View {
       : this.section === "notify" ? this.notify(t)
       : this.section === "autopilot" ? autopilotSection(this, t, cx)
       : machinesSection(this, t, cx);
-    const card = h_flex().id("shepherdr-settings").track_focus(this.handle).w_full().h_full().max_h(900).min_h(0).items_start()
+    const card = v_flex().id("shepherdr-settings").track_focus(this.handle).w_full().h_full().max_h(900).min_h(0)
       .rounded(12).border_1().border_color(t.border).bg(t.popover).shadow_lg().overflow_hidden()
       // A click inside stays inside: only one beside the window closes it.
       .on_click((_e, cx) => cx.stop_propagation())
@@ -603,13 +607,15 @@ export default class ShepherdrSettings extends View {
         if (this.sec?.open) { this.sec.open = false; cx.stop_propagation(); cx.notify(); }
         else this.close();
       })
-      .child(nav)
-      .child(div().relative().flex_1().min_w(0).h_full()
-        .child(div().id("sh-body").size_full().overflow_y_scroll()
-          .child(div().px(28).py(22)
-            .when(Boolean(this.scope), (el) => el.child(this.banner(t)))
-            .child(body)))
-        .child(Scrollbar.vertical("sh-body").absolute().inset_0()));
+      .child(head)
+      .child(h_flex().flex_1().min_h(0).w_full().items_start()
+        .child(nav)
+        .child(div().relative().flex_1().min_w(0).h_full()
+          .child(div().id("sh-body").size_full().overflow_y_scroll()
+            .child(div().px(28).py(22)
+              .when(Boolean(this.scope), (el) => el.child(this.banner(t)))
+              .child(body)))
+          .child(Scrollbar.vertical("sh-body").absolute().inset_0())));
     return div().id("sh-root").size_full().flex().items_center().justify_center().on_click(() => this.close()).child(card);
   }
 }

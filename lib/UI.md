@@ -55,7 +55,8 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   across the dialog's top (negative margins past the root's `pad`) with the title in the serif, an optional dim line
   and a right-hand control (`radius` for a dialog that draws its own rounded frame). Dark only; light keeps the
   plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
-  On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine.
+  On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine,
+  Settings (across the top, over its nav) and the instructions editor over Settings.
 - `dialogFooter({ onCancel, primary: { id, label, onClick, disabled }, note, error })`: 32 tall,
   optional dim note left (red when `error`), plain Cancel, then the solid primary. No "Esc" hint.
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`
