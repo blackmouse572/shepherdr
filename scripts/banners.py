@@ -13,6 +13,9 @@ import pathlib
 W, H = 1000, 96          # px; the banner's image size (headers crop it from the left)
 STEP, R = 7, 1.25        # dot grid and dot radius, as the design system's .bn.half
 PEAK = 0.55              # strongest dot opacity, at the top right
+# Neutral (light dots on a near-black wash) reads much louder than the coloured states at the same opacity, and
+# narrow panels (Tasks, ~270px) show only the dense end: it gets a quieter peak so the title stays clear.
+PEAKS = {"neutral": 0.32}
 # The fade: the design's radial mask, measured from the right edge in px (not as a share of the width), so every
 # header gets the same ~360px of dots at its right whatever its width: an ellipse 440 x 150% of the height, centred
 # 50px in from the right, on the top edge.
@@ -29,11 +32,11 @@ def alpha(d):
     return 0.0
 
 
-def draw(color):
+def draw(color, peak=PEAK):
     dots = []
     for y in range(STEP // 2, H, STEP):
         for x in range(STEP // 2, W, STEP):
-            a = PEAK * alpha(math.hypot((x - CX) / RX, (y - CY) / RY))
+            a = peak * alpha(math.hypot((x - CX) / RX, (y - CY) / RY))
             if a >= 0.02:
                 dots.append(f'<circle cx="{x}" cy="{y}" r="{R}" fill-opacity="{a:.2f}"/>')
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
@@ -44,5 +47,5 @@ if __name__ == "__main__":
     out = pathlib.Path(__file__).resolve().parent.parent / "mods" / "tasks" / "banners"
     out.mkdir(parents=True, exist_ok=True)
     for name, color in STATES.items():
-        (out / f"{name}.svg").write_text(draw(color))
+        (out / f"{name}.svg").write_text(draw(color, PEAKS.get(name, PEAK)))
         print(out / f"{name}.svg")
