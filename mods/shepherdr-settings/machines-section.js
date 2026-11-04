@@ -16,7 +16,7 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, spaces, updates, run, home, readTextFile, setShared } from "herdr";
+import { machines, spaces, updates, run, home, readTextFile, setShared, hc } from "herdr";
 import { HOLD, machineDetails, pollNow, statsOf } from "./machines.js";
 import { LOCAL_MACHINE } from "./coordinator.js";
 import { TEXT, button, link, toggleSwitch, need, green, working, toast, plainError } from "./ui.js";
@@ -43,6 +43,21 @@ const FIELDS = [...LIMITS.map((l) => l.field), "low_priority", "worker_memory"];
 const toMachine = (key) => (key === LOCAL_MACHINE ? null : key); // machines.js: null is this computer
 const label = machineLabel;
 const keysNow = () => [LOCAL_MACHINE, ...machines().filter((m) => m.name && !m.temporary).map((m) => m.name)];
+
+// How each machine is reached (hc machine ls: target, via) and how long this computer's core is up (hc server status),
+// for the cards' lines: every 30 s while the page shows.
+let reach = { machines: {}, uptime: null, at: 0 };
+function readReach(cx) {
+  if (Date.now() - reach.at < 30000) return;
+  reach.at = Date.now();
+  cx.spawn(async (cx) => {
+    const json = async (args) => { try { const r = await hc([...args, "--json"]); return r.code === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
+    const [ls, st] = await Promise.all([json(["machine", "ls"]), json(["server", "status"])]);
+    const at = Date.now();
+    reach = { machines: Object.fromEntries((ls?.machines ?? []).map((m) => [m.name, m])), uptime: st?.uptime_ms ?? null, upAt: at, at };
+    cx.notify();
+  });
+}
 
 // Reads plan limits older than a minute the first time the section shows.
 function askOnce(view, cx) {
@@ -179,8 +194,10 @@ function machineBlock(view, t, k) {
 // What a machine's card says now (core/machines.js machineCard).
 function cardOf(k) {
   const local = k === LOCAL_MACHINE, m = toMachine(k);
+  const link = local ? null : reach.machines[m];
   return machineCard({ local, layout: machines().find((x) => x.name === m)?.layout ?? "ready", stats: statsOf(m),
-    core: local ? updates()?.core : null, accounts: local ? accounts() : [] });
+    core: local ? updates()?.core : null, accounts: local ? accounts() : [],
+    uptime: local && reach.uptime != null ? reach.uptime + Date.now() - reach.upAt : null, target: link?.target ?? null, via: Boolean(link?.via) });
 }
 
 // Some machine needs the person (a signed-out account, out of reach): the nav's Machines gets a dot.
@@ -264,6 +281,7 @@ function statsRow(t, k, m, local) {
 
 export function machinesSection(view, t, cx) {
   readHome(view, cx);
+  readReach(cx);
   askOnce(view, cx);
   const head = h_flex().w_full().gap(12).items_center()
     .child(div().flex_1().child(view.title(t, SECTIONS.find((s) => s.id === "machines").title)))

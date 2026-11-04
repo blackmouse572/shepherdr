@@ -73,6 +73,35 @@ export function backupProblem(checks, m, cli) {
     .map(([k, c]) => `Can't on ${k || "this computer"}: ${NAMES[cli] ?? cli} is ${c[cli] === "missing" ? "not installed" : "signed out"}.`).join(" ");
 }
 
+// The spaces a CLI works in, as herdr-task resolves each space's roles (space, then its machine, then Everywhere):
+// { worker, reviewer (only where reviews are on), backup } counts. Unset: workers run Claude Code, the reviewer and
+// the backup are the other CLI, unless the check says it's missing there. spaceIds: "<machine>/<id>" off this computer.
+export function cliRoles(cfg, spaceIds, cli, checks = {}) {
+  const out = { worker: 0, reviewer: 0, backup: 0 };
+  for (const id of spaceIds ?? []) {
+    const machine = String(id).includes("/") ? String(id).split("/")[0] : LOCAL;
+    const layers = [cfg?.spaces?.[id], cfg?.machines?.[machine], cfg?.everywhere].filter(Boolean);
+    const pick = (role) => layers.map((l) => l[role]?.agent).find((v) => v != null) ?? null;
+    const rounds = layers.map((l) => l.tasks?.review_rounds).find((v) => v != null) ?? DEFAULTS.tasks.review_rounds;
+    const worker = pick("worker") ?? "claude";
+    const there = checks?.[machine === LOCAL ? "" : machine]?.[otherCli(worker)] !== "missing";
+    const other = there ? otherCli(worker) : worker;
+    const backup = pick("backup");
+    if (worker === cli) out.worker++;
+    if (rounds > 0 && (pick("reviewer") ?? other) === cli) out.reviewer++;
+    if (backup !== "off" && (backup ?? (there ? other : null)) === cli && worker !== cli) out.backup++;
+  }
+  return out;
+}
+// "Reviewer in 4 spaces and backup in 2." (null: none)
+export function rolesLine(n) {
+  const spaces = (k) => `${k} ${k === 1 ? "space" : "spaces"}`;
+  const parts = [["Worker", n.worker], ["Reviewer", n.reviewer], ["Backup", n.backup]].filter(([, k]) => k > 0)
+    .map(([w, k], i) => `${i ? w.toLowerCase() : w} in ${i ? k : spaces(k)}`);
+  if (!parts.length) return null;
+  return `${parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0]}.`;
+}
+
 // The model menu's words (mods/chat-models, settings mode) and its button's: "Opus 5.5 · 1M · High".
 export const MODEL_MENU = { model: "Model", reasoning: "Reasoning", fast: "Fast", permissions: "Permissions" };
 const modelOf = (menus, sel) => menus?.[sel?.agent]?.models?.find((m) => m.id === sel.model) ?? null;

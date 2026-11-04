@@ -1,12 +1,12 @@
 // The tab bar's branch chip's menu (Doop App 02b): where the shown code lives, ways to open it, and the repo's other
 // checkouts to go to. The tab bar (tabs-tasks) reads the git (core/worktree.js BRANCH_STATE) and opens this mod as a
-// popup with props { view: "branch", state (branchState()), branch, machine, files (the Files panel is on) }.
-// Not here (no backend): Open in editor (no editor setting), Update from main (no merge flow), the PR row.
+// popup with props { view: "branch", state (branchState()), branch, machine, files (the Files panel is on),
+// editor (the command to open it with there, else null), update (Update from its base shows), pr ({ number, state, url })}.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { props, closeOverlay, theme, run, spaces, panes } from "herdr";
-import { BRANCH_MENU as M, otherTrees, baseLine, changesLine } from "./core/worktree.js";
+import { props, closeOverlay, theme, run, spaces, panes, exec } from "herdr";
+import { BRANCH_MENU as M, otherTrees, baseLine, changesLine, editorName, updateLabel, updateArgv, prLine } from "./core/worktree.js";
 import { tilde, midCut } from "./core/spaces.js";
 import { bannerBg, bannerDots, isDark, green, red, working, MONO, SERIF, HEAD, TEXT, RADIUS } from "./ui.js";
 
@@ -38,6 +38,10 @@ export class BranchMenu {
     const dark = isDark();
     const actions = [
       { id: "terminal", label: "Open a terminal here", icon: "mods/workspace-chrome-shepherdr/terminal.svg", fn: () => run("terminal.open", { folder: s.top, place: "tab" }) },
+      ...(p.editor ? [{ id: "editor", label: "Open in editor", icon: "mods/spaces-chat/code.svg", hint: editorName(p.editor),
+        fn: () => exec(p.editor, [s.top], { on: p.machine ?? null }).catch(() => {}) }] : []),
+      ...(p.update ? [{ id: "update", label: updateLabel(s.base), icon: "mods/spaces-chat/arrow-down.svg", hint: s.behind ? `${s.behind} behind` : null,
+        fn: () => run("terminal.open", { folder: s.top, place: "tab", argv: updateArgv(s.base) }) }] : []),
       { id: "copy", label: "Copy path", icon: "mods/spaces-chat/copy.svg", fn: (cx) => cx.write_to_clipboard(s.top) },
       ...(p.files ? [{ id: "files", label: "Show in Files", icon: "mods/workspace-chrome-shepherdr/files.svg",
         fn: () => { run("layout.select", { stack: "panel-body", child: "files" }); run("layout.show", { id: "panel" }); } }] : []),
@@ -70,15 +74,18 @@ export class BranchMenu {
           .child(div().truncate().text_color(t.foreground).when(dark, (el) => el.font_family(SERIF).text_size(HEAD.small))
             .when(!dark, (el) => el.font_semibold()).child(p.branch ?? s.base))
           .child(div().truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(sub))))
-      .child(div().flex_none().h(M.kv).px(16).py(12).flex().flex_col().gap(8).font_family(MONO).text_size(TEXT.id + 0.5).text_color(t.foreground)
+      .child(div().flex_none().h(M.kv + (p.pr ? M.kvLine : 0)).px(16).py(12).flex().flex_col().gap(8).font_family(MONO).text_size(TEXT.id + 0.5).text_color(t.foreground)
         .child(h_flex().children(kv("Base", baseLine(s))))
         .child(h_flex().children(kv("Path", div().truncate().child(midCut(tilde(s.top), 44)))))
         .child(h_flex().children(kv("Changes", [
           ...(s.add || s.del ? [div().text_color(green()).child(`+${s.add}`), div().text_color(red()).child(`-${s.del}`)] : []),
-          div().truncate().text_color(t.dim).child(changesLine(s))]))))
+          div().truncate().text_color(t.dim).child(changesLine(s))])))
+        .when(Boolean(p.pr), (el) => el.child(h_flex().id("bm-pr").rounded(RADIUS.control).cursor_pointer().hover((st) => st.bg(t.hover))
+          .on_click((_e, cx) => { cx.open_url(p.pr.url); this.close(); }).children(kv("PR", div().truncate().child(prLine(p.pr)))))))
       .child(sec("Actions"))
       .child(v_flex().px(6).pb(M.pad).children(actions.map((a, i) => row(a, i, h_flex().flex_1().gap(10).items_center()
-        .child(svg(a.icon).size(16).flex_none().text_color(t.dim)).child(a.label)))))
+        .child(svg(a.icon).size(16).flex_none().text_color(t.dim)).child(div().flex_none().child(a.label))
+        .when(Boolean(a.hint), (el) => el.child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(TEXT.id + 0.5).text_color(t.dim).child(a.hint)))))))
       .when(others.length > 0, (el) => el.child(sec("Other worktrees", others.length))
         .child(v_flex().px(6).pb(M.pad).children(others.map((o, k) => row(o, actions.length + k, h_flex().flex_1().min_w(0).gap(10).items_center()
           .child(svg(BRANCH).size(16).flex_none().text_color(t.dim))

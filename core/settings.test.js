@@ -59,3 +59,19 @@ test("Backup's warning, an add-on's line and Web's state, in the window's words"
   expect(S.onlyFor("web", "This computer")).toBe("Only for web on This computer");
   expect(S.spacesOwn(1)).toBe("1 space uses its own");
 });
+
+test("the spaces Codex works in, by role, in the Accounts card's words", () => {
+  const cfg = {
+    everywhere: { tasks: { review_rounds: 1 } },
+    machines: { box: { worker: { agent: "codex" } } },
+    spaces: { a: { tasks: { review_rounds: 0 } }, c: { backup: { agent: "off" } }, d: { reviewer: { agent: "claude" } } },
+  };
+  // a: no reviews (backup only); b: reviewer and backup; c: reviewer; d: backup; box/e: the worker; nobox/f: Codex missing
+  const n = S.cliRoles(cfg, ["a", "b", "c", "d", "box/e", "nobox/f"], "codex", { nobox: { codex: "missing" } });
+  expect(n).toEqual({ worker: 1, reviewer: 2, backup: 3 });
+  expect(S.rolesLine(n)).toBe("Worker in 1 space, reviewer in 2 and backup in 3.");
+  expect(S.rolesLine({ worker: 0, reviewer: 4, backup: 2 })).toBe("Reviewer in 4 spaces and backup in 2.");
+  expect(S.rolesLine({ worker: 0, reviewer: 0, backup: 0 })).toBe(null);
+  // Reviews off by default: no reviewer.
+  expect(S.cliRoles({}, ["a"], "codex")).toEqual({ worker: 0, reviewer: 0, backup: 1 });
+});

@@ -130,8 +130,9 @@ export function machineCounts(spaces, machine) {
 }
 
 // A card's state, its mono line and what needs the person there. local: this computer (its accounts: the Claude
-// accounts with { id, name, error }; core: updates().core). Another machine: layout from machines(), its plan reads.
-export function machineCard({ local = false, layout = "ready", stats = null, core = null, accounts = [] } = {}) {
+// accounts with { id, name, error }; core: updates().core; uptime: its core's, ms). Another machine: layout from machines(),
+// its plan reads, and how it's reached (hc machine ls: target, via).
+export function machineCard({ local = false, layout = "ready", stats = null, core = null, accounts = [], uptime = null, target = null, via = false } = {}) {
   const alerts = [];
   if (local) {
     for (const a of accounts ?? []) if (a?.error === "signed-out") alerts.push({ kind: "signed-out", id: a.id, name: a.name });
@@ -142,7 +143,8 @@ export function machineCard({ local = false, layout = "ready", stats = null, cor
   const state = !local && layout === "unavailable" ? "offline" : !local && layout === "loading" ? "connecting"
     : alerts.some((a) => a.kind === "signed-out") ? "needs" : "connected";
   const h = stats?.health;
-  const sub = [local ? "local" : "ssh", local && core?.version ? `core ${core.version}` : null,
+  const sub = [local ? "local" : !via && target ? target : null, local ? null : via ? "via" : "ssh",
+    local && core?.version ? `core ${core.version}` : null, local && uptime > 0 ? `up ${span(uptime)}` : null,
     h && Number.isFinite(Number(h.load)) ? `load ${Number(h.load).toFixed(2)}` : null].filter(Boolean).join(" · ");
   return { state, words: CARD_STATE[state], alerts, sub };
 }

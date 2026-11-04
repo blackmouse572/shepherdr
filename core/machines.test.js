@@ -66,6 +66,10 @@ test("a machine's card: signed out needs you, a waiting core is offered, offline
   const remote = machineCard({ layout: "ready", stats: { limits: { codex: { state: "signed-out" }, claude: { state: "ok" } } } });
   expect(remote.alerts).toEqual([{ kind: "signed-out", cli: "codex", name: "Codex" }]);
   expect(remote.sub).toBe("ssh");
+  // How it's reached and how long its core is up, when hc says.
+  expect(machineCard({ stats: { health }, target: "deploy@10.0.4.12" }).sub).toBe("deploy@10.0.4.12 · ssh · load 0.50");
+  expect(machineCard({ target: "fly ssh console", via: true }).sub).toBe("via");
+  expect(machineCard({ local: true, core: { version: "0.1.17" }, uptime: (3 * 24 + 4) * 3600e3 }).sub).toBe("local · core 0.1.17 · up 3d 4h");
   expect(machineCard({ layout: "unavailable" }).state).toBe("offline");
   expect(machineCard({ layout: "loading" }).words).toBe("Connecting");
 });

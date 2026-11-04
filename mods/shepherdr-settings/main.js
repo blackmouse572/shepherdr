@@ -638,7 +638,7 @@ export default class ShepherdrSettings extends View {
       : this.section === "agents" ? this.agents(t, cx)
       : this.section === "tasks" ? this.tasks(t)
       : this.section === "secrets" ? secretsSection(this, t)
-      : this.section === "window" ? layoutSection(this, t)
+      : this.section === "window" ? layoutSection(this, t, cx)
       : this.section === "web" ? webSection(this, t)
       : this.section === "accounts" ? accountsSection(this, t, cx)
       : this.section === "notify" ? this.notify(t)
