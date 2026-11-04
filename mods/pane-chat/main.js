@@ -226,7 +226,9 @@ export default class Pane extends View {
     // Its line: its task's id, the folder, the branch there (a parked agent's from a pane in the same folder).
     const k = terminals().find((x) => x.address === (agent ?? self.terminal));
     const branch = self.branch ?? (p.cwd ? panes().find((x) => x.cwd === p.cwd && x.branch)?.branch : null);
-    const sub = [k?.labels?.["herdr.task"] ? toastWho(k) : null, folder(p.cwd), branch].filter(Boolean).join(" · ");
+    const line = [k?.labels?.["herdr.task"] ? toastWho(k) : null, folder(p.cwd), branch].filter(Boolean).join(" · ");
+    // A bare "~" (home, no task or branch) says nothing: the name sits alone.
+    const sub = line === "~" ? "" : line;
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
