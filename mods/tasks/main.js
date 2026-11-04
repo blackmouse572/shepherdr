@@ -22,7 +22,7 @@ import { taskDot, ownProgress } from "./dot.js";
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
   queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { button, banner, TEXT, H, RADIUS, red, working, isDark, SERIF } from "./ui.js";
+import { button, banner, TEXT, H, RADIUS, HEAD, MONO, red, working, isDark, SERIF } from "./ui.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
@@ -366,13 +366,13 @@ export default class Tasks extends View {
     }
 
     return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
-      // The header is a duotone banner (ui.js banner()) in the panel's state: amber while a task needs you, blue
-      // while one is working, else neutral.
-      .child(banner("tasks-head", needRows.length ? "attention" : tasksOf.working?.length ? "working" : "neutral", 42).border_b(1).border_color(t.border)
+      // The header (Doop App 02): the neutral wool banner, always (the rows carry the states), the title in the
+      // serif and a line under it: the shown space's open tasks and those done this week.
+      .child(banner("tasks-head", "neutral", 60).border_b(1).border_color(t.border)
         .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
-        // The card header's title in the serif over the banner (dark), as the pane headers and dialogs.
-        .child(div().when(isDark(), (el) => el.font_family(SERIF).text_size(TEXT.body + 1)).when(!isDark(), (el) => el.font_semibold()).child("Tasks"))
-        .child(div().flex_1())
+        .child(v_flex().flex_1().min_w(0).gap(4)
+          .child(div().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child("Tasks"))
+          .child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(this.headLine())))
         .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
           // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
@@ -466,6 +466,18 @@ export default class Tasks extends View {
 
   // Archived (herdr-task's archive_pass), unless its agent works or asks again: someone wrote to
   // it, and it's back (herdr-task's next tick makes that stick).
+  // The header's line: "<space> · N open · N done this week", for the shown space's list, else every list's.
+  headLine() {
+    const s = spaces().find((x) => x.active);
+    const mine = s ? this.lists.filter((l) => (l.machine ?? null) === (s.machine ?? null) && l.folder === s.folder) : [];
+    const ls = mine.length ? mine : this.lists;
+    const tasks = ls.flatMap((l) => l.tasks);
+    const week = Date.now() - 7 * 86400000;
+    const open = tasks.filter((x) => x.state !== "done").length;
+    const done = tasks.filter((x) => x.state === "done" && (x.done_at ?? 0) >= week).length;
+    return `${mine.length ? s.name : "All spaces"} · ${open} open · ${done} done this week`;
+  }
+
   shelved(p) {
     if (!p.task.archived || p.task.state !== "done") return false;
     return !this.live(p.list, p.task).some((a) => a.status === "working" || a.status === "blocked");
