@@ -105,6 +105,21 @@ export function clickable(el, onClick, { radius = RADIUS.card } = {}) {
     .on_click((e, cx) => { cx.stop_propagation(); onClick(e, cx); cx.notify(); });
 }
 
+// Fields ---------------------------------------------------------------------
+// A text field's frame (and the boxes beside one, as New space's icon), as Doop App 06 draws it: in dark a
+// sunken well darker than the dialog, a quiet border, the accent border while focused (red for an error).
+// Mods have no inset shadow or focus ring, so the well's depth is its colour. Light keeps the plain field.
+// The monospace for what is typed as a path or a host: MONO.
+export const MONO = "JetBrains Mono";
+const WELL = "#0A0B0A";
+export function fieldFrame(el, { focused = false, error = false } = {}) {
+  const t = theme();
+  const d = dark();
+  return el.rounded(RADIUS.control).border_1()
+    .border_color(error ? t.blocked : focused ? t.accent : d ? t.border : t.input)
+    .bg(d ? WELL : t.background);
+}
+
 // Buttons -------------------------------------------------------------------
 // The raised look's colours (dark only): the outline, the lit top hairline and the shaded bottom one, and the
 // secondary's own fill and hover (the primary's fill is the theme's solid, the accent).

@@ -14,7 +14,7 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, shared, spaces } from "herdr";
 import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook } from "./sections.js";
 import { logSpace } from "./spacelog.js";
-import { dialogFooter, dialogTitle, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
+import { dialogFooter, dialogTitle, fieldFrame, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
 
 // As New space's (tabs-tasks/coordinator.js NEWSPACE): the app's one dialog footer (ui.js), 32 tall.
 const K = { pad: 18, title: 20, label: 16, gap: 4, field: H.lg, buttons: H.lg, section: 16 };
@@ -127,13 +127,13 @@ export class Rename {
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child("Icon and name"))
       .child(div().h(K.gap).flex_none())
       .child(h_flex().h(K.field).flex_none().gap(8).items_center()
-        .child(h_flex().id("icon").size(K.field).flex_none().justify_center().items_center().rounded(RADIUS.control).border(1).border_color(t.input).bg(t.background)
+        .child(fieldFrame(h_flex().id("icon").size(K.field).flex_none().justify_center().items_center())
           .cursor_pointer().hover((s) => s.bg(t.hover))
           .on_mouse_down("left", (e) => { this.at = rectOf(e); })
           .on_click(() => this.pick(this.at))
           .child(mark))
-        .child(Input.new(this.input).flex_1().h(K.field).px(10).items_center().rounded(RADIUS.control).border(1)
-          .border_color(this.error ? t.blocked : this.focused ? t.accent : t.input).bg(t.background).text_color(t.foreground)))
+        .child(fieldFrame(Input.new(this.input).flex_1().h(K.field).px(10).items_center(), { focused: this.focused, error: Boolean(this.error) })
+          .text_color(t.foreground)))
       .child(div().h(K.section).flex_none())
       .child(dialogFooter({ onCancel: () => this.cancel(), note: this.error, error: true,
         primary: { id: "save", label: this.p.new ? "Create section" : "Save", onClick: () => this.save() } }));
