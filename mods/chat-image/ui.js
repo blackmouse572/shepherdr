@@ -13,8 +13,9 @@ import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces
 export const H = { xs: 20, sm: 24, lg: 32 };
 // Text: 11 IDs and times, 12 second lines and labels, 13 body and titles, 15 page titles.
 export const TEXT = { id: 11, label: 12, body: 13, title: 15 };
-// Corners: 6 on controls, 8 on cards (and hovers), 12 on bubbles.
-export const RADIUS = { control: 6, card: 8, bubble: 12 };
+// Corners: 6 on controls, 8 on cards (and hovers), 12 on bubbles, 16 on dialogs that draw their own frame, 18 on
+// the Settings window. Those dialogs' surface is theme().chrome (the design's bg-panel).
+export const RADIUS = { control: 6, card: 8, bubble: 12, dialog: 16, window: 18 };
 
 // Status colors -----------------------------------------------------------
 // The design system's status colours (night pasture), light and dark, the same as the task dots (dot.js uses

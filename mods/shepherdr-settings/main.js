@@ -601,7 +601,7 @@ export default class ShepherdrSettings extends View {
       : this.section === "autopilot" ? autopilotSection(this, t, cx)
       : machinesSection(this, t, cx);
     const card = v_flex().id("shepherdr-settings").track_focus(this.handle).w_full().h_full().max_h(900).min_h(0)
-      .rounded(12).border_1().border_color(t.border).bg(t.popover).shadow_lg().overflow_hidden()
+      .rounded(RADIUS.window).border_1().border_color(t.border).bg(t.chrome).shadow_lg().overflow_hidden()
       // A click inside stays inside: only one beside the window closes it.
       .on_click((_e, cx) => cx.stop_propagation())
       .on_key_down((e, cx) => {

@@ -20,6 +20,8 @@ picker, peek, help, ...) are read-only: clone them first.
 | `RADIUS.control` 6 | buttons, fields, segmented, menu rows |
 | `RADIUS.card` 8 | cards, popovers, every hover background |
 | `RADIUS.bubble` 12 | chat bubbles |
+| `RADIUS.dialog` 16 | dialogs that draw their own frame (New space, Rename), on `theme().chrome` (the design's bg-panel) |
+| `RADIUS.window` 18 | the Settings window, on `theme().chrome` |
 
 No other sizes. Use the names, not the numbers, so a change here reaches everyone.
 

@@ -313,12 +313,12 @@ export default class NewSpace extends View {
       .when(rows.length > 0 || Boolean(empty), (el) => el.content(v_flex().id("folder-rows").w(LIST_W).max_h(K.row * 8 + 8).overflow_y_scrollbar().mt(4).p(4).rounded(8).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
         .children(rows.map((r, i) => this.row(t, `folder-${i}`, i === this.hi, r.path, (cx) => this.pick(r.path, cx), r.up)))
         .when(Boolean(empty), (el) => el.child(div().h(K.row).flex_none().px(9).flex().items_center().text_color(t.dim).child(empty)))));
-    const panel = v_flex().id("newspace").w_full().flex_none().p(K.pad).rounded(10).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
+    const panel = v_flex().id("newspace").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(13)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", (_e, cx) => { if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); } })
       // The design's banner header (ui.js dialogTitle), its machine at the right; the space under it gives up what
       // the banner adds, so newSpaceHeight() holds.
-      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: 9, lead: DIALOG_ICON.folder, onClose: () => this.close(),
+      .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: RADIUS.dialog - 1, lead: DIALOG_ICON.folder, onClose: () => this.close(),
         right: this.machine ? div().min_w(0).max_w(200).truncate().text_size(TEXT.label).text_color(t.muted).child(W.on(this.machine)) : null }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.label))

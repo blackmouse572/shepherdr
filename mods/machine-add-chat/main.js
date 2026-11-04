@@ -243,7 +243,7 @@ export default class MachineAdd extends View {
       .w_full()
       .min_h(0)
       .p(18)
-      .bg(t.popover)
+      .bg(t.chrome)
       .text_color(t.foreground)
       // The design's banner header (ui.js dialogTitle); the hosts list below shrinks to make room for it.
       .child(dialogTitle("ma-title", W.title, { lead: DIALOG_ICON.server, onClose: () => this.close() }))

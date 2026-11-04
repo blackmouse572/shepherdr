@@ -119,10 +119,10 @@ export class Rename {
       : this.isSection
         ? svg("mods/workspace-chrome/folder.svg").size(14).text_color(t.muted)
         : div().text_size(16).text_color(t.muted).child("#");
-    const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(10).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(TEXT.body)
+    const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(TEXT.body)
       .on_key_down((e) => { if (e.key === "escape") this.cancel(); })
       // The design's banner header (ui.js dialogTitle): the space under it gives up what it adds, so RENAME's height holds.
-      .child(dialogTitle("rename-title", this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space", { pad: K.pad, radius: 9, onClose: () => this.cancel() }))
+      .child(dialogTitle("rename-title", this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space", { pad: K.pad, radius: RADIUS.dialog - 1, onClose: () => this.cancel() }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child("Icon and name"))
       .child(div().h(K.gap).flex_none())
