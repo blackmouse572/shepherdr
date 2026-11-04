@@ -14,7 +14,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { openViewer } from "./artview.js";
 import { appHome, closeOverlay, exec, notify, openOverlay, props, shared, setShared, theme } from "herdr";
-import { dialogFooter, green, red, working, H, RADIUS, TEXT } from "./ui.js";
+import { dialogFooter, dialogTitle, green, red, working, H, RADIUS, TEXT } from "./ui.js";
 // The card's words, the summary cut and the details as bullets: core/accept.js, shared with the web app's card.
 import { ACCEPT, words, readable, commitsLine, filesLine, moreLine, proofTitle, whereNow } from "./core/accept.js";
 
@@ -299,12 +299,8 @@ export default class AcceptCard extends View {
       })
       .size_full().min_h(0).p(22).gap(18).bg(t.popover).text_size(TEXT.body).line_height("20px")
       // The title (the task's ID, a question while it can be accepted), its name, and the X.
-      .child(h_flex().flex_none().gap(12).items_start()
-        .child(v_flex().flex_1().min_w(0).gap(4)
-          .child(div().text_size(TEXT.title).font_semibold().text_color(t.foreground)
-            .child(!p.ref ? ACCEPT.accept : settled ? p.ref : ACCEPT.title(p.ref)))
-          .child(div().min_w(0).truncate().text_color(t.muted).child(x?.title ?? p.title ?? "")))
-        .child(div().mt(-2).mr(-6).child(this.closeButton(t))))
+      .child(dialogTitle("accept-title", !p.ref ? ACCEPT.accept : settled ? p.ref : ACCEPT.title(p.ref),
+        { pad: 22, state: "done", sub: x?.title ?? p.title ?? "", right: div().mr(-6).child(this.closeButton(t)) }))
       .child(div().id("accept-body").flex_1().min_h(0).overflow_y_scrollbar().pr(6).child(body))
       .child(v_flex().flex_none().gap(10)
         .when(Boolean(x && this.error), (el) => el.child(div().text_color(red()).child(this.error)))

@@ -8,7 +8,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { keys, commands, shared, window, theme } from "herdr";
-import { TEXT, RADIUS, H, heading } from "./ui.js";
+import { TEXT, RADIUS, H, heading, dialogTitle } from "./ui.js";
 // The names, groups, key words and filter: core/keys.js (the web app's Keybinds reads the same).
 import { grouped as groupedKeys, keyFound, KEYBINDS } from "./core/keys.js";
 
@@ -35,7 +35,7 @@ export default class Keybinds extends View {
     const cap = (text) => div().h(20).px(6).flex_none().flex().items_center().rounded(RADIUS.control).border_1().border_color(t.border)
       .bg(t.background).text_size(TEXT.id).text_color(t.muted).whitespace_nowrap().child(text);
     return v_flex().id("keybinds").size_full().min_h(0).p(18).gap(12).bg(t.popover).text_color(t.foreground)
-      .child(div().flex_none().text_size(TEXT.title).font_semibold().child(KEYBINDS.title))
+      .child(dialogTitle("keybinds-title", KEYBINDS.title))
       .child(h_flex().h(H.lg).flex_none().px(10).gap(8).items_center().rounded(RADIUS.control).border_1()
         .border_color(this.focused ? t.accent : t.input).bg(t.background)
         .child(svg("mods/workspace-chrome/search.svg").size(14).flex_none().text_color(t.dim))

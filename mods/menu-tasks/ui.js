@@ -4,7 +4,7 @@
 // Shared: the source is lib/ui.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/ui.js, never a mod's copy, then run bin/sync-shared.
 import { div, svg, image } from "gpui-kit";
-import { h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
 import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces } from "herdr";
 
 // Sizes -------------------------------------------------------------------
@@ -53,6 +53,26 @@ export const bannerDots = (state) => image(`mods/tasks/banners/${bannerState(sta
 export const agentBanner = (status) => ({ blocked: "attention", working: "working", done: "done" })[status] ?? "neutral";
 // Headers' titles: the design's serif (Geist Serif, shipped in mods/pane-chat/fonts/, loaded by Herdr at start).
 export const SERIF = "Geist Serif";
+
+// A dialog's title as the design's header: a duotone banner across the dialog's whole top, the title in the serif
+// (dark), an optional dim line under it and something at the right (a close button). Put it first in a dialog
+// whose root is padded `pad` on every side: it reaches past that padding with negative margins, and its title
+// sits where the plain title did, so the content below moves down by only 8px. Light keeps the plain title.
+// opts: { pad (the root's padding, 18), state (banner state, "neutral"), sub, right }.
+export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null } = {}) {
+  const t = theme();
+  const d = dark();
+  return div().id(id).relative().flex_none().h(pad + 28 + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
+    .when(d, (el) => el.bg(bannerBg(state)).border_b(1).border_color(t.border).child(bannerDots(state)))
+    .child(h_flex().absolute().inset_0().px(pad).gap(12).items_center()
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().min_w(0).truncate().text_color(t.foreground)
+          .when(d, (el) => el.font_family(SERIF).text_size(TEXT.title + 3))
+          .when(!d, (el) => el.text_size(TEXT.title).font_semibold())
+          .child(title))
+        .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().text_size(TEXT.label).text_color(t.muted).child(sub))))
+      .when(Boolean(right), (el) => el.child(right)));
+}
 
 // Hover and pointer --------------------------------------------------------
 // Only what a click does something on gets the pointer and a hover; everything else gets
