@@ -27,6 +27,7 @@ core/autopilot.js: pane-chat shepherdr-settings
 core/chat-reader.js: chat
 core/worktree.js: task-changes task-pr
 core/recipe.js: artifacts
+core/artifacts.js: artifacts
 core/newspace.js: newspace
 core/machine-add.js: machine-add-chat
 core/keys.js: keybinds jump workspace-chrome-shepherdr
