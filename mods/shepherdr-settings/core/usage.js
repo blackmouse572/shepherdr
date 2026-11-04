@@ -23,7 +23,7 @@ export const WORDS = {
   addHow: "Another account is another Claude folder: run CLAUDE_CONFIG_DIR=~/.claude-<name> claude and sign in. It shows here within 5 minutes.",
   accounts: "Accounts",
   accountsAbout: "The Claude accounts and the Codex sign-in on this computer, what each has used, and which one new work starts on.",
-  newWork: "New tasks start on the ACTIVE account; a task you resume stays on the account it started on.",
+  newWork: "New tasks start on the Default ★ account; a task you resume stays on the account it started on.",
   add: "Add an account",
   addField: "Name",
   addPlaceholder: "Work",
