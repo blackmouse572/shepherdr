@@ -59,7 +59,8 @@ export default class WorkspaceChrome extends View {
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click(() => run("mod.open", { name: "jump" }))
       .child(svg("mods/workspace-chrome-shepherdr/search.svg").size(14).flex_none())
-      .child(div().flex_1().min_w(0).truncate().child("Jump to a space, task or agent"))
+      // Note: short words, the brand row leaves ~120 after the traffic lights (design's 380 titlebar field has no room here)
+      .child(div().flex_1().min_w(0).truncate().child("Jump"))
       .when(Boolean(caps), el => el.child(kbd(caps, t)));
   }
 
