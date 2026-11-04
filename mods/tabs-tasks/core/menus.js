@@ -6,9 +6,13 @@
 const sep = { sep: true };
 
 // The sidebar: a machine header's +, a space's menu, a machine header's own menu, a section's.
-export const addMenu = () => [
+// The sidebar footer's New space menu adds New worktree (worktree: the shown space is in a repo) and Add machine
+// (machine: true); a machine header's + has neither.
+export const addMenu = ({ worktree = false, machine = false } = {}) => [
   { id: "new-space", label: "New space", icon: "plus" },
+  ...(worktree ? [{ id: "new-worktree", label: "New worktree", icon: "git-branch" }] : []),
   { id: "new-section", label: "New section", icon: "folder-plus" },
+  ...(machine ? [sep, { id: "add-machine", label: "Add machine…", icon: "server" }] : []),
 ];
 
 // git: null (not a repo), "main" (a repo's own folder) or "linked" (one of its worktrees).

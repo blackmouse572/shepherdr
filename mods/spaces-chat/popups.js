@@ -1,4 +1,4 @@
-// The sidebar's own popup menus, drawn as Herdr's (mods/menu): the machine header's + and
+// The sidebar's own popup menus, drawn as Herdr's (mods/menu): the machine header's + (and the footer's New space) and
 // right-click menu, a space's right-click menu (Pin / Unpin too) and a section header's. Each is this mod opened as a popup with
 // props { view, ... }. Rename opens the rename dialog (rename.js), where the icon changes too;
 // New section opens it empty, as New section.
@@ -58,8 +58,11 @@ export function openMenu(view, p, at = "pointer") {
 const MENU_ICON = { "check-check": "mods/spaces-chat/check-check.svg", "trash-2": "mods/spaces-chat/trash-2.svg" };
 const built = (list, acts) => list.map((it) => (it.sep ? it : it.setting ? { ...acts[it.id], note: it.note } : { label: it.label, icon: MENU_ICON[it.icon] ?? it.icon, act: acts[it.id] }));
 const ITEMS = {
-  // The machine header's +.
-  add: (p) => built(addMenu(), { "new-space": () => newSpace(p.machine), "new-section": () => openNewSection(p.machine) }),
+  // The machine header's +, and the sidebar footer's New space (p.footer: New worktree in the shown space's repo,
+  // Add machine).
+  add: (p) => built(addMenu({ worktree: Boolean(p.footer && p.git && p.space), machine: Boolean(p.footer) }), {
+    "new-space": () => newSpace(p.machine), "new-section": () => openNewSection(p.machine),
+    "new-worktree": () => worktree(p.space, "new"), "add-machine": () => run("mod.open", { name: "machine-add-chat" }) }),
   space: (p) => built(spaceMenu({ unread: p.unread, pinned: isPinned(p.space), git: p.git }), {
     // Its Assistant's Notify (notify.js), as Shepherdr's: picked in place, the menu stays open.
     notify: { notify: p.space },
