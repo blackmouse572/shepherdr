@@ -619,7 +619,9 @@ export default class ShepherdrSettings extends View {
     // Searching moves to the first page that matches when the shown one doesn't.
     if (q && pages.length && !pages.some((s) => s.id === this.section)) { this.section = pages[0].id; this.listOpen = null; }
     // Found by a row's words, not the page's title: the page shows those rows only.
-    this.narrow = q && pages.some((s) => s.id === this.section) && !page(this.section).toLowerCase().includes(q) ? q : null;
+    // Pages drawn by their own section modules (no row()) show whole: nothing there to narrow.
+    const whole = ["accounts", "web", "window", "secrets", "notify"].includes(this.section);
+    this.narrow = q && !whole && pages.some((s) => s.id === this.section) && !page(this.section).toLowerCase().includes(q) ? q : null;
     this.narrowHits = 0;
     const nav = v_flex().flex_none().w(190).h_full().p(10).pt(12).gap(2).border_r(1).border_color(t.border)
       .children(pages.map((s) => navRow(s.id, s.title, I(s.icon), s.id === this.section, (_e, cx) => {
