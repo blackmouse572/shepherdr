@@ -35,7 +35,8 @@ import { accountsInit, accountsSection, accountsEscape } from "./accounts-sectio
 // into its starting prompt; Herdr runs nothing itself.
 import { SECTIONS, ROLES, NOTES, MERGE, MUST_FIX, ROUNDS, ARCHIVE, ABOUT, BACKUP, NOTIFY_ABOUT, TITLE, SPACE_TITLE,
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
-  spacesOwn, onlyFor, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS } from "./core/settings.js";
+  spacesOwn, onlyFor, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, BASE, MACHINES } from "./core/settings.js";
+import { ROWS as AP_ROWS } from "./core/autopilot.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
 // A page's title, and a Tasks row's (by its key, section.field).
@@ -45,9 +46,15 @@ const rowTitle = (key) => TASK_ROWS.find(([s, f]) => `${s}.${f}` === key)[2];
 const MOVED = { layout: "window", instructions: "agents", automations: "tasks" };
 // The Settings header's padding: the dialogs' 18, so its title lines up with theirs.
 const HEAD_PAD = 18;
-// The header's search: what each page holds, so a word finds its page (the nav keeps the pages that match).
-const pageWords = (s) => [s.title, ...(s.id === "agents" ? ROLES.map((r) => r.title)
-  : s.id === "tasks" ? [...TASK_ROWS.map((r) => r[2]), ...NOTES.map((n) => n.title)] : [])].join(" ").toLowerCase();
+// The header's search: each page's title and its rows' titles, so a word finds its page (the nav keeps the pages that
+// match); when the word isn't the shown page's own title, the page shows only the rows it names (row()).
+const ROW_WORDS = {
+  agents: () => [...ROLES.map((r) => r.title), BACKUP.title],
+  tasks: () => [...TASK_ROWS.map((r) => r[2]), BASE.title, ...NOTES.map((n) => n.title)],
+  autopilot: () => Object.values(AP_ROWS).map((r) => r.label),
+  machines: () => [...MACHINES.limits.map((l) => l.title), MACHINES.low.title, MACHINES.cap.title, MACHINES.home.title],
+};
+const pageWords = (s) => [s.title, ...(ROW_WORDS[s.id]?.() ?? [])].join(" ").toLowerCase();
 const TEMPLATES = () => `${home()}/.config/herdr-core/templates`;
 const CLI_CHECK = () => `${home()}/.herdr/cli-check.json`;
 const tilde = (p) => (p && p.startsWith(home() + "/") ? "~" + p.slice(home().length) : p ?? "");
@@ -400,6 +407,11 @@ export default class ShepherdrSettings extends View {
   // One setting: its name and one line on the left, the control on the right, the scope line
   // (scoped(), or `under` as given) under the words, and `below` (a text box) under all of it.
   row(t, title, about, control, sc = null, below = null, under = null) {
+    // Searching for a row: the others hide (render() sets narrow).
+    if (this.narrow && typeof title === "string") {
+      if (!title.toLowerCase().includes(this.narrow)) return div();
+      this.narrowHits++;
+    }
     const line = under ?? (sc ? this.scopeLine(t, sc) : null);
     return v_flex().w_full().gap(10).py(12).border_b(1).border_color(t.border)
       .child(h_flex().w_full().gap(16).items_center()
@@ -603,6 +615,9 @@ export default class ShepherdrSettings extends View {
     const pages = SECTIONS.filter((s) => this.shows(s.id) && (!q || pageWords(s).includes(q)));
     // Searching moves to the first page that matches when the shown one doesn't.
     if (q && pages.length && !pages.some((s) => s.id === this.section)) { this.section = pages[0].id; this.listOpen = null; }
+    // Found by a row's words, not the page's title: the page shows those rows only.
+    this.narrow = q && pages.some((s) => s.id === this.section) && !page(this.section).toLowerCase().includes(q) ? q : null;
+    this.narrowHits = 0;
     const nav = v_flex().flex_none().w(190).h_full().p(10).pt(12).gap(2).border_r(1).border_color(t.border)
       .children(pages.map((s) => navRow(s.id, s.title, I(s.icon), s.id === this.section, (_e, cx) => {
         this.section = s.id;
@@ -620,6 +635,8 @@ export default class ShepherdrSettings extends View {
       : this.section === "notify" ? this.notify(t)
       : this.section === "autopilot" ? autopilotSection(this, t, cx)
       : machinesSection(this, t, cx);
+    const narrowNote = this.narrow && !this.narrowHits
+      ? div().pt(12).text_size(TEXT.label).text_color(t.dim).child(`Nothing on ${page(this.section)} matches now.`) : null;
     const card = v_flex().id("shepherdr-settings").track_focus(this.handle).w_full().h_full().max_h(900).min_h(0)
       .rounded(RADIUS.window).border_1().border_color(t.border).bg(t.chrome).shadow_lg().overflow_hidden()
       // A click inside stays inside: only one beside the window closes it.
@@ -639,7 +656,8 @@ export default class ShepherdrSettings extends View {
           .child(div().id("sh-body").size_full().overflow_y_scroll()
             .child(div().px(28).py(22)
               .when(Boolean(this.scope), (el) => el.child(this.banner(t)))
-              .child(body)))
+              .child(body)
+              .when(Boolean(narrowNote), (el) => el.child(narrowNote))))
           .child(Scrollbar.vertical("sh-body").absolute().inset_0())));
     return div().id("sh-root").size_full().flex().items_center().justify_center().on_click(() => this.close()).child(card);
   }
