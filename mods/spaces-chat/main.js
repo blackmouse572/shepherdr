@@ -31,6 +31,7 @@ import { unreadSpaces, readShown } from "./unread.js";
 import { muted } from "./notify.js";
 import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.js";
 import { NeedsDrawer, openNeeds } from "./needs-drawer.js";
+import { BranchMenu } from "./branch-menu.js";
 import { startPolling, allStats } from "./machines.js";
 // The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
 import { meterWords, healthErrorWords } from "./core/machines.js";
@@ -40,7 +41,7 @@ import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { autoPrefix } from "./core/tasks.js";
 import { taskDot } from "./dot.js";
 
-const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer };
+const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer, branch: BranchMenu };
 
 // Spaces with agents showing as a chat counted in their status.
 const spaces = spacesWithChats;

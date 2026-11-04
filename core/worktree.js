@@ -130,3 +130,58 @@ export function prOf(d) {
   return { number: d.number, title: d.title, url: d.url, state, head: d.headRefName, base: d.baseRefName,
     add: d.additions ?? 0, del: d.deletions ?? 0, files: d.changedFiles ?? 0, checks };
 }
+
+// The tab bar's branch chip and its menu (Doop App 02b): where the shown code lives. `sh -c BRANCH_STATE sh` in the
+// folder prints its top, git's common folder, the base (the repo's own checkout's branch), ahead, behind, how many
+// files aren't committed, `diff --shortstat` against the fork point, then "tree\t<path>\t<branch>\t<ahead>" for each
+// checkout with a branch. Fails outside a repo.
+export const BRANCH_STATE = `top=$(git rev-parse --show-toplevel 2>/dev/null) || exit 1
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+base=$(git worktree list --porcelain | sed -n '1,/^$/s/^branch refs\\/heads\\///p' | head -n 1)
+[ -n "$base" ] || base=main
+mb=$(git merge-base HEAD "$base" 2>/dev/null)
+a=$(git rev-list --count "$base..HEAD" 2>/dev/null || echo 0)
+b=$(git rev-list --count "HEAD..$base" 2>/dev/null || echo 0)
+d=$(git --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+st=$(git --no-optional-locks -c core.fsmonitor=false -c diff.autoRefreshIndex=false diff --shortstat \${mb:-HEAD} 2>/dev/null)
+printf '%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n%s\\n' "$top" "$common" "$base" "$a" "$b" "$d" "$st"
+git worktree list --porcelain | while read -r k v; do
+  [ "$k" = worktree ] && p=$v
+  [ "$k" = branch ] && printf 'tree\\t%s\\t%s\\t%s\\n' "$p" "\${v#refs/heads/}" "$(git rev-list --count "$base..$v" 2>/dev/null || echo 0)"
+done; true`;
+
+// BRANCH_STATE's output: { top, repo (its name), linked (a worktree, not the repo's own checkout), base, ahead,
+// behind, dirty, files, add, del, trees: [{ path, branch, ahead, main }] }, or null.
+export function branchState(out) {
+  const lines = String(out ?? "").split("\n");
+  const [top, common, base] = lines;
+  if (!top || !common || !base) return null;
+  const n = (s) => parseInt(s, 10) || 0;
+  const st = lines[6] ?? "";
+  const num = (re) => n((re.exec(st) ?? [])[1]);
+  const trees = lines.slice(7).filter((l) => l.startsWith("tree\t")).map((l, i) => {
+    const [, path, branch, ahead] = l.split("\t");
+    return { path, branch, ahead: n(ahead), main: i === 0 };
+  });
+  const own = common.endsWith("/.git") ? common.slice(0, -5) : common.replace(/\.git$/, "");
+  return { top, repo: own.split("/").filter(Boolean).pop() ?? "", linked: common !== `${top}/.git`, base,
+    ahead: n(lines[3]), behind: n(lines[4]), dirty: n(lines[5]),
+    files: num(/(\d+) files? changed/), add: num(/(\d+) insertions?/), del: num(/(\d+) deletions?/), trees };
+}
+
+// Its menu's lines: "main · 3 ahead · 0 behind"; "in 4 files · 1 not committed" (after +add -del), or "No changes".
+export const baseLine = (s) => `${s.base} · ${s.ahead} ahead · ${s.behind} behind`;
+export function changesLine(s) {
+  if (!s.files && !s.dirty) return "No changes";
+  const files = s.files ? `in ${s.files} ${s.files === 1 ? "file" : "files"}` : "";
+  return [files, s.dirty ? `${s.dirty} not committed` : ""].filter(Boolean).join(" · ");
+}
+
+// The menu's sizes (a popup is opened at its height): header, the Base/Path/Changes block, a section's heading, a row,
+// a list's bottom padding; at most `others` other checkouts.
+export const BRANCH_MENU = { width: 420, head: 58, kv: 88, sec: 30, row: 34, pad: 6, others: 6 };
+export const otherTrees = (s) => (s?.trees ?? []).filter((x) => x.path !== s.top).slice(0, BRANCH_MENU.others);
+export function branchMenuHeight(s, actions) {
+  const M = BRANCH_MENU, o = otherTrees(s).length;
+  return M.head + M.kv + M.sec + actions * M.row + M.pad + (o ? M.sec + o * M.row + M.pad : 0) + 2;
+}
