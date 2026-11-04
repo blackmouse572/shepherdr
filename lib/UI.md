@@ -49,6 +49,9 @@ dark, the same as the task dots (`dot.js` uses them). `onStatus()` is text on on
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`
   needs an id).
 - `countBadge(need, ready, line)`: the red / green / split count badge (Tasks, tabs, spaces).
+- `banner(id, state, height)`: the duotone header (`attention`, `working`, `done`, `neutral`): a dark wash with halftone
+  dots fading toward the left, a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`).
+  Put the header's content in an `.absolute().inset_0()` child. Dark only for now.
 - `openSettings({ space?, section? })`: Shepherdr's settings window (mods/shepherdr-settings, the foot's Shepherdr); with
   `space`, that space's own settings. Never open it with your own size.
 

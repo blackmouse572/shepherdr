@@ -3,7 +3,7 @@
 // header, dialog footer, hover). lib/UI.md lists them and the rules.
 // Shared: the source is lib/ui.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/ui.js, never a mod's copy, then run bin/sync-shared.
-import { div, svg } from "gpui-kit";
+import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces } from "herdr";
 
@@ -26,6 +26,21 @@ export const amber = () => (dark() ? "#f5b544" : "#e2a336");
 // Text on a red, green or amber fill: white on light's deep fills, black on dark's bright ones
 // (Shepherdr's AttentionBadge).
 export const onStatus = () => (dark() ? "#000000" : "#ffffff");
+
+// Banners -------------------------------------------------------------------
+// The duotone header behind a card's, panel's or dialog's title: a dark wash of a state colour with halftone dots
+// that fade out toward the left (the design system's .bn.half). Mods can't mask a pattern, so the dots and their
+// fade are a picture (mods/tasks/banners/<state>.svg, drawn by scripts/banners.py), 1000 x 96 and pinned to the
+// right edge: a narrow header crops it from the left instead of squashing the dots. Taller than 96 shows plain wash
+// below the dots. state: "attention" (needs you), "working", "done" or "neutral".
+// Dark only for now: light mode keeps the plain header colour and no dots.
+const BANNER_BG = { attention: "#24170A", working: "#0E1330", done: "#0B1B11", neutral: "#1A1B18" };
+export function banner(id, state, height) {
+  const known = BANNER_BG[state] ? state : "neutral";
+  return div().id(id).relative().w_full().h(height).flex_none().overflow_hidden()
+    .when(dark(), (el) => el.bg(BANNER_BG[known])
+      .child(image(`mods/tasks/banners/${known}.svg`).absolute().top(0).right(0).w(1000).h(96)));
+}
 
 // Hover and pointer --------------------------------------------------------
 // Only what a click does something on gets the pointer and a hover; everything else gets
