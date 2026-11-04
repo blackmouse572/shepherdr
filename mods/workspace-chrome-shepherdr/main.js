@@ -70,7 +70,7 @@ export default class WorkspaceChrome extends View {
     if (props()?.footer) {
       // New space, as the design's footer (Doop App 01): the accent +, the words bright, a chevron, since it opens
       // the sidebar's menu (spaces-chat: New space, New worktree, New section, Add machine) at the pointer.
-      const add = h_flex().id("new-space").h(28).px(8).gap(9).items_center().rounded(8).text_color(t.foreground)
+      const add = h_flex().id("new-space").h(28).px(8).gap(9).items_center().rounded(8).text_color(t.foreground).when(collapsed, el => el.justify_center().tooltip("New space"))
         .hover(s => s.bg(t.hover)).cursor_pointer().on_click(() => run("spaces-chat.new-menu"))
         .child(svg("mods/workspace-chrome-shepherdr/plus.svg").size(14).text_color(t.accent))
         .when(!collapsed, el => el.child(div().flex_1().min_w(0).truncate().child("New space"))
@@ -79,7 +79,7 @@ export default class WorkspaceChrome extends View {
       // Note: Herdr's own settings moved off this foot; Jump's "Herdr settings" and the palette reach them.
       const update = Boolean(updates().app.ready);
       const caps = capsOf("tabs-tasks.settings");
-      const settings = h_flex().id("settings").h(28).px(8).gap(9).items_center().rounded(8)
+      const settings = h_flex().id("settings").h(28).px(8).gap(9).items_center().rounded(8).when(collapsed, el => el.justify_center().tooltip("Settings"))
         .text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground)).cursor_pointer()
         .on_click(() => (update ? run("app.settings", { section: "updates" }) : openSettings()))
         .child(svg("mods/workspace-chrome-shepherdr/settings.svg").size(14))
