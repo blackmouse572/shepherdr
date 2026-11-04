@@ -12,7 +12,7 @@
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { theme, props, closeOverlay, openOverlay, run, shared, spaces } from "herdr";
-import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook } from "./sections.js";
+import { data, iconOf, setIcon, setSectionIcon, renameSection, addSection, nameFree, machineLook, setMachineLook, thisComputer } from "./sections.js";
 import { logSpace } from "./spacelog.js";
 import { dialogFooter, dialogTitle, fieldFrame, TITLE_SHIFT, TEXT, RADIUS, H } from "./ui.js";
 
@@ -48,10 +48,10 @@ export class Rename {
     this.picked = shared(PICK)?.at ?? 0;
     this.error = "";
     // A space nobody named shows Herdr's name as the placeholder: saving it empty keeps that.
-    // A machine's too: its own name (hc's, or "This computer").
+    // A machine's too: its own name (hc's, or This Mac / This computer).
     // A space named "~" (as our New space once named home ones) counts as unnamed.
     const value = look ? (look.named ? look.name : "") : this.sec ? this.sec.name : w?.named && w.name !== "~" ? w.name : "";
-    const placeholder = this.isMachine ? p.machine ?? "This computer" : this.isSection ? "Section name" : p.name ?? w?.name ?? "Space name";
+    const placeholder = this.isMachine ? p.machine ?? thisComputer() : this.isSection ? "Section name" : p.name ?? w?.name ?? "Space name";
     this.input = InputState.new({ placeholder, value });
     this.input.on("submit", (_e, cx) => { this.save(); cx.notify(); });
     this.input.on("change", (_e, cx) => { if (this.error) { this.error = ""; cx.notify(); } });

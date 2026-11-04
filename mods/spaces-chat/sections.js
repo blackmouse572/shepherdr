@@ -9,7 +9,7 @@
 // Unpin puts it back where it was. A machine's name and emoji here are only what the sidebar
 // shows: its hc name stays.
 
-import { shared, setShared, spaces, machines } from "herdr";
+import { shared, setShared, spaces, machines, window } from "herdr";
 import { toast } from "./ui.js";
 import { DELETED, deletedSection, sectionDeletedToast, withRestoredSection } from "./core/spaces.js";
 
@@ -124,11 +124,12 @@ export function pin(space, on = true, at) {
 export const foldPinned = () => { const d = data(); save({ ...d, pinnedFolded: !d.pinnedFolded }); };
 
 // A machine (null: this computer) as the sidebar shows it: its own name unless renamed, and an
-// emoji or none (its server or monitor icon).
+// emoji or none (its server or monitor icon). This computer is "This Mac" on a Mac (Doop App 01/02).
 const mkey = (machine) => machine ?? "";
+export const thisComputer = () => (window()?.platform === "macos" ? "This Mac" : "This computer");
 export function machineLook(machine) {
   const m = data().machines[mkey(machine)] ?? {};
-  return { name: m.name || (machine ?? "This computer"), named: Boolean(m.name), icon: m.icon ?? null };
+  return { name: m.name || (machine ?? thisComputer()), named: Boolean(m.name), icon: m.icon ?? null };
 }
 // "" gives the machine its own name back; no emoji, its icon.
 export function setMachineLook(machine, name, icon) {
