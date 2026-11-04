@@ -186,7 +186,8 @@ export function foldList(items, { limit = 5, open = false, keep = () => false } 
 
 // `git worktree list --porcelain`: each checkout of a repo after the first (the repo's own folder), as
 // { path, branch (null: detached), head }. Prunable ones (their folder is gone) and bare ones are left out.
-export function parseWorktrees(out) {
+// main: true keeps the repo's own checkout first too, marked { main: true } (the sidebar's "main · checkout" row).
+export function parseWorktrees(out, { main = false } = {}) {
   const all = [];
   let cur = null;
   for (const line of String(out ?? "").split("\n")) {
@@ -196,5 +197,6 @@ export function parseWorktrees(out) {
     else if (line.startsWith("branch ")) cur.branch = line.slice(7).replace(/^refs\/heads\//, "");
     else if (line === "bare" || line.startsWith("prunable")) cur.gone = true;
   }
-  return all.slice(1).filter((w) => !w.gone).map(({ path, branch, head }) => ({ path, branch, head }));
+  const own = main && all[0] && !all[0].gone ? [{ path: all[0].path, branch: all[0].branch, head: all[0].head, main: true }] : [];
+  return [...own, ...all.slice(1).filter((w) => !w.gone).map(({ path, branch, head }) => ({ path, branch, head }))];
 }
