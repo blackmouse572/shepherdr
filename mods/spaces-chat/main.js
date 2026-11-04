@@ -1048,20 +1048,32 @@ export default class Spaces extends View {
       .child(button("needs-you", label, { kind: "secondary", size: "lg", onClick: () => showInbox() }).w_full().h(34).pl(10).pr(8));
   }
 
-  compact({ w, i }, t) {
+  // The rail's space: its icon (emoji or folder) on a 34 tile, the roll's status dot on its corner, the name as a tip.
+  compact({ w, g, i, name }, t) {
+    const on = w.active, fresh = this.unread.has(w.id), quiet = muted(w.id);
+    const label = name ?? w.name ?? String(i + 1);
+    const list = this.agents[w.id] ?? [];
+    const needs = this.needs(w), busy = list.some((a) => a.status === "working");
+    const done = this.readyIn(w) + list.filter((a) => a.status === "done").length;
+    const kind = needs ? "needs" : busy ? "working" : done ? "done" : null;
     return h_flex()
       .id(`space-${w.id}`)
-      .h(26)
+      .relative()
+      .h(34)
       .flex_none()
+      .items_center()
       .justify_center()
-      .gap(4)
       .rounded(RADIUS.card)
       .cursor_pointer()
-      .when(w.active, (el) => el.bg(t.raised))
-      .hover((s) => s.bg(t.hover))
+      .tooltip(needs ? `${label} · ${needs} need you` : label)
+      .when(on, (el) => el.bg(t.selected).border_1().border_color(t.border))
+      .when(!on, (el) => el.hover((s) => s.bg(t.hover)))
       .on_click(() => run("space.select", { id: w.id }))
-      .child(nameText(String(i + 1), this.unread.has(w.id), muted(w.id) ? t.dim : w.active ? t.foreground : t.muted, t))
-      .child(div().text_color(tone(t, w.status)).child(glyph(w.status)));
+      .on_mouse_down("right", (e) => this.menu(w, g, label, e))
+      .child(iconOf(w.id)
+        ? div().text_size(16).when(quiet, (el) => el.opacity(0.5)).child(iconOf(w.id))
+        : svg("mods/workspace-chrome/folder.svg").size(16).text_color(fresh || on ? t.foreground : t.dim))
+      .when(Boolean(kind), (el) => el.child(div().absolute().top(2).right(6).child(this.statusDot(kind, t))));
   }
 
   close() { this.popup?.close?.(); }
@@ -1088,7 +1100,7 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
-    this.agents = collapsed ? {} : this.agentIndex(sp, panes());
+    this.agents = this.agentIndex(sp, panes());
     this.hidden = [];
     const rows = this.grouped(t, collapsed);
     const pill = collapsed ? null : this.edgePill(t);
