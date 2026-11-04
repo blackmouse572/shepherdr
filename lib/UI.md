@@ -58,14 +58,14 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   closes as Cancel and Esc do. New space, Rename and Add machine have the X; New space and Add machine lead with an icon. Dark only; light keeps the
   plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
   On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine.
-- `fieldFrame(el, { focused, error })`: a text field's frame (and boxes beside one, as New space's icon), as Doop
-  App 06: in dark a sunken well (#0A0B0A, darker than the dialog) with the quiet border, the accent border while focused,
-  red for an error; light keeps the plain field. Paths and hosts are typed in `MONO` (JetBrains Mono) at 12.5.
-  On: New space, Rename / New section, Add machine, the name prompt.
 - `dialogFooter({ onCancel, primary: { id, label, onClick, disabled }, note, error })`: 32 tall,
   optional dim note left (red when `error`), plain Cancel, then the solid primary. No "Esc" hint.
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`
   needs an id).
+- `fieldFrame(el, { focused, error })`: a text field's frame (and boxes beside one, as New space's icon), as Doop
+  App 06: in dark a sunken well (#0A0B0A, darker than the dialog) with the quiet border, the accent border while focused,
+  red for an error; light keeps the plain field. Paths and hosts are typed in `MONO` (JetBrains Mono) at 12.5.
+  On: New space, Rename / New section, Add machine, the name prompt.
 - `countBadge(need, ready, line)`: the red / green / split count badge (Tasks, tabs, spaces).
 - `banner(id, state, height)`: the duotone header (`attention`, `working`, `done`, `neutral`): a dark wash with halftone
   dots fading toward the left, a picture pinned to the right edge (`mods/tasks/banners/`, drawn by `scripts/banners.py`).
