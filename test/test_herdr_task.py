@@ -334,3 +334,104 @@ class Store:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Accounts(unittest.TestCase):
+    """Which Claude account a new agent starts on (herdr_task/accounts.py), and the hooks an account gets, in a
+    throwaway home: the module's HOME and FILE are patched, nothing is run."""
+
+    def setUp(self):
+        from unittest import mock
+        sys.path.insert(0, BIN)
+        import herdr_task.accounts as acc
+        import herdr_task.sessions as sess
+        self.acc, self.sess = acc, sess
+        self.home = tempfile.mkdtemp()
+        for mod, name, value in ((acc, "HOME", self.home), (acc, "FILE", os.path.join(self.home, ".herdr", "accounts.json")),
+                                 (sess, "HOME", self.home)):
+            p = mock.patch.object(mod, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        os.makedirs(os.path.join(self.home, ".claude"))
+        with open(os.path.join(self.home, ".claude", "settings.json"), "w") as f:
+            json.dump({"model": "x", "hooks": {
+                "PermissionRequest": [{"hooks": [{"type": "command", "command": "sh '/a/mods/chat/ask-hook.sh'"}]}],
+                "Stop": [{"hooks": [{"type": "command", "command": "my-own-hook"}]}]}}, f)
+
+    def pick(self, d):
+        os.makedirs(os.path.join(self.home, ".herdr"), exist_ok=True)
+        with open(self.acc.FILE, "w") as f:
+            json.dump(d, f)
+
+    def test_active_and_env(self):
+        self.assertEqual(self.acc.active(), "default")
+        self.assertEqual(self.acc.env("default"), [])
+        self.pick({"active": "work"})
+        self.assertEqual(self.acc.active(), "default", "a picked account whose folder isn't there")
+        os.makedirs(os.path.join(self.home, ".claude-work"))
+        self.assertEqual(self.acc.active(), "work")
+        self.assertEqual(self.acc.env("work"), [f"CLAUDE_CONFIG_DIR={self.home}/.claude-work"])
+        self.pick({"active": "../etc"})
+        self.assertEqual(self.acc.active(), "default")
+        with self.assertRaises(self.acc.Fail):
+            self.acc.folder("Bad Name")
+
+    def test_prepare_copies_only_our_hooks_once(self):
+        path, made, hooks = self.acc.prepare("work")
+        self.assertTrue(made)
+        self.assertEqual(hooks, ["PermissionRequest"])
+        self.assertEqual(oct(os.stat(path).st_mode & 0o777), "0o700")
+        with open(os.path.join(path, "settings.json")) as f:
+            d = json.load(f)
+        self.assertIn("ask-hook.sh", json.dumps(d["hooks"]["PermissionRequest"]))
+        self.assertNotIn("Stop", d["hooks"])
+        self.assertEqual(self.acc.prepare("work")[1:], (False, []))
+        with self.assertRaises(self.acc.Fail):
+            self.acc.prepare("default")
+
+    def test_sessions_found_in_any_account(self):
+        from unittest import mock
+        d = os.path.join(self.home, ".claude-work")
+        os.makedirs(os.path.join(d, "sessions"))
+        os.makedirs(os.path.join(d, "projects", "p"))
+        with open(os.path.join(d, "sessions", "4242.json"), "w") as f:
+            json.dump({"sessionId": "s-1"}, f)
+        open(os.path.join(d, "projects", "p", "s-1.jsonl"), "w").close()
+        with mock.patch.object(self.sess, "kids", lambda pid: []):
+            self.assertEqual(self.sess.session_of(4242), ("s-1", os.path.join(d, "projects", "p", "s-1.jsonl")))
+
+    def test_launch_starts_claude_on_the_account_and_records_it(self):
+        from unittest import mock
+        import herdr_task.launch as L
+        os.makedirs(os.path.join(self.home, ".claude-work"))
+        self.pick({"active": "work"})
+        seen = []
+
+        class R:
+            returncode, stderr = 0, ""
+            stdout = json.dumps({"address": "t9"})
+
+        def run(argv, *a, **k):
+            seen.append(argv)
+            return R()
+
+        class S:
+            dirty = False
+            key = staticmethod(lambda t: "k-1")
+            ref = staticmethod(lambda t: "K-1")
+        for name, value in (("run", run), ("hc_json", lambda *a: None), ("track", lambda *a: None),
+                            ("folder_for", lambda s, t: self.home), ("low_priority", lambda argv, name: argv),
+                            ("own_argv", lambda argv: argv)):
+            p = mock.patch.object(L, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        task = {"id": 1, "title": "x", "agents": []}
+        a = L.launch(S(), task, ["claude"], "sp1")
+        self.assertEqual(a["account"], "work")
+        self.assertIn(f"CLAUDE_CONFIG_DIR={self.home}/.claude-work", seen[-1])
+        # A resumed session stays on its own account; Codex gets no account.
+        a = L.launch(S(), task, ["claude"], "sp1", resume=["claude", "--resume", "s"], account="default")
+        self.assertEqual(a["account"], "default")
+        self.assertFalse(any(x.startswith("CLAUDE_CONFIG_DIR=") for x in seen[-1]))
+        a = L.launch(S(), task, ["codex"], "sp1")
+        self.assertNotIn("account", a)

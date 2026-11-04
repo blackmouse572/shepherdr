@@ -81,3 +81,20 @@ test("the pill, the updated line and the popover's height", () => {
   expect(capHeight(popoverHeight(many), 900)).toBe(630);
   expect(capHeight(popoverHeight([acct("a", 1, 1)]), 900)).toBe(popoverHeight([acct("a", 1, 1)]));
 });
+
+test("names of the person's own, accounts removed from Shepherdr, and new accounts' ids", async () => {
+  const { shown, hiddenOf, accountId, addProblem, cleanName } = await import("./usage.js");
+  const list = [acct("default", 1, 1), acct("personal", 1, 1), acct("work", 1, 1)];
+  const pr = { names: { default: "Company", work: "Side" }, hidden: ["personal"] };
+  expect(shown(list, pr).map((a) => a.name)).toEqual(["Company", "Side"]);
+  expect(hiddenOf(list, pr).map((a) => a.id)).toEqual(["personal"]);
+  expect(accountId("  My Work Account!! ")).toBe("my-work-account");
+  expect(accountId("Café")).toBe("cafe");
+  expect(accountId("a".repeat(40)).length).toBe(24);
+  expect(addProblem("", list)).toBe("Give it a name.");
+  expect(addProblem("!!!", list)).toBe("Use letters or digits in the name.");
+  expect(addProblem("Default", list)).toBe("Default is ~/.claude itself.");
+  expect(addProblem("Work", list)).toBe("There is already an account in ~/.claude-work.");
+  expect(addProblem("Client A", list)).toBe("");
+  expect(cleanName("  a\n  b ")).toBe("a b");
+});

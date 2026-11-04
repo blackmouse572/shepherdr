@@ -4,34 +4,41 @@
 //
 // The engine (startUsage) runs in the status bar, which is always loaded: herdr-usage at start, every 5 minutes and
 // when Refresh asks (shared "usage.refresh" = time asked). What it read is shared "usage" for every view; the person's
-// picks are ~/.herdr/accounts.json = { active: <account id>, switch_at: 50..100 } (100: never switch), also shared as
-// "usage.prefs". Past the switch point the engine moves "active" to the emptiest other account and says so in a toast.
-// herdr-task reading "active" to start new work on that account (CLAUDE_CONFIG_DIR) comes with its accounts support.
+// picks are ~/.herdr/accounts.json = { active: <account id>, switch_at: 50..100 (100: never switch), names: { id: name },
+// hidden: [id] }, also shared as "usage.prefs". Past the switch point the engine moves "active" to the emptiest other
+// account and says so in a toast. herdr-task starts new Claude agents on "active" (herdr_task/accounts.py).
+// Accounts are added (a ~/.claude-<id> folder with Shepherdr's hooks, then a terminal to sign in), renamed (a name of
+// the person's own; the folder stays) and removed from Shepherdr (hidden; the folder stays) here too.
 //
 // Shared: the source is lib/usage-data.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/usage-data.js, never a mod's copy, then run bin/sync-shared.
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, appHome, home, spaces, shared, setShared, readTextFile, writeTextFile, theme } from "herdr";
+import { exec, appHome, home, spaces, shared, setShared, readTextFile, writeTextFile, theme, run } from "herdr";
 import { TEXT, need, green, red, onStatus, toast } from "./ui.js";
-import { clampSwitch, dueSwitch, meterTone, SWITCH_DEFAULT } from "./core/usage.js";
+import { clampSwitch, dueSwitch, meterTone, shown, accountId, cleanName, WORDS, SWITCH_DEFAULT } from "./core/usage.js";
 
 export const USAGE = "usage";
 export const PREFS = "usage.prefs";
 export const REFRESH = "usage.refresh";
+const FAST = "usage.fast"; // until when the engine reads every 20 s (a sign-in under way)
 const EVERY = 5 * 60000;
 const SCRIPT = () => `${appHome()}/mods/workspace-status-chat/bin/herdr-usage`;
 const FILE = () => `${home()}/.herdr/accounts.json`;
 export const MONO = "JetBrains Mono";
 
 export const usage = () => shared(USAGE) ?? null;
-export const prefs = () => ({ active: null, switch_at: SWITCH_DEFAULT, ...(shared(PREFS) ?? {}) });
+export const prefs = () => ({ active: null, switch_at: SWITCH_DEFAULT, names: {}, hidden: [], ...(shared(PREFS) ?? {}) });
+// The Claude accounts as the person sees them: their own names, without the ones removed from Shepherdr.
+export const accounts = () => shown(usage()?.claude ?? [], prefs());
 
 export async function loadPrefs() {
   let p = {};
   try { p = JSON.parse((await readTextFile(FILE())) ?? "{}") ?? {}; } catch { p = {}; }
-  const out = { active: typeof p.active === "string" ? p.active : null, switch_at: clampSwitch(p.switch_at) };
+  const names = p.names && typeof p.names === "object" ? Object.fromEntries(Object.entries(p.names).filter(([, v]) => typeof v === "string")) : {};
+  const hidden = Array.isArray(p.hidden) ? p.hidden.filter((x) => typeof x === "string") : [];
+  const out = { active: typeof p.active === "string" ? p.active : null, switch_at: clampSwitch(p.switch_at), names, hidden };
   setShared(PREFS, out);
   return out;
 }
@@ -70,7 +77,7 @@ async function read() {
 
 // Past the switch point: new work goes to the emptiest other account, once, with a toast.
 function autoSwitch() {
-  const d = dueSwitch(usage()?.claude ?? [], prefs());
+  const d = dueSwitch(accounts(), prefs());
   if (!d) return;
   setPrefs({ active: d.to.id });
   toast({ title: `New work now goes to ${d.to.name}`, body: `${d.why}. Running tasks stay on ${d.from.name}.`, level: "info" });
@@ -83,13 +90,67 @@ export function startUsage(cx) {
   let asked = shared(REFRESH) ?? 0;
   cx.spawn(async () => { await loadPrefs(); await read(); });
   cx.timer.every(EVERY, (cx) => cx.spawn(async () => { await read(); }));
+  let fastAt = 0;
   cx.timer.every(1000, (cx) => {
     const at = shared(REFRESH) ?? 0;
-    if (at === asked) return;
+    const now = Date.now();
+    const fast = (shared(FAST) ?? 0) > now && now - fastAt >= 20000;
+    if (at === asked && !fast) return;
     asked = at;
+    if (fast) fastAt = now;
     cx.spawn(async () => { await read(); });
   });
 }
+
+// ---- adding, signing in, renaming, removing ---------------------------------------------------------------------
+
+const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
+const folderOf = (id) => (id === "default" ? `${home()}/.claude` : `${home()}/.claude-${id}`);
+
+// A terminal signing the account in (Claude Code's /login with that folder), shown over the window. It runs in the
+// person's login shell, as herdr-task starts agents, so their PATH finds claude.
+export async function signIn(id, name) {
+  const sh = (await exec("sh", ["-c", 'printf %s "${SHELL:-/bin/sh}"']).catch(() => null))?.stdout?.trim() || "/bin/sh";
+  const env = id === "default" ? [] : [`CLAUDE_CONFIG_DIR=${folderOf(id)}`];
+  const r = await exec("hc", ["run", "--bg", "--json", "--no-parent", "--keep", "--cwd", home(), "--name", `sign-in-${id}`.slice(0, 32),
+    "--", "env", ...env, sh, "-lic", `claude /login; exec ${sh} -i`]);
+  let out = {};
+  try { out = JSON.parse(r.stdout || "{}"); } catch {}
+  if (r.code !== 0 || !out.address) throw new Error((r.stderr || r.stdout || "The terminal didn't start.").trim());
+  run("terminal.peek", { terminal: out.address });
+  toast({ title: WORDS.signInTitle(name ?? id), body: WORDS.signInBody, level: "info" });
+  // Its meters once the person has signed in: the engine reads every 20 s for the next 5 minutes.
+  setShared(FAST, Date.now() + 5 * 60000);
+  return out.address;
+}
+
+// A new account: its folder (owner only) with Shepherdr's hooks (herdr-task accounts prepare), its name, then the
+// terminal to sign in. Throws with herdr-task's reason.
+export async function addAccount(name) {
+  const id = accountId(name);
+  const r = await exec(CLI(), ["accounts", "prepare", id, "--json"]);
+  let out = {};
+  try { out = JSON.parse(r.stdout || "{}"); } catch {}
+  if (r.code !== 0 || out.error) throw new Error(out.error || r.stderr || "Couldn't make its folder.");
+  const nice = cleanName(name);
+  setPrefs({ names: { ...prefs().names, [id]: nice }, hidden: prefs().hidden.filter((x) => x !== id) });
+  refresh();
+  await signIn(id, nice);
+  return id;
+}
+
+export function renameAccount(id, name) {
+  const names = { ...prefs().names };
+  const nice = cleanName(name);
+  if (nice) names[id] = nice; else delete names[id];
+  setPrefs({ names });
+}
+// Removed from Shepherdr: hidden from every view; its folder and sign-in stay. Never the active one.
+export function hideAccount(id) {
+  if (id === "default" || prefs().active === id) return;
+  setPrefs({ hidden: [...new Set([...prefs().hidden, id])] });
+}
+export const showAccount = (id) => setPrefs({ hidden: prefs().hidden.filter((x) => x !== id) });
 
 // ---- parts ---------------------------------------------------------------------------------------------------
 

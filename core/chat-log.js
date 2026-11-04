@@ -1,8 +1,9 @@
 // Shared core: the source is core/chat-log.js (was mods/chat/log.js); the chat mod, the service and the web
 // app read agents' logs with it. bin/sync-shared copies it into mods/chat/core/. Edit it here, never a copy.
 // Finding an agent's own session log and reading it as a conversation.
-// Claude Code: ~/.claude/sessions/<pid>.json names the session its process writes, so the
-// log is ~/.claude/projects/*/<sessionId>.jsonl. Codex keeps its rollout file open, so the
+// Claude Code: <account>/sessions/<pid>.json names the session its process writes, so the
+// log is <account>/projects/*/<sessionId>.jsonl; <account> is ~/.claude or an account's
+// ~/.claude-<id> (Settings > Accounts: a task's agent can run on any of them). Codex keeps its rollout file open, so the
 // file is whatever rollout-*.jsonl its process (or a child) holds. Both are exact: no
 // guessing by folder or time, so two agents in one folder never get mixed up.
 
@@ -12,11 +13,12 @@ kind="$1"; pid="$2"
 kids() { for k in $(pgrep -P "$1" 2>/dev/null); do echo "$k"; kids "$k"; done; }
 for p in "$pid" $(kids "$pid"); do
   if [ "$kind" = claude ]; then
-    j="$HOME/.claude/sessions/$p.json"
-    [ -f "$j" ] || continue
+    j=""
+    for c in "$HOME/.claude" "$HOME"/.claude-*; do [ -f "$c/sessions/$p.json" ] && { j="$c/sessions/$p.json"; break; }; done
+    [ -n "$j" ] || continue
     id=$(sed -n 's/.*"sessionId":"\\([0-9a-fA-F-]*\\)".*/\\1/p' "$j")
     [ -n "$id" ] || continue
-    for f in "$HOME"/.claude/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
+    for f in "\${j%/sessions/*}"/projects/*/"$id".jsonl; do [ -f "$f" ] && { echo "$f"; exit 0; }; done
     echo "pending"; exit 0
   else
     if [ -d "/proc/$p/fd" ]; then

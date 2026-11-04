@@ -20,12 +20,19 @@ def kids(pid):
     return out
 
 
+def claude_folders():
+    """Every Claude account's config folder here (accounts.py): ~/.claude, then each ~/.claude-<id>."""
+    import glob
+    return [os.path.join(HOME, ".claude")] + sorted(d for d in glob.glob(os.path.join(HOME, ".claude-*")) if os.path.isdir(d))
+
+
 def session_of(pid):
-    """(session id, log path) of the agent process pid (or a child), as mods/chat/log.js finds it:
-    Claude Code names its session in ~/.claude/sessions/<pid>.json; Codex holds its rollout open."""
+    """(session id, log path) of the agent process pid (or a child), as core/chat-log.js finds it:
+    Claude Code names its session in <account folder>/sessions/<pid>.json; Codex holds its rollout open."""
+    folders = claude_folders()
     for p in [str(pid)] + kids(pid):
-        j = os.path.join(HOME, ".claude", "sessions", p + ".json")
-        if os.path.isfile(j):
+        j = next((x for x in (os.path.join(c, "sessions", p + ".json") for c in folders) if os.path.isfile(x)), None)
+        if j:
             try:
                 with open(j) as f:
                     sid = json.load(f).get("sessionId")
@@ -33,7 +40,7 @@ def session_of(pid):
                 sid = None
             if sid:
                 log = None
-                base = os.path.join(HOME, ".claude", "projects")
+                base = os.path.join(os.path.dirname(os.path.dirname(j)), "projects")
                 for d in os.listdir(base) if os.path.isdir(base) else []:
                     f = os.path.join(base, d, sid + ".jsonl")
                     if os.path.isfile(f):
