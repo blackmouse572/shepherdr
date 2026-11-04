@@ -15,14 +15,14 @@
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
-import { shared, machines, window as win } from "herdr";
+import { shared, machines, spaces, window as win } from "herdr";
 import { TEXT, RADIUS, H, button, need, red, green, onStatus, toast, plainError, toggleSwitch, segmented, isDark, bannerBg, bannerDots, SERIF } from "./ui.js";
 import { usage, accounts, prefs, setPrefs, loadPrefs, refresh, signIn, addAccount, renameAccount, hideAccount, showAccount,
   setDefault, setSkipped, openFolder, codexSignIn, codexSignOut, logo, meterBar, avatar, MONO, PREFS } from "./usage-data.js";
 import { WORDS, pctText, resetsLine, activeOf, updatedLine, errorLine, hiddenOf, addProblem, accountId, ordered, moved,
   dropped, dropEdge, staleLine, badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped } from "./core/usage.js";
 import { statsOf, pollNow } from "./machines.js";
-import { SECTIONS } from "./core/settings.js";
+import { SECTIONS, cliRoles, rolesLine } from "./core/settings.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
 const ROW_H = 52, MENU_W = 228;
@@ -249,8 +249,9 @@ function stepBtn(t, id, icon, off, onClick) {
     .child(svg(I(icon)).size(13));
 }
 
-// The Codex card: signed in and its plan, its meter, then Sign in again and Sign out (with a confirm).
-function codexCard(t, s, cx, readOnly = false) {
+// The Codex card: signed in and its plan, its meter, the spaces it works in (`roles`, rolesLine), then Sign in again
+// and Sign out (with a confirm).
+function codexCard(t, s, cx, roles = null, readOnly = false) {
   const on = Boolean(cx?.signed_in);
   const ses = session(cx), wk = weekly(cx);
   const dim = (x) => div().text_size(TEXT.label).line_height("17px").text_color(t.dim).child(x);
@@ -263,7 +264,7 @@ function codexCard(t, s, cx, readOnly = false) {
       .child(meterBar("acc-codex-m", ses?.pct ?? null, { width: 120, height: 5 }))
       .child(usageShort(cx))))
     .when(on && Boolean(cx.error), (el) => el.child(dim(errorLine(cx))))
-    .child(dim(on ? WORDS.codexAbout : WORDS.codexOut))
+    .child(dim([roles, on ? WORDS.codexAbout : WORDS.codexOut].filter(Boolean).join(" ")))
     .when(!readOnly && !s.codexOut, (el) => el.child(h_flex().gap(8)
       .child(button("acc-codex-in", on ? WORDS.signInAgain : WORDS.signIn, { icon: I("login"), onClick: () => codexSignIn().catch(failed("Couldn't open the sign-in")) }))
       .when(on, (el) => el.child(button("acc-codex-out", WORDS.signOut, { kind: "plain", onClick: () => { s.codexOut = true; } })))))
@@ -344,5 +345,5 @@ export function accountsSection(view, t, cx) {
     .child(div().pt(8).child(dim(WORDS.newWork)))
     .child(h_flex().w_full().pt(14).gap(14).items_start()
       .child(div().flex_1().min_w(0).child(switchingCard(t, pr, here)))
-      .child(div().w(300).flex_none().child(s ? codexCard(t, s, u?.codex) : div())));
+      .child(div().w(300).flex_none().child(s ? codexCard(t, s, u?.codex, view.cfg ? rolesLine(cliRoles(view.cfg, spaces().map((x) => x.id), "codex", view.clis)) : null) : div())));
 }
