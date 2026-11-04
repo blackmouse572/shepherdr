@@ -14,10 +14,12 @@
 // picker (mods/spaces-chat icon.js, opened as that mod's popup; its pick comes back through
 // shared "spaces-chat.iconpick"), saved for the new space as Rename saves it (coordinator.js
 // createSpace).
-// Only the folder and icon are asked (DECISIONS.md, New space dialog): every new space opens with its
-// Assistant chat, on Shepherdr settings' coordinator (else the CLI's default); the person changes
-// the model in the chat's own model button. Task IDs aren't asked here either: herdr-task picks
-// the folder's prefix and the coordinator may change it (only agents set up tasks).
+// As Doop App 06: the Machine (with another one connected; a pick opens New space there), the icon and
+// folder, the Name (empty: from the folder), "Start a coordinator" (the Assistant chat, on Shepherdr
+// settings' coordinator, else the CLI's default; this computer only) and "Open a terminal tab too"
+// (keeps Herdr's first shell tab beside it). The model is changed in the chat's own model button. Task
+// IDs aren't asked: herdr-task picks the folder's prefix and the coordinator may change it. Section
+// isn't asked yet (sections belong to the sidebar, mods/spaces-chat).
 // A folder that isn't in a git repo (one made on Create too, never home) offers "Make it a git
 // repo", on by default (Shepherdr makes every such folder one): Create runs git init on main with
 // an empty first commit, so tasks get worktrees; files already there stay uncommitted. The line
@@ -28,8 +30,8 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused, window } from "herdr";
-import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, fieldFrame, MONO, TEXT, RADIUS } from "./ui.js";
-import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator } from "./coordinator.js";
+import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, segmented, fieldFrame, MONO, TEXT, RADIUS } from "./ui.js";
+import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
 // The suggestions' width (the field's: the dialog's 460 less its padding, the icon, Browse… and the gaps).
@@ -60,6 +62,14 @@ export default class NewSpace extends View {
     this.busy = false;
     this.error = "";
     this.icon = null; // an emoji, null: "#"
+    // "Start a coordinator": the Assistant chat, on as Shepherdr settings' "Open the Assistant" says; this computer only.
+    this.assistant = autoCoordinator() && !this.machine;
+    this.shell = false; // "Open a terminal tab too": keep Herdr's first shell tab beside the Assistant
+    // The space's name: empty, createSpace names it from the folder (its repo's top, "Home" at home).
+    this.name = InputState.new({ placeholder: W.namePlaceholder });
+    this.name.on("submit", (e, cx) => this.create(cx));
+    this.name.on("focus", (_e, cx) => { this.nameFocused = true; cx.notify(); });
+    this.name.on("blur", (_e, cx) => { this.nameFocused = false; cx.notify(); });
     this.picked = shared(PICK)?.at ?? 0;
     this.input = InputState.new({ placeholder: W.placeholder, value: tilde(this.defaultFolder()) });
     this.text = this.input.value();
@@ -231,11 +241,12 @@ export default class NewSpace extends View {
         // template's own agent.
         const choice = { ...(shepherdrFor(await readShepherdr(), `m:${LOCAL_MACHINE}`).coordinator ?? {}) };
         // The tab bar makes it (coordinator.js watchNewSpaces): this dialog goes as the view moves.
-        // Shepherdr settings' "Open the Assistant" off (shared "coordinator.auto" false), or a space
+        // "Start a coordinator" off (it starts as Shepherdr settings' "Open the Assistant"), or a space
         // on another machine (the Assistant runs on this computer only): settings null, so the
         // space keeps Herdr's own first tab and gets no Assistant.
-        const assistant = autoCoordinator() && !this.machine;
-        setShared("newspace.createreq", { folder, machine: this.machine, settings: assistant ? choice : null, icon: this.icon, at: Date.now() });
+        const assistant = this.assistant && !this.machine;
+        setShared("newspace.createreq", { folder, machine: this.machine, settings: assistant ? choice : null, icon: this.icon,
+          name: this.name.value().trim(), shell: this.shell, at: Date.now() });
         this.close();
         return;
       } catch (e) {
@@ -273,6 +284,25 @@ export default class NewSpace extends View {
       .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(11.5).text_color(t.dim).child(tilde(path)));
   }
 
+  // Another machine picked: New space again, there (its recent folders and home are looked up first).
+  pickMachine(m) {
+    if ((m || null) === this.machine || this.busy) return;
+    this.busy = true;
+    newSpace({ machine: m || null }).finally(() => this.close());
+  }
+
+  // A switch row (Doop App 06's .tr): an icon, the words and a dim line under them, the switch at the right; the
+  // whole row toggles unless it's `off` (then dim, the switch showing what happens anyway).
+  toggleRow(t, id, icon, title, about, on, set, off = false) {
+    return h_flex().id(id).h(K.toggle).flex_none().gap(12).items_center()
+      .when(!off, (el) => el.cursor_pointer().on_click((_e, cx) => { set(!on); cx.notify(); }))
+      .child(svg(icon).size(16).flex_none().text_color(t.muted))
+      .child(v_flex().flex_1().min_w(0).gap(2)
+        .child(div().truncate().text_color(off ? t.dim : t.foreground).child(title))
+        .child(div().truncate().text_size(11.5).text_color(t.dim).child(about)))
+      .child(toggleSwitch(`${id}-switch`, on, (v) => set(v), { disabled: off }));
+  }
+
   // Under the field: "Make it a git repo" (a switch) for a folder outside git, a quiet word
   // for one in a repo, else empty; always the same height.
   repoLine(t, folder) {
@@ -307,6 +337,8 @@ export default class NewSpace extends View {
     // Under the field, one quiet line: a folder that isn't there yet is made on Create. Its room is
     // kept, so the dialog keeps its height either way; an error goes beside the buttons, in red.
     const note = field && this.exists.get(field) === false ? W.missing : "";
+    const machineList = newSpaceMachines(this.machine);
+    const withAssistant = this.assistant && !this.machine;
     // The folder as typed, in the monospace (a path), in the design's sunken field.
     const input = fieldFrame(Input.new(this.input).w_full().h(K.field).px(10).items_center(), { focused: this.focused })
       .font_family(MONO).text_size(12.5).text_color(t.foreground);
@@ -323,6 +355,12 @@ export default class NewSpace extends View {
       .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: RADIUS.dialog - 1, lead: DIALOG_ICON.folder, sub: W.sub, onClose: () => this.close(),
         right: this.machine ? div().min_w(0).max_w(200).truncate().text_size(TEXT.label).text_color(t.muted).child(W.on(this.machine)) : null }))
       .child(div().h(K.section - TITLE_SHIFT).flex_none())
+      // Machine (with another machine connected): picking one opens New space there.
+      .when(machineList.length > 1, (el) => el
+        .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.machine))
+        .child(div().h(K.gap).flex_none())
+        .child(segmented("machine", machineList.map((m) => [m ?? "", m ?? W.thisComputer]), this.machine ?? "", (v) => this.pickMachine(v), { size: "lg", fill: true }))
+        .child(div().h(K.section).flex_none()))
       .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.label))
       .child(div().h(K.gap).flex_none())
       // The icon (as the Rename dialog's), the field and Browse…: the desktop's own folder picker
@@ -338,6 +376,18 @@ export default class NewSpace extends View {
       .child(div().h(20).flex_none().pt(4).text_size(TEXT.label).text_color(t.dim).child(note))
       .child(div().h(4).flex_none())
       .child(this.repoLine(t, folder))
+      .child(div().h(K.section).flex_none())
+      .child(h_flex().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim)
+        .child(div().flex_1().child(W.name))
+        .child(div().font_family(MONO).text_size(TEXT.id).child(W.nameFrom)))
+      .child(div().h(K.gap).flex_none())
+      .child(fieldFrame(Input.new(this.name).w_full().h(K.field).px(10).items_center(), { focused: this.nameFocused }).text_color(t.foreground))
+      .child(div().h(K.section).flex_none())
+      .child(this.toggleRow(t, "start-assistant", "mods/shepherdr-settings/bot.svg", W.assistant, this.machine ? W.assistantOff : W.assistantWhy,
+        withAssistant, (v) => { this.assistant = v; }, Boolean(this.machine)))
+      .child(div().h(K.gap).flex_none())
+      .child(this.toggleRow(t, "open-shell", "mods/workspace-chrome-shepherdr/terminal.svg", W.shell, W.shellWhy(folder ? tilde(folder) : W.theFolder),
+        withAssistant ? this.shell : true, (v) => { this.shell = v; }, !withAssistant))
       .child(div().h(K.section).flex_none())
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.close(), note: this.error, error: true,
         primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx),

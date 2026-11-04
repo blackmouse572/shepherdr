@@ -183,7 +183,7 @@ export async function newSpace(space) {
   if (!at) return toast({ title: `Couldn't reach ${machine}`, body: "Try New space again once it's connected.", level: "error" });
   // The dialog draws its own panel (frame "none"), centered and as tall as what it shows now:
   // the overlay is the panel at its tallest.
-  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(recent.length), props: { recent, machine, home: at } });
+  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(recent.length, newSpaceMachines(machine).length > 1), props: { recent, machine, home: at } });
 }
 
 // A machine's home folder (null: this computer's).
@@ -194,15 +194,23 @@ export async function homeOf(machine = null) {
 }
 
 // The New space dialog's parts, in px (mods/newspace draws them at these sizes): its padding,
-// title, the Folder label and field (gap apart), list rows (a typed path's Use row, at most
-// NEWSPACE_SHOWN folders, then Choose folder…), the Coordinator row and, while it's on, its two
-// rows (Task ID, Agent), the buttons, and the space between sections. The overlay is the dialog
-// with the coordinator on; off, the dialog draws itself shorter in its middle.
-export const NEWSPACE = { pad: 18, title: 20, label: 16, gap: 4, field: 32, row: 31, line: 32, buttons: 32, section: 16 };
+// title and its line (sub), the Machine picker (with another machine), the Folder label and field
+// (gap apart), list rows (a typed path's Use row, at most NEWSPACE_SHOWN folders, then Choose
+// folder…), the Name field, the two switch rows (toggle, gap apart), the buttons, and the space
+// between sections. The overlay is the dialog at its tallest; the panel sits in its middle.
+export const NEWSPACE = { pad: 18, title: 20, sub: 18, label: 16, gap: 4, field: 32, row: 31, line: 32, toggle: 36, buttons: 32, section: 16 };
 export const NEWSPACE_SHOWN = 5;
-export function newSpaceHeight(n) {
+export function newSpaceHeight(n, picker = false) {
   const k = NEWSPACE, rows = 1 + Math.min(n, NEWSPACE_SHOWN) + 1;
-  return 2 * k.pad + k.title + k.section + k.label + k.gap + k.field + k.gap + rows * k.row + k.section + 3 * k.line + k.section + k.buttons;
+  const field = k.label + k.gap + k.field + k.section;
+  return 2 * k.pad + k.title + k.sub + k.section + (picker ? field : 0) + k.label + k.gap + k.field + k.gap + rows * k.row
+    + k.section + 3 * k.line + k.section + field + 2 * k.toggle + k.gap + k.section + k.buttons;
+}
+// The machines New space offers (its Machine picker): this computer (null), then each connected one, `machine`
+// (the dialog's) kept even while it loads.
+export function newSpaceMachines(machine = null) {
+  const there = machines().filter((m) => m.name && (m.layout !== "unavailable" || m.name === machine)).map((m) => m.name);
+  return [null, ...new Set(there)];
 }
 
 // A machine's folders people worked in (null: this computer's), newest first, at most 8: its spaces'
@@ -229,13 +237,14 @@ export async function recentFolders(machine = null) {
 // in it. `icon`: the emoji the dialog picked (null: "#"), kept as the sidebar's Rename keeps it
 // (mods/spaces-chat sections.js setIcon). Resolves with the space id.
 // With a coordinator, the space has only its Coordinator tab: Herdr's first shell tab goes, while
-// it is still a fresh shell nobody used.
-export async function createSpace(folder, settings, machine = null, icon = null) {
+// it is still a fresh shell nobody used, unless `shell` (New space's "Open a terminal tab too").
+// opts: { name (the dialog's; empty: from the folder), shell }.
+export async function createSpace(folder, settings, machine = null, icon = null, { name: given = "", shell = false } = {}) {
   setShared("coordinator.creating", Date.now());
   // Named from the start, as Herdr would call it (the repo's name, else the folder's) but "Home" at home:
   // an unnamed space follows its first terminal, and with the coordinator parked in a chat that
   // can be a task's worker in its worktree ("task-3-..."). A name given stays.
-  const name = await placeName(folder, machine);
+  const name = String(given ?? "").trim() || await placeName(folder, machine);
   const out = await app("space.new", { folder, name, ...(machine ? { machine } : {}) });
   const now = JSON.parse((await exec("herdr-app", ["ls"]).catch(() => ({ stdout: "" }))).stdout || "{}").spaces?.find((x) => x.id === out.space);
   if (now && !now.named) {
@@ -248,7 +257,7 @@ export async function createSpace(folder, settings, machine = null, icon = null)
   }
   if (settings === null) return out.space;
   await openCoordinator({ id: out.space, tabs: [], active: true, folder }, true, settings);
-  if (out.terminal && out.tab && (await freshShell(out.terminal)))
+  if (!shell && out.terminal && out.tab && (await freshShell(out.terminal)))
     await app("tab.close", { id: out.tab, confirmed: true }).catch(() => {});
   return out.space;
 }
@@ -337,7 +346,7 @@ export function watchNewSpaces(spaces) {
   const make = shared("newspace.createreq");
   if (make) {
     setShared("newspace.createreq", null);
-    if (Date.now() - make.at < 10000) createSpace(make.folder, make.settings ?? null, make.machine ?? null, make.icon ?? null)
+    if (Date.now() - make.at < 10000) createSpace(make.folder, make.settings ?? null, make.machine ?? null, make.icon ?? null, { name: make.name, shell: make.shell })
       .catch((e) => toast({ title: "Space wasn't made", body: plainError(e), level: "error" }));
   }
   // Settings > Machines turned a machine's Home Assistant on: its home space, made if missing.
