@@ -15,6 +15,9 @@ function find(node, id) {
 
 // The sidebar's rail goes by its width, not a flag: dragging its edge narrows it too.
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+// Note: measured in the window, the traffic lights (layout [12, 16]) sit ~5 below this row's middle; the field
+// drops to their line, and the row's left room clears the third light.
+const TL_DROP = 12;
 // A slim sidebar: the Jump field drops its keycaps so its word fits.
 const slim = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 250;
 const mac = () => window()?.platform === "macos";
@@ -69,7 +72,7 @@ export default class WorkspaceChrome extends View {
   // The design's Jump field (Doop App 02 .jump): a sunken box with its words and ⌘K; a click opens Jump.
   jumpField(t) {
     const caps = capsOf("mod.open:jump");
-    return h_flex().id("jump-field").flex_1().min_w(0).h(26).pl(10).pr(4).gap(8).items_center().rounded(RADIUS.card)
+    return h_flex().id("jump-field").flex_1().min_w(0).h(26).mt(TL_DROP).pl(10).pr(4).gap(8).items_center().rounded(RADIUS.card)
       .bg(t.background).border_1().border_color(t.border).text_size(TEXT.label).text_color(t.dim).cursor_pointer()
       .hover(s => s.border_color(t.input ?? t.border).text_color(t.muted))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -110,7 +113,7 @@ export default class WorkspaceChrome extends View {
     }
     // The brand row: the traffic lights' room on macOS, the Jump field, the sidebar's toggle.
     return h_flex().size_full().bg(t.chrome).pl(collapsed ? 6 : 14).pr(10).gap(8).items_center().text_size(13.5)
-      .when(mac() && !window()?.fullscreen && !collapsed, el => el.pl(76))
+      .when(mac() && !window()?.fullscreen && !collapsed, el => el.pl(86))
       .when(!collapsed, el => el.child(this.jumpField(t)))
       // On the macOS rail the traffic lights fill the row; the agents list's » unfolds it.
       .when(!(collapsed && mac()), el => el.child(this.button("sidebar-toggle", svg("mods/workspace-chrome-shepherdr/sidebar.svg").size(15), toggleSidebar)));
