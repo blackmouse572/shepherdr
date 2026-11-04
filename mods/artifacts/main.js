@@ -15,7 +15,9 @@ import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { spaces, panes, agents, readTextFile, watchFolder, home, theme, closeOverlay, props, shared, setShared } from "herdr";
 import { showInSidebar, backToList } from "./sidebar.js";
 import { artifactCli as cli, showViewer } from "./artview.js";
-import { toast, plainError, TEXT, RADIUS } from "./ui.js";
+import { toast, plainError, TEXT, RADIUS, isDark, bannerBg, bannerDots, SERIF, MONO } from "./ui.js";
+// Grouped by the task that made them, and the header's line (Doop App 10): core/artifacts.js.
+import { byTask, shortTitle, listLine, NO_TASK } from "./core/artifacts.js";
 
 const ICON = "mods/artifacts/artifacts.svg";
 const modOf = (machine, id) => (machine ? `art-${machine.replace(/[^A-Za-z0-9_-]+/g, "-")}-${id}` : `art-${id}`);
@@ -164,11 +166,17 @@ export default class Artifacts extends View {
     const empty = !this.error && this.store && !this.items.length;
     const q = this.query.value().trim();
     const shown = q ? this.items.filter((a) => this.found(a, q)) : this.items;
+    // Doop App 10's header: the wool banner, the title in the serif, "shepherdr · 4 from 3 tasks" in mono.
+    const d = isDark();
+    const line = listLine(this.all ? "All folders" : this.store?.name ?? "", this.items);
     return v_flex().id("artifacts").size_full().min_h(0).rounded(RADIUS.card).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(TEXT.body)
-      .child(h_flex().h(42).flex_none().pl(14).pr(8).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Artifacts"))
-        .child(div().flex_1().min_w(0).truncate().text_size(TEXT.label).text_color(t.dim).child(this.all ? "All folders" : this.store?.name ?? ""))
-        .child(this.toggle("art-all", "All", this.all, t, (cx) => { this.all = !this.all; this.loaded = null; cx.spawn(async (cx) => this.load(cx)); })))
+      .child(div().relative().w_full().h(54).flex_none().overflow_hidden().border_b(1).border_color(t.border)
+        .when(d, (el) => el.bg(bannerBg("neutral")).child(bannerDots("neutral", RADIUS.card)))
+        .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(8).items_center()
+          .child(v_flex().flex_1().min_w(0).gap(3)
+            .child(div().truncate().when(d, (el) => el.font_family(SERIF).text_size(17)).when(!d, (el) => el.font_semibold()).child("Artifacts"))
+            .when(Boolean(line), (el) => el.child(div().truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(line))))
+          .child(this.toggle("art-all", "All", this.all, t, (cx) => { this.all = !this.all; this.loaded = null; cx.spawn(async (cx) => this.load(cx)); }))))
       .when(Boolean(this.store), (el) => el.child(this.searchField(t)))
       // A press in the list gives it the keyboard: F then goes to the search field.
       .child(v_flex().id("art-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(2)
@@ -182,7 +190,14 @@ export default class Artifacts extends View {
         .when(empty, (el) => el.child(this.emptyView(t)))
         .when(Boolean(q) && !empty && !shown.length, (el) => el.child(div().px(18).py(28).text_center().text_size(TEXT.label).text_color(t.dim)
           .child(`No artifacts match “${q}”.`)))
-        .children(shown.map((a) => this.row(a, t))));
+        .children(byTask(shown).flatMap((g, i) => [this.groupHead(g, i, t), ...g.items.map((a) => this.row(a, t, g.task))])));
+  }
+
+  // A task's heading over what it made: its id (or "Not from a task") and how many.
+  groupHead(g, i, t) {
+    return h_flex().id(`art-g-${g.task ?? "none"}`).flex_none().px(8).pt(i ? 12 : 6).pb(4).gap(8).items_center()
+      .child(div().flex_1().min_w(0).truncate().text_size(TEXT.label).font_medium().text_color(t.muted).child(g.task ?? NO_TASK))
+      .child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(String(g.items.length)));
   }
 
   // An artifact the search finds: by its title, the task that made it, who made it, or (with
@@ -241,21 +256,22 @@ export default class Artifacts extends View {
     return [`v${a.version}`, who?.program?.name, a.at ? ago(a.at) : null].filter(Boolean).join(" · ");
   }
 
-  row(a, t) {
+  row(a, t, task = null) {
     const mod = modOf(this.store?.machine ?? null, a.id);
     const space = spaces().find((s) => s.active);
     const tabs = new Set(space?.tabs.map((x) => x.id) ?? []);
     const open = panes().find((p) => p.mod === mod && tabs.has(p.tab));
     const shown = shared("artifacts.view")?.mod === mod;
     const busy = this.opening === a.id;
-    return h_flex().id(`art-${a.id}`).flex_none().px(8).py(7).gap(10).items_start().rounded(RADIUS.card).cursor_pointer()
+    return h_flex().id(`art-${a.id}`).flex_none().px(8).py(6).gap(11).items_center().rounded(RADIUS.card).cursor_pointer()
       .when(shown, (el) => el.bg(t.selected))
       .hover((s) => s.bg(shown ? t.selected : t.hover))
       .on_click((_e, cx) => this.open(a, (m) => this.inPlace(m, a), cx))
-      .child(h_flex().h(18).flex_none().items_center()
+      // The design's thumbnail slot: a small sunken tile with the artifact's icon (they're panels, not pictures).
+      .child(h_flex().w(44).h(32).flex_none().items_center().justify_center().rounded(6).bg(t.surface).border_1().border_color(t.border)
         .child(svg(ICON).size(14).flex_none().text_color(shown || open ? t.accent : t.dim)))
       .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(div().min_w(0).truncate().child(a.title))
+        .child(div().min_w(0).truncate().child(task ? shortTitle(a) : a.title))
         .child(h_flex().min_w(0).gap(8).text_size(TEXT.label).text_color(t.dim)
           .child(div().flex_1().min_w(0).truncate().child(busy ? "Opening…" : open ? `Open · ${this.detail(a)}` : this.detail(a)))
           // With All: its folder, dimmed, at the right (as task rows show where they ran).
@@ -313,14 +329,17 @@ export default class Artifacts extends View {
       .when(Boolean(n) && !hv.busy, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); step(n === latest ? null : n, cx); }))
       .child(svg(icon).size(14));
-    return h_flex().id("art-head").size_full().pl(6).pr(8).gap(6).items_center().border_b(1).border_color(t.border).bg(t.background)
+    const d = isDark();
+    // Doop App 10's viewer header: the banner's wash and the title in the serif (dark only).
+    return h_flex().id("art-head").relative().overflow_hidden().size_full().pl(6).pr(8).gap(6).items_center().border_b(1).border_color(t.border).bg(t.background)
+      .when(d, (el) => el.bg(bannerBg("neutral")).child(bannerDots("neutral")))
       .text_color(t.foreground).text_size(13)
       .child(h_flex().id("art-back").h(24).pl(4).pr(8).gap(2).flex_none().items_center().rounded(6).cursor_pointer()
         .text_size(TEXT.label).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); if (marking) setShared("artifacts.markup", null); backToList(); })
         .child(svg("mods/workspace-chrome/chevron-left.svg").size(14).flex_none())
         .child("Artifacts"))
-      .child(div().flex_1().min_w(0).truncate().font_semibold().child(title))
+      .child(div().flex_1().min_w(0).truncate().when(d, (el) => el.font_family(SERIF).text_size(15)).when(!d, (el) => el.font_semibold()).child(title))
       .when(Boolean(v), (el) => el.child(h_flex().flex_none().items_center()
         .when(kept.length > 1 || older, (row) => row.child(arrow("art-v-prev", "mods/workspace-chrome/chevron-left.svg", prev, `v${prev}`)))
         .child(div().id("art-v").px(2).flex_none().text_size(TEXT.label).text_color(older ? t.foreground : t.dim)

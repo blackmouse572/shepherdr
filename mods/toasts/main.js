@@ -5,8 +5,9 @@
 // error, amber a warning, green done, the accent otherwise), its title on one line, its body
 // wrapped to at most 3 lines, and an X on hover. A click runs its action (going to the agent)
 // and closes it. Each goes after its timeout; never while the pointer is on them.
-// Props of a toast: `sub` a dim mono line under the title; `buttons` [{ id, label, kind, set: [shared key, value] }]
-// under the body (the account switch's Undo and View): a press sets that shared value and closes the toast.
+// Props of a toast: `sub` a dim mono line under the title; `buttons` [{ id, label, kind, set: [shared key, value],
+// run: { name, args } }] under the body (the account switch's Undo and View, an update's Restart now): a press sets
+// that shared value and / or runs that command, and closes the toast.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -52,6 +53,7 @@ export default class Toasts extends View {
         .when(Array.isArray(n.buttons) && n.buttons.length > 0, (el) => el.child(h_flex().pt(6).gap(6).items_center()
           .children(n.buttons.map((b) => button(`toast-${n.id}-${b.id}`, String(b.label), { kind: b.kind ?? "secondary", onClick: () => {
             if (Array.isArray(b.set)) setShared(b.set[0], b.set[1]);
+            if (b.run?.name) run(b.run.name, b.run.args ?? {});
             this.dismiss(n.id);
           } }))))))
       // The X's place is always kept, so nothing moves when it shows.

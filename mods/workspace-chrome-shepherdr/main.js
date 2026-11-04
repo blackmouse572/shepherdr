@@ -1,7 +1,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, run, props, window, shared, setShared, updates, layout, keys } from "herdr";
-import { openSettings, TEXT, RADIUS } from "./ui.js";
+import { openSettings, toast, TEXT, RADIUS } from "./ui.js";
 import { keyCaps } from "./core/keys.js";
 
 function find(node, id) {
@@ -45,6 +45,20 @@ function kbd(caps, t) {
       .text_color(t.muted).whitespace_nowrap().child(c)));
 }
 
+// Doop App 12's "update ready": once per downloaded version, a toast with Restart now and What's new. Never restarts
+// by itself. Shared "updates.toasted": the last version it was shown for.
+function updateToast(cx) {
+  const ready = updates()?.app?.ready;
+  if (!ready || shared("updates.toasted") === ready) return;
+  cx.timer.after(0, () => {
+    if (shared("updates.toasted") === ready) return;
+    setShared("updates.toasted", ready);
+    toast({ title: `Herdr ${ready} is ready`, sub: "Restart keeps your tabs, terminals and running agents", level: "info", timeout: 60000,
+      buttons: [{ id: "restart", label: "Restart now", kind: "primary", run: { name: "app.update" } },
+        { id: "notes", label: "What's new", kind: "plain", run: { name: "app.whats_new" } }] });
+  });
+}
+
 export default class WorkspaceChrome extends View {
   button(id, label, action) {
     const t = theme();
@@ -66,10 +80,11 @@ export default class WorkspaceChrome extends View {
       .when(Boolean(caps) && !slim(), el => el.child(kbd(caps, t)));
   }
 
-  render() {
+  render(cx) {
     const t = theme();
     const collapsed = narrow();
     if (props()?.footer) {
+      updateToast(cx);
       // New space, as the design's footer (Doop App 01): the accent +, the words bright, a chevron, since it opens
       // the sidebar's menu (spaces-chat: New space, New worktree, New section, Add machine) at the pointer.
       const add = h_flex().id("new-space").h(28).px(8).gap(9).items_center().rounded(8).text_color(t.foreground).when(collapsed, el => el.justify_center().tooltip("New space"))

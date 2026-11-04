@@ -184,6 +184,20 @@ export const MACHINES = {
   own: { title: "Limits", about: "Same as all machines.", button: "Set its own" },
   old: { title: "Set before for its spaces", about: (names) => `${names.join(", ")}. These still apply to its spaces unless a space sets its own.` },
   home: { title: "Home Assistant", make: "Make home space" },
+  // The page's line and its cards (Doop App 09).
+  about: "Each machine runs herdr-core. Its spaces, terminals, agents and accounts live there.",
+  add: "Add machine",
+  stats: { spaces: "Spaces", terminals: "Terminals", agents: "Agents", accounts: "Accounts", settled: (n) => `${n} settled`, none: "None yet" },
+  signedOut: (name, where) => `${name} is signed out ${where ? `on ${where}` : "here"}`,
+  signedOutAbout: (local) => (local ? "Sign in to use it again." : "Sign in from a terminal on that machine."),
+  signIn: "Sign in again",
+  coreReady: (v) => `core ${v} is ready`,
+  coreAbout: (was) => `${was ? `This computer runs ${was} · ` : ""}restarts no terminals`,
+  updateCore: "Update core",
+  updating: "Updating…",
+  offline: "Can't reach it now. Its spaces come back when it answers.",
+  connecting: "Looking for agents and accounts…",
+  allMachines: "Every machine",
 };
 // What the old machine scope could hold, as the person knows it.
 export const OLD_NAMES = { coordinator: "Assistant", worker: "Workers", reviewer: "Reviewer", backup: "Backup agent",

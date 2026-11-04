@@ -116,3 +116,35 @@ export const NO_USAGE = "No usage info.";
 export const READING_MACHINE = "Reading this machine…";
 // A machine header's red dot: its health couldn't be read.
 export const healthErrorWords = (error) => `Couldn't read its health: ${error}`;
+
+// ---- a machine's card in Settings > Machines (Doop App 09) ----------------------------------------------------------
+
+export const CARD_STATE = { connected: "Connected", needs: "Needs you", connecting: "Connecting", offline: "Offline" };
+
+// Its spaces, terminals (panes in its tabs) and how many of those sit in settled tabs. machine: null for this computer.
+export function machineCounts(spaces, machine) {
+  const mine = (spaces ?? []).filter((s) => (s.machine ?? null) === (machine ?? null));
+  const tabs = mine.flatMap((s) => s.tabs ?? []);
+  const panes = (list) => list.reduce((n, t) => n + (Number(t.panes) || 0), 0);
+  return { spaces: mine.length, terminals: panes(tabs), settled: panes(tabs.filter((t) => t.settled)) };
+}
+
+// A card's state, its mono line and what needs the person there. local: this computer (its accounts: the Claude
+// accounts with { id, name, error }; core: updates().core). Another machine: layout from machines(), its plan reads.
+export function machineCard({ local = false, layout = "ready", stats = null, core = null, accounts = [] } = {}) {
+  const alerts = [];
+  if (local) {
+    for (const a of accounts ?? []) if (a?.error === "signed-out") alerts.push({ kind: "signed-out", id: a.id, name: a.name });
+  } else {
+    for (const [cli, r] of Object.entries(stats?.limits ?? {})) if (r?.state === "signed-out") alerts.push({ kind: "signed-out", cli, name: READS[cli] ?? cli });
+  }
+  if (local && core?.ready && !core.managed && core.ready !== core.version) alerts.push({ kind: "core", ready: core.ready, version: core.version });
+  const state = !local && layout === "unavailable" ? "offline" : !local && layout === "loading" ? "connecting"
+    : alerts.some((a) => a.kind === "signed-out") ? "needs" : "connected";
+  const h = stats?.health;
+  const sub = [local ? "local" : "ssh", local && core?.version ? `core ${core.version}` : null,
+    h && Number.isFinite(Number(h.load)) ? `load ${Number(h.load).toFixed(2)}` : null].filter(Boolean).join(" · ");
+  return { state, words: CARD_STATE[state], alerts, sub };
+}
+// A card that wants the person: the lantern banner, and the nav's dot.
+export const cardNeedsYou = (c) => c.state === "needs" || c.state === "offline";
