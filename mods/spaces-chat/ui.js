@@ -58,11 +58,16 @@ export const SERIF = "Geist Serif";
 // (dark), an optional dim line under it and something at the right (a close button). Put it first in a dialog
 // whose root is padded `pad` on every side: it reaches past that padding with negative margins, and its title
 // sits where the plain title did, so the content below moves down by only 8px. Light keeps the plain title.
-// opts: { pad (the root's padding, 18), state (banner state, "neutral"), sub, right }.
-export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null } = {}) {
+// opts: { pad (the root's padding, 18), state (banner state, "neutral"), sub, right, radius (the dialog's own
+// corner radius less its border, for a dialog that draws its own rounded frame) }.
+// TITLE_SHIFT: how much lower the content sits than under a plain title; a dialog of fixed height takes it off the
+// space under the title so its height stays.
+export const TITLE_SHIFT = 8;
+export function dialogTitle(id, title, { pad = 18, state = "neutral", sub = null, right = null, radius = 0 } = {}) {
   const t = theme();
   const d = dark();
-  return div().id(id).relative().flex_none().h(pad + 28 + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
+  return div().id(id).relative().flex_none().h(pad + 20 + TITLE_SHIFT + (sub ? 18 : 0)).mx(-pad).mt(-pad).overflow_hidden()
+    .when(radius > 0, (el) => el.rounded_t(radius))
     .when(d, (el) => el.bg(bannerBg(state)).border_b(1).border_color(t.border).child(bannerDots(state)))
     .child(h_flex().absolute().inset_0().px(pad).gap(12).items_center()
       .child(v_flex().flex_1().min_w(0).gap(2)
