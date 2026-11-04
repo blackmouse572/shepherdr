@@ -139,8 +139,9 @@ export class NeedsDrawer {
       })
       // Header: the attention banner, the bell, the title in the serif, how many and how old.
       .child(h_flex().relative().flex_none().h(HEADER).px(18).gap(12).items_center().overflow_hidden().border_b(1).border_color(t.border)
-        .when(dark, (el) => el.bg(bannerBg("attention")).child(bannerDots("attention")))
-        .child(svg("mods/spaces-chat/bell.svg").size(18).flex_none().text_color(need()))
+        // Nothing waiting: the quiet wool banner and a dim bell, not the lantern.
+        .when(dark, (el) => el.bg(bannerBg(all.length ? "attention" : "neutral")).child(bannerDots(all.length ? "attention" : "neutral")))
+        .child(svg("mods/spaces-chat/bell.svg").size(18).flex_none().text_color(all.length ? need() : t.dim))
         .child(v_flex().flex_1().min_w(0).gap(4)
           .child(div().truncate().text_color(t.foreground).when(dark, (el) => el.font_family(SERIF).text_size(HEAD.title))
             .when(!dark, (el) => el.text_size(TEXT.title).font_semibold()).child("Needs you"))
@@ -151,7 +152,7 @@ export class NeedsDrawer {
         .child(segmented("needs-filter", opts, this.filter, (f) => { this.filter = f; this.at = 0; })))
       .child(div().id("needs-cards").w_full().h(NEEDS_DRAWER.height - HEADER - FILTERS - FOOT - 2).flex_none().overflow_y_scrollbar()
         .child(v_flex().px(14).pt(4).pb(14).gap(12)
-          .when(!shown.length, (el) => el.child(div().py(40).w_full().flex().justify_center().text_color(t.dim).child("Nothing needs you")))
+          .when(!shown.length, (el) => el.child(div().py(40).w_full().flex().justify_center().text_color(t.dim).child(all.length ? "Nothing here in this filter" : "You're all caught up")))
           .children(shown.map(({ it, c }, i) => this.cardView(it, c, i === this.at, t, dark)))))
       .child(h_flex().flex_none().h(FOOT).px(16).gap(8).items_center().border_t(1).border_color(t.border)
         .font_family(MONO).text_size(TEXT.id)
