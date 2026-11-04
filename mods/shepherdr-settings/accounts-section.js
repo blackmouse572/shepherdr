@@ -3,10 +3,11 @@
 //   header     the page title, when usage was read, Refresh, and This Mac | <machine> ... when there are machines:
 //              another machine shows read-only, as Settings > Machines reads it (its ~/.claude and Codex).
 //   Claude     a card: its header with Add account (the name field opens under it), then one compact row per account
-//              in the switch order: its place, initial avatar, name and folder (mono), plan, a small meter with the
+//              in the switch order: its grip, initial avatar, name and folder (mono), plan, a small meter with the
 //              switch tick and "59% 5h · 51% wk", a badge (Default ★ where new work starts, Next, Skipped) and ⋯.
-//              ⋯: Rename, Set as default, Sign in again, Open folder, Move up / down (the switch order; gpui has no
-//              row drag here), Skip when switching, Remove… (hidden from Shepherdr; the folder stays).
+//              Drag a row by its grip to set the switch order (the line shows where it lands).
+//              ⋯: Rename, Set as default, Sign in again, Open folder, Move up / down (the order without a drag),
+//              Skip when switching, Remove… (hidden from Shepherdr; the folder stays).
 //   Switching  Switch automatically, Switch above (the 5h window), Work already running (Stays | Moves: stored,
 //              running work stays for now), Toast with Undo.
 //   Codex      signed in and its plan, a meter, Sign in again (codex login in a terminal) and Sign out.
@@ -19,18 +20,19 @@ import { TEXT, RADIUS, H, button, need, red, green, onStatus, toast, plainError,
 import { usage, accounts, prefs, setPrefs, loadPrefs, refresh, signIn, addAccount, renameAccount, hideAccount, showAccount,
   setDefault, setSkipped, openFolder, codexSignIn, codexSignOut, logo, meterBar, avatar, MONO, PREFS } from "./usage-data.js";
 import { WORDS, pctText, resetsLine, activeOf, updatedLine, errorLine, hiddenOf, addProblem, accountId, ordered, moved,
-  badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped } from "./core/usage.js";
+  dropped, dropEdge, staleLine, badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped } from "./core/usage.js";
 import { statsOf, pollNow } from "./machines.js";
 import { SECTIONS } from "./core/settings.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
 const ROW_H = 52, MENU_W = 228;
-const COL = { place: 14, avatar: 26, plan: 64, usage: 168, badge: 104, more: 28 };
+const COL = { grip: 14, avatar: 26, plan: 64, usage: 168, badge: 104, more: 28 };
 
 // The section's state, made in the window's init (boxes need a live host call).
 export function accountsInit(cx) {
   const s = { name: InputState.new({ placeholder: WORDS.addPlaceholder }), rename: InputState.new({ placeholder: "" }),
-    renaming: null, confirm: null, menu: null, adding: false, codexOut: false, machine: null, err: "", busy: false };
+    renaming: null, confirm: null, menu: null, adding: false, codexOut: false, machine: null, err: "", busy: false,
+    pressed: null, over: null }; // pressed: the account dragged by its grip; over: the row it would land on
   s.name.on("change", (_e, cx) => { s.err = ""; cx.notify(); });
   s.name.on("submit", (_e, cx) => add(s, cx));
   s.rename.on("submit", (_e, cx) => { saveRename(s); cx.notify(); });
@@ -40,8 +42,8 @@ export function accountsInit(cx) {
 
 // Esc: closes what's open here first. True when it did.
 export function accountsEscape(s) {
-  if (!s || !(s.renaming || s.confirm || s.menu || s.adding || s.codexOut)) return false;
-  Object.assign(s, { renaming: null, confirm: null, menu: null, adding: false, codexOut: false });
+  if (!s || !(s.renaming || s.confirm || s.menu || s.adding || s.codexOut || s.pressed)) return false;
+  Object.assign(s, { renaming: null, confirm: null, menu: null, adding: false, codexOut: false, pressed: null, over: null });
   return true;
 }
 
@@ -90,7 +92,10 @@ function usageCell(t, a, pr) {
   if (a.error) return cell.child(div().truncate().text_size(TEXT.label).tooltip(errorLine(a)).child(errorLine(a)));
   if (!session(a) && !weekly(a)) return cell.child(WORDS.loading);
   const s = session(a);
-  return cell.child(meterBar(`acc-sm-${a.id}`, s?.pct ?? null, { width: 52, height: 5, switchAt: clampSwitch(pr.switch_at) }))
+  // Kept from an earlier read (keepGood): dimmer, and when they were read on hover.
+  const old = staleLine(a);
+  return cell.when(Boolean(old), (el) => el.id(`acc-us-${a.id}`).opacity(0.6).tooltip(`Usage ${old}`))
+    .child(meterBar(`acc-sm-${a.id}`, s?.pct ?? null, { width: 52, height: 5, switchAt: clampSwitch(pr.switch_at) }))
     .child(div().truncate().child(usageShort(a)));
 }
 
@@ -137,7 +142,20 @@ function menu(t, s, a, list, pr, active) {
       .child(menuItem(t, "am-remove", WORDS.removeMenu, "trash", () => { close(); s.confirm = a.id; s.renaming = null; }, { hint: WORDS.keepsFolder, danger: true })));
 }
 
-// One compact row (App 05): place, avatar, name and folder, plan, usage, badge, ⋯.
+// Released: the dragged account takes the row the line shows; a press without a move changes nothing.
+function release(s, list, pr, cx) {
+  const from = s.pressed, to = s.over;
+  if (!from) return;
+  s.pressed = null;
+  s.over = null;
+  if (to && to !== from) setPrefs({ order: dropped(list, pr, from, to) });
+  cx.notify();
+}
+
+// Where a dragged account would land.
+const dropLine = (t, edge) => div().absolute().left(0).right(0).h(2).bg(t.accent).when(edge === "top", (l) => l.top(0)).when(edge === "bottom", (l) => l.bottom(0));
+
+// One compact row (App 05): grip, avatar, name and folder, plan, usage, badge, ⋯.
 function accountRow(t, s, a, i, list, pr) {
   const active = activeOf(list, pr)?.id === a.id;
   const dim = isSkipped(a, pr);
@@ -153,10 +171,18 @@ function accountRow(t, s, a, i, list, pr) {
     .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); s.menu = open ? null : a.id; s.confirm = null; cx.notify(); })
     .child(svg(I("dots")).size(16));
   const more = Popup.new(`acc-pop-${a.id}`, dots).anchor("top_right").when(open, (el) => el.content(menu(t, s, a, list, pr, active)));
-  const row = h_flex().id(`acc-row-${a.id}`).w_full().h(ROW_H).flex_none().px(14).gap(12).items_center()
+  const dragging = Boolean(s?.pressed);
+  const grip = div().id(`acc-grip-${a.id}`).w(COL.grip).h(ROW_H).flex_none().flex().items_center().justify_center()
+    .text_color(t.dim).when(Boolean(s) && list.length > 1, (el) => el.cursor_grab().hover((st) => st.text_color(t.foreground)).tooltip("Drag to reorder")
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); Object.assign(s, { pressed: a.id, over: a.id, menu: null }); cx.notify(); }))
+    .child(svg(I("grip")).size(13));
+  const row = h_flex().relative().id(`acc-row-${a.id}`).w_full().h(ROW_H).flex_none().px(14).gap(12).items_center()
     .when(i > 0, (el) => el.border_t(1).border_color(t.border))
     .when(open, (el) => el.bg(t.hover))
-    .child(div().w(COL.place).flex_none().text_center().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(String(i + 1)))
+    .when(dragging, (el) => el.cursor_grabbing().on_mouse_move((_e, cx) => { if (s.pressed && s.over !== a.id) { s.over = a.id; cx.notify(); } }))
+    .when(dragging && s.pressed === a.id && s.over !== a.id, (el) => el.opacity(0.5))
+    .when(dragging && s.pressed !== a.id && s.over === a.id, (el) => el.child(dropLine(t, dropEdge(list, pr, s.pressed, a.id))))
+    .child(grip)
     .child(avatar(a.name, COL.avatar, dim))
     .child(v_flex().flex_1().min_w(0).gap(2)
       .child(nameEl)
@@ -303,7 +329,10 @@ export function accountsSection(view, t, cx) {
     ...(s?.adding ? [addForm(t, s, u)] : []),
     ...(!u ? [div().p(14).child(dim(WORDS.loading))] : !list.length ? [div().p(14).child(dim(WORDS.noAccounts))] : []),
     ...rows.map((a, i) => accountRow(t, s, a, i, list, pr)),
-  ]);
+  ])
+    // A drag ends on release over the card; leaving the card drops nothing.
+    .when(Boolean(s?.pressed), (el) => el.on_mouse_up("left", (_e, cx) => release(s, list, pr, cx))
+      .on_hover((hovered, cx) => { if (!hovered && s.pressed) { s.pressed = null; s.over = null; cx.notify(); } }));
   return root
     .child(div().pt(12).child(claude))
     .when(gone.length > 0, (el) => el.child(h_flex().pt(8).gap(8).items_center().flex_wrap()

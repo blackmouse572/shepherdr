@@ -10,8 +10,10 @@
 //             above" with its stepper; Manage accounts. At most 70% of the window tall: the header and footer stay,
 //             the cards scroll (overflow rule R8).
 //   detail    a second panel beside the popover for one account: Session / Weekly / model tiles, the last 7 days as
-//             bars, this week by space (5 rows, then "N more"), when the week resets, Use for new work (or Sign in)
-//             on an account that isn't active, Open in Settings.
+//             bars, this week by space (5 rows, then "N more"), when the week resets, Sign in on a signed-out account,
+//             Open in Settings (switching is the card's Switch).
+//   stale     numbers kept through a failed read (keepGood): percentages dimmed, "as of 10:42" in the card's line and
+//             the pill's tip.
 // The popover is this mod opened again as a frameless popup (props.view "usage"); the detail panel reopens it wider.
 // Data and picks: usage-data.js (lib/usage-data.js) and core/usage.js.
 
@@ -21,7 +23,7 @@ import { theme, props, openOverlay, closeOverlay, window } from "herdr";
 import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need, toast, plainError } from "./ui.js";
 import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, avatar, MONO } from "./usage-data.js";
 import { WORDS, POP, pctText, resetsLine, resetsWhen, activeOf, switchLine, accountSub, weekBars, spaceSplit,
-  pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut, statusSwitch, clampSwitch } from "./core/usage.js";
+  pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut, statusSwitch, clampSwitch, staleLine } from "./core/usage.js";
 
 const I = (name) => `mods/workspace-status-chat/${name}.svg`;
 const DETAIL_H = 470;
@@ -38,16 +40,18 @@ export function usagePill() {
   const a = activeOf(list, prefs());
   const p = pillParts(a);
   const rule = list.length ? statusSwitch(list, prefs()) : null;
+  const old = a ? staleLine(a) : "";
   const mono = (s, c = t.muted) => div().flex_none().whitespace_nowrap().font_family(MONO).text_size(TEXT.id).text_color(c).child(s);
   return h_flex().id("usage-pill").h(20).min_w(0).px(8).gap(7).items_center().rounded(RADIUS.control).cursor_pointer()
-    .hover((s) => s.bg(t.hover))
+    .hover((s) => s.bg(t.hover)).when(Boolean(old), (el) => el.tooltip(`Usage ${old}`))
     .on_mouse_down("left", (e) => { anchor = e.bounds ?? (e.position ? { x: e.position.x - 60, y: e.position.y - 10, width: 120, height: 20 } : null); })
     .on_click((_e, cx) => { cx.stop_propagation(); openUsage({ at: anchor }); })
     .child(logo(a ? "claude" : "codex", 12))
     .when(Boolean(p), (el) => el
       .child(div().min_w(0).max_w(120).truncate().text_size(TEXT.label).font_medium().text_color(t.foreground).child(p.name))
       .when(Boolean(p.error), (el) => el.child(mono(p.error, t.dim)))
-      .when(!p.error && Boolean(p.session), (el) => el.child(mono(p.session)).child(meterBar("pill-meter", p.sessionPct, { width: 46, height: 4 })))
+      .when(!p.error && Boolean(p.session), (el) => el.child(mono(p.session, old ? t.dim : t.muted))
+        .child(div().flex_none().when(Boolean(old), (d) => d.opacity(0.6)).child(meterBar("pill-meter", p.sessionPct, { width: 46, height: 4 }))))
       .when(!p.error && Boolean(p.rest), (el) => el.child(mono(p.rest, t.dim))))
     .when(!p, (el) => el.child(div().text_size(TEXT.label).child(WORDS.codex)))
     // The switch rule rides in the pill: one hover and one click for the same popover.
@@ -137,12 +141,13 @@ export class UsagePopover {
   }
 
   // One meter row: label, meter, percent, reset; the last three fixed so nothing is cut (overflow rule R3).
-  meterRow(id, m, w) {
+  // `old`: kept from an earlier read, so the meter and its percent are dimmed.
+  meterRow(id, m, w, old = false) {
     const t = theme();
     return h_flex().h(14).gap(10).items_center().whitespace_nowrap()
       .child(div().w(56).flex_none().truncate().text_size(TEXT.label).text_color(t.muted).child(m.label))
-      .child(meterBar(id, m.pct, { width: w }))
-      .child(div().w(34).flex_none().text_right().font_family(MONO).text_size(TEXT.id).text_color(t.foreground).child(pctText(m.pct)))
+      .child(div().flex_none().when(old, (el) => el.opacity(0.6)).child(meterBar(id, m.pct, { width: w })))
+      .child(div().w(34).flex_none().text_right().font_family(MONO).text_size(TEXT.id).text_color(old ? t.dim : t.foreground).child(pctText(m.pct)))
       .child(div().w(92).flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(resetsLine(m.resets_at)));
   }
 
@@ -160,15 +165,16 @@ export class UsagePopover {
       right.push(this.iconButton(`more-${a.id}`, "chevron-right", WORDS.detail,
         () => this.reopen({ detail: open ? null : a.id }), open));
     }
-    const sub = provider === "codex" ? [a.plan, midCut(a.folder, 26)].filter(Boolean).join(" · ") : accountSub(a, 26);
+    const old = staleLine(a);
+    const sub = [...(provider === "codex" ? [a.plan, midCut(a.folder, old ? 14 : 26)] : [accountSub(a, old ? 14 : 26)]), old].filter(Boolean).join(" · ");
     const meters = a.meters ?? [];
     return v_flex().id(`acct-${provider}-${a.id}`).w_full().flex_none().rounded(10).overflow_hidden().bg(t.raised)
       .border_1().border_color(active ? need() : t.border)
       .child(this.header(`acct-h-${provider}-${a.id}`, { title: a.name, sub, lead: provider === "claude" ? avatar(a.name, 26) : logo(provider, 16), right, tall: POP.card, size: 16 }))
-      .child(v_flex().px(12).py(11).gap(6)
+      .child(v_flex().id(`acct-m-${provider}-${a.id}`).px(12).py(11).gap(6).when(Boolean(old), (el) => el.tooltip(`Last read failed · ${old}`))
         .when(Boolean(a.error), (el) => el.child(div().text_size(TEXT.label).text_color(t.dim).child(errorLine(a))))
         .when(!a.error && !meters.length, (el) => el.child(div().text_size(TEXT.label).text_color(t.dim).child(WORDS.loading)))
-        .children(a.error ? [] : meters.map((m) => this.meterRow(`m-${provider}-${a.id}-${m.id}`, m, 150))));
+        .children(a.error ? [] : meters.map((m) => this.meterRow(`m-${provider}-${a.id}-${m.id}`, m, 150, Boolean(old)))));
   }
 
   rule(list, pr) {
@@ -232,11 +238,12 @@ export class UsagePopover {
     const a = accounts().find((x) => x.id === this.detail);
     if (!a) return null;
     const isActive = activeOf(accounts(), prefs())?.id === a.id;
+    const old = staleLine(a);
     const tiles = [session(a), weekly(a), models(a)[0]].filter(Boolean);
     const tile = (m, i) => v_flex().id(`tile-${i}`).flex_1().min_w(0).px(12).py(10).gap(3).when(i > 0, (el) => el.border_l(1).border_color(t.border))
-      .hover((s) => s.bg(t.hover)).when(Boolean(m.resets_at), (el) => el.tooltip(`${m.label}: ${pctText(m.pct)} used · resets ${resetsWhen(m.resets_at)}`))
+      .hover((s) => s.bg(t.hover)).when(Boolean(m.resets_at), (el) => el.tooltip(`${m.label}: ${pctText(m.pct)} used${old ? ` ${old}` : ""} · resets ${resetsWhen(m.resets_at)}`))
       .child(div().truncate().text_size(TEXT.label).text_color(t.muted).child(m.label))
-      .child(div().font_family(MONO).text_size(18).font_medium().text_color(t.foreground).child(pctText(m.pct)))
+      .child(div().font_family(MONO).text_size(18).font_medium().text_color(old ? t.dim : t.foreground).child(pctText(m.pct)))
       .child(div().whitespace_nowrap().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(resetsLine(m.resets_at)));
     const bars = weekBars(a.days, 60);
     const anyUse = bars.some((b) => b.tokens > 0);
@@ -247,7 +254,7 @@ export class UsagePopover {
     return v_flex().id("usage-detail").w(POP.detail).max_h(H).flex_none().rounded(12).overflow_hidden().bg(t.popover)
       .border_1().border_color(t.border).shadow_lg()
       .on_click((_e, cx) => cx.stop_propagation())
-      .child(this.header("detail-head", { title: a.name, sub: [WORDS.detail, accountSub(a, 22)].filter(Boolean).join(" · "),
+      .child(this.header("detail-head", { title: a.name, sub: [WORDS.detail, old || accountSub(a, 22)].filter(Boolean).join(" · "),
         lead: avatar(a.name, 26), tall: 52, size: 16, right: [this.iconButton("detail-close", "x", "Close", () => this.reopen({ detail: null }))] }))
       .child(div().id("detail-body").flex_1().min_h(0).overflow_y_scroll()
         .child(v_flex().p(14).gap(14)
@@ -275,9 +282,8 @@ export class UsagePopover {
       .child(h_flex().h(POP.foot).flex_none().px(14).gap(10).items_center().border_t(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim)
           .child(wk?.resets_at ? `Weekly resets ${resetsWhen(wk.resets_at)}` : ""))
-        .when(!isActive, (el) => el.child(a.error === "signed-out"
-          ? button("detail-sign", WORDS.signIn, { onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })
-          : button("detail-use", "Use for new work", { onClick: () => setPrefs({ active: a.id }) })))
+        .when(!isActive && a.error === "signed-out", (el) => el.child(
+          button("detail-sign", WORDS.signIn, { onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })))
         .child(button("detail-settings", WORDS.openSettings, { onClick: () => { this.close(); openSettings({ section: "accounts" }); } })));
   }
 
