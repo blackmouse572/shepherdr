@@ -1,13 +1,13 @@
-// The status bar: the shown space's machine (as the sidebar names it) and branch, the red Needs-you
-// badge (the Tasks panel's count, inbox.js) when something needs the person, and the palette key.
-// No agent count: the Tasks panel shows the work. At the right, before the palette key, the usage pill (usage.js),
-// which opens the usage and accounts popover: this mod again, as a popup with props.view "usage".
+// The status bar (Doop "App 02 · Task" footer): the shown space's machine (as the sidebar names it) and branch, the
+// red Needs-you badge (the Tasks panel's count, inbox.js) when something needs the person, then a rule and the usage
+// pill, the switch rule and Codex (usage.js), and the palette key at the right. The pill opens the usage and accounts
+// popover: this mod again, as a popup with props.view "usage". No agent count: the Tasks panel shows the work.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { spaces, theme, run, window, keys, shared, props } from "herdr";
 import { count as needsYou } from "./inbox.js";
 import { countBadge, TEXT, RADIUS } from "./ui.js";
-import { usagePill, UsagePopover } from "./usage.js";
+import { usagePill, usageRest, openUsage, UsagePopover } from "./usage.js";
 import { startUsage } from "./usage-data.js";
 
 // A machine as the sidebar shows it (mods/spaces-chat sections.js machineLook): the name it was
@@ -18,7 +18,7 @@ export default class WorkspaceStatus extends View {
   init(_props, cx) {
     // Opened as the usage popover; else the bar itself, which reads usage for every view.
     this.pop = props()?.view === "usage" ? new UsagePopover(cx) : null;
-    if (!this.pop) startUsage(cx);
+    if (!this.pop) startUsage(cx, { onView: () => openUsage({}) });
   }
 
   // The palette key as actually bound, not a hardcoded one; without a
@@ -36,6 +36,7 @@ export default class WorkspaceStatus extends View {
     if (this.pop) return this.pop.render(cx);
     const t = theme();
     const pill = usagePill();
+    const rest = pill ? usageRest() : [];
     const space = spaces().find(s => s.active);
     const needs = needsYou();
     const label = (icon, text) => h_flex().gap(6).items_center().child(svg(`mods/workspace-chrome/${icon}.svg`).size(14)).child(text);
@@ -43,8 +44,8 @@ export default class WorkspaceStatus extends View {
       .child(label(space?.machine ? "server" : "monitor", machineName(space?.machine ?? null)))
       .when(Boolean(space?.branch), el => el.child(label("branch", space.branch)))
       .when(needs > 0, el => el.child(h_flex().gap(6).items_center().child(countBadge(needs, 0, t.chrome)).child("Needs you")))
+      .when(Boolean(pill), el => el.child(div().w(1).h(14).flex_none().bg(t.border)).child(pill).children(rest))
       .child(div().flex_1())
-      .when(Boolean(pill), el => el.child(pill))
       .child(div().id("palette").px(6).h(20).flex().items_center().rounded(RADIUS.control).text_color(t.dim).cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => run("app.palette")).child(this.hint()));

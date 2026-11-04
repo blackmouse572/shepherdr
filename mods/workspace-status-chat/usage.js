@@ -1,15 +1,17 @@
-// Usage and accounts in the status bar (Doop "App 04 · Usage and accounts"): the pill at the bar's right, and the
-// popover it opens above itself.
+// Usage and accounts in the status bar (Doop "App 02 · Task" footer, "App 04 · Usage and accounts"): the pill after
+// the machine, the switch rule and Codex beside it, and the popover the pill opens above itself.
 //   pill      the active account's provider logo, name, session use with a small meter, then its week and first
 //             model week ("59% 5h ▬ 51% wk · 37% Fable"). Accounts show by the names the person gave them, without the
 //             ones removed from Shepherdr (usage-data.js accounts()). The name gives way first; numbers are never cut.
+//   rule      "switch at 95% · Personal next"; then Codex's plan and 5h ("Codex Plus · 12% 5h"). Both open the popover.
 //   popover   banner header ("Usage", when it last read, Refresh, Close); Claude | Codex; one card per account
-//             (logo, name in the serif, plan · folder, the filled amber ACTIVE badge and an amber edge on the one new
-//             work starts on, "Use" on the others ("Sign in" on a signed-out one), a chevron for its detail); every card's meters with the switch
-//             tick; "Switch above" with its stepper; Manage accounts. At most 70% of the window tall: the header and
-//             footer stay, the cards scroll (overflow rule R8).
+//             (initial avatar, name in the serif, plan · folder, the filled amber ACTIVE badge and an amber edge on the
+//             one new work starts on, a chevron for its detail); every card's meters with the switch tick; "Switch
+//             above" with its stepper; Manage accounts. At most 70% of the window tall: the header and footer stay,
+//             the cards scroll (overflow rule R8).
 //   detail    a second panel beside the popover for one account: Session / Weekly / model tiles, the last 7 days as
-//             bars, this week by space (5 rows, then "N more"), when the week resets, Open in Settings.
+//             bars, this week by space (5 rows, then "N more"), when the week resets, Use for new work (or Sign in)
+//             on an account that isn't active, Open in Settings.
 // The popover is this mod opened again as a frameless popup (props.view "usage"); the detail panel reopens it wider.
 // Data and picks: usage-data.js (lib/usage-data.js) and core/usage.js.
 
@@ -17,9 +19,9 @@ import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, openOverlay, closeOverlay, window } from "herdr";
 import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need, toast, plainError } from "./ui.js";
-import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, MONO } from "./usage-data.js";
+import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, avatar, MONO } from "./usage-data.js";
 import { WORDS, POP, pctText, resetsLine, resetsWhen, activeOf, switchLine, accountSub, weekBars, spaceSplit,
-  pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut } from "./core/usage.js";
+  pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut, statusSwitch, clampSwitch } from "./core/usage.js";
 
 const I = (name) => `mods/workspace-status-chat/${name}.svg`;
 const DETAIL_H = 470;
@@ -47,6 +49,27 @@ export function usagePill() {
       .when(!p.error && Boolean(p.session), (el) => el.child(mono(p.session)).child(meterBar("pill-meter", p.sessionPct, { width: 46, height: 4 })))
       .when(!p.error && Boolean(p.rest), (el) => el.child(mono(p.rest, t.dim))))
     .when(!p, (el) => el.child(div().text_size(TEXT.label).child(WORDS.codex)));
+}
+
+// The pill's neighbours: the switch rule and Codex, each opening the popover (Codex on its tab).
+export function usageRest() {
+  const t = theme();
+  const u = usage();
+  if (!u) return [];
+  const out = [];
+  const rule = statusSwitch(accounts(), prefs());
+  const seg = (id, tab, kids) => h_flex().id(id).h(20).flex_none().px(6).gap(6).items_center().whitespace_nowrap().rounded(RADIUS.control)
+    .cursor_pointer().hover((s) => s.bg(t.hover))
+    .on_mouse_down("left", (e) => { anchor = e.bounds ?? (e.position ? { x: e.position.x - 60, y: e.position.y - 10, width: 120, height: 20 } : null); })
+    .on_click((_e, cx) => { cx.stop_propagation(); openUsage({ at: anchor, tab }); })
+    .font_family(MONO).text_size(TEXT.id).text_color(t.dim).children(kids);
+  if (rule && accounts().length) out.push(seg("usage-rule", "claude", [svg(I("switch")).size(12).flex_none(), rule]));
+  const cx = u.codex;
+  if (cx?.signed_in && accounts().length) {
+    const words = [cx.plan, session(cx) ? `${pctText(session(cx).pct)} 5h` : null].filter(Boolean).join(" · ");
+    out.push(seg("usage-codex", "codex", [logo("codex", 12), div().font_medium().text_color(t.muted).child(WORDS.codex), words]));
+  }
+  return out;
 }
 
 // The popover above the pill, its left edge on the pill's; with `detail`, the detail panel beside it.
@@ -123,11 +146,9 @@ export class UsagePopover {
     const t = theme();
     const open = this.detail === a.id && provider === "claude";
     const right = [];
+    // Only the active card has a badge; Use and Sign in sit in the detail panel the chevron opens.
     if (provider === "claude") {
-      right.push(active ? activeBadge(WORDS.active)
-        : a.error === "signed-out"
-          ? button(`sign-${a.id}`, WORDS.signIn, { kind: "plain", size: "xs", onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })
-          : button(`use-${a.id}`, WORDS.use, { kind: "plain", size: "xs", disabled: Boolean(a.error), onClick: () => setPrefs({ active: a.id }) }));
+      if (active) right.push(activeBadge(WORDS.active));
       right.push(this.iconButton(`more-${a.id}`, "chevron-right", WORDS.detail,
         () => this.reopen({ detail: open ? null : a.id }), open));
     }
@@ -135,7 +156,7 @@ export class UsagePopover {
     const meters = a.meters ?? [];
     return v_flex().id(`acct-${provider}-${a.id}`).w_full().flex_none().rounded(10).overflow_hidden().bg(t.raised)
       .border_1().border_color(active ? need() : t.border)
-      .child(this.header(`acct-h-${provider}-${a.id}`, { title: a.name, sub, lead: logo(provider, 16), right, tall: POP.card, size: 16 }))
+      .child(this.header(`acct-h-${provider}-${a.id}`, { title: a.name, sub, lead: provider === "claude" ? avatar(a.name, 26) : logo(provider, 16), right, tall: POP.card, size: 16 }))
       .child(v_flex().px(12).py(11).gap(6)
         .when(Boolean(a.error), (el) => el.child(div().text_size(TEXT.label).text_color(t.dim).child(errorLine(a))))
         .when(!a.error && !meters.length, (el) => el.child(div().text_size(TEXT.label).text_color(t.dim).child(WORDS.loading)))
@@ -144,7 +165,7 @@ export class UsagePopover {
 
   rule(list, pr) {
     const t = theme();
-    const at = pr.switch_at;
+    const at = clampSwitch(pr.switch_at);
     const step = (id, icon, v, off) => div().id(id).size(28).flex().items_center().justify_center().text_color(off ? t.dim : t.muted)
       .when(!off, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground).bg(t.hover))
         .on_click((_e, cx) => { cx.stop_propagation(); setPrefs({ switch_at: v }); cx.notify(); }))
@@ -157,8 +178,8 @@ export class UsagePopover {
       .child(h_flex().h(28).flex_none().items_center().rounded(RADIUS.control).bg(t.raised).border_1().border_color(t.border)
         .child(step("sw-minus", "minus", at - 5, at <= 50))
         .child(div().w(44).text_center().font_family(MONO).text_size(TEXT.label).font_medium().text_color(t.foreground)
-          .child(at >= 100 ? "Off" : `${at}%`))
-        .child(step("sw-plus", "plus", at + 5, at >= 100)));
+          .child(`${at}%`))
+        .child(step("sw-plus", "plus", at + 5, at >= 95)));
   }
 
   popover(H) {
@@ -202,6 +223,7 @@ export class UsagePopover {
     const t = theme();
     const a = accounts().find((x) => x.id === this.detail);
     if (!a) return null;
+    const isActive = activeOf(accounts(), prefs())?.id === a.id;
     const tiles = [session(a), weekly(a), models(a)[0]].filter(Boolean);
     const tile = (m, i) => v_flex().flex_1().min_w(0).px(12).py(10).gap(3).when(i > 0, (el) => el.border_l(1).border_color(t.border))
       .child(div().truncate().text_size(TEXT.label).text_color(t.muted).child(m.label))
@@ -217,7 +239,7 @@ export class UsagePopover {
       .border_1().border_color(t.border).shadow_lg()
       .on_click((_e, cx) => cx.stop_propagation())
       .child(this.header("detail-head", { title: a.name, sub: [WORDS.detail, accountSub(a, 22)].filter(Boolean).join(" · "),
-        lead: logo("claude", 16), tall: 52, size: 16, right: [this.iconButton("detail-close", "x", "Close", () => this.reopen({ detail: null }))] }))
+        lead: avatar(a.name, 26), tall: 52, size: 16, right: [this.iconButton("detail-close", "x", "Close", () => this.reopen({ detail: null }))] }))
       .child(div().id("detail-body").flex_1().min_h(0).overflow_y_scroll()
         .child(v_flex().p(14).gap(14)
           .when(tiles.length > 0, (el) => el.child(h_flex().w_full().rounded(RADIUS.card).bg(t.background).border_1().border_color(t.border)
@@ -241,6 +263,9 @@ export class UsagePopover {
       .child(h_flex().h(POP.foot).flex_none().px(14).gap(10).items_center().border_t(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim)
           .child(wk?.resets_at ? `Weekly resets ${resetsWhen(wk.resets_at)}` : ""))
+        .when(!isActive, (el) => el.child(a.error === "signed-out"
+          ? button("detail-sign", WORDS.signIn, { onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })
+          : button("detail-use", "Use for new work", { disabled: Boolean(a.error), onClick: () => setPrefs({ active: a.id }) })))
         .child(button("detail-settings", WORDS.openSettings, { onClick: () => { this.close(); openSettings({ section: "accounts" }); } })));
   }
 
