@@ -14,6 +14,7 @@ import { v_flex, h_flex, InputState, Input, TextareaState, Textarea } from "gpui
 import { exec, appHome, home, readTextFile, writeTextFile } from "herdr";
 import { TEXT, RADIUS, H, segmented } from "./ui.js";
 import * as AP from "./core/autopilot.js";
+import { prefs } from "./usage-data.js";
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const CUSTOM = "custom";
@@ -141,6 +142,8 @@ export function autopilotSection(view, t, cx) {
   return v_flex()
     .child(view.title(t, AP.TITLE))
     .child(div().pb(8).text_size(TEXT.label).line_height("17px").text_color(t.dim).child(AP.ABOUT))
+    // Assistants start on the Default folder (~/.claude), whatever account new tasks use (docs/accounts.md).
+    .child(div().pb(8).font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(`runs on ${prefs().names.default || "Default"}`))
     .child(view.row(t, AP.ROWS.heartbeat.label, AP.ROWS.heartbeat.about, null, null, beatBox))
     .child(view.row(t, AP.ROWS.every.label, AP.ROWS.every.about,
       segmented("ap-every", [...AP.PRESETS, [CUSTOM, AP.CUSTOM]], preset, pick), null, customBox))

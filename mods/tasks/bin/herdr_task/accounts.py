@@ -1,8 +1,10 @@
 """Claude accounts: which Claude Code config folder a new agent starts on (Settings > Accounts).
 
 An account is a Claude Code config folder on this machine: ~/.claude is "default", ~/.claude-<id> is <id>. The
-window keeps the person's picks in ~/.herdr/accounts.json: {"active": <id>, "switch_at": .., "names": {<id>: name},
-"hidden": [<id>]} (lib/usage-data.js writes it; the status bar moves "active" past the switch point). A new Claude
+window keeps the person's picks in ~/.herdr/accounts.json: {"active": <id>, "auto": bool, "switch_at": 50..95 (of the
+5h window), "running": "stays" | "moves", "undo": bool, "names": {<id>: name}, "hidden": [<id>], "order": [<id>],
+"skipped": [<id>]} (lib/usage-data.js writes it; the status bar moves "active" to the next account in "order" that
+isn't skipped, past the switch point). A switch_at of 100 from before "auto" means switching is off. A new Claude
 agent here starts on the active account (CLAUDE_CONFIG_DIR); a resumed one stays on the account its session is in,
 since a session lives in its account's folder. Each machine has its own file: none means ~/.claude.
 
@@ -39,6 +41,19 @@ def picks():
     except (OSError, ValueError):
         d = {}
     return d if isinstance(d, dict) else {}
+
+
+def switching():
+    """The switch rule as the window reads it (core/usage.js normPrefs): {auto, switch_at, running, order, skipped}."""
+    d = picks()
+    at = d.get("switch_at")
+    at = at if isinstance(at, (int, float)) and not isinstance(at, bool) else 95
+    old = at >= 100
+    strs = lambda v: [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+    return {"auto": d["auto"] if isinstance(d.get("auto"), bool) else not old,
+            "switch_at": 95 if old else min(95, max(50, int(round(at / 5.0)) * 5)),
+            "running": "moves" if d.get("running") == "moves" else "stays",
+            "order": strs(d.get("order")), "skipped": strs(d.get("skipped"))}
 
 
 def active():
@@ -120,5 +135,7 @@ def cmd_accounts(args):
         say(args, {"account": args.account, "folder": path, "made": made, "hooks": hooks},
             f"{path} {'made' if made else 'is there'}" + (f"; hooks added: {', '.join(hooks)}." if hooks else "."))
     else:
-        a = active()
-        say(args, {"active": a, "folder": folder(a)}, f"New Claude agents start on {a} ({folder(a)}).")
+        a, rule = active(), switching()
+        say(args, {"active": a, "folder": folder(a), **rule},
+            f"New Claude agents start on {a} ({folder(a)}); "
+            + (f"switches above {rule['switch_at']}% of the 5h window." if rule["auto"] else "switching is off."))

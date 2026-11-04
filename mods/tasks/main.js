@@ -774,8 +774,9 @@ export default class Tasks extends View {
     const left = leftOf(p, w);
     // Pin / Unpin in its right-click menu (not an archived task's: archived ones drop out of Pinned).
     const key = taskKey(list, task);
+    const acct = accountOf(task);
     return this.line(`task-${key}`, {
-      go: this.target(p), glyph: this.glyph(p, w), ref: refOf(list, task), title: task.title, sub, left,
+      go: this.target(p), glyph: this.glyph(p, w), ref: refOf(list, task), title: task.title, sub, left, acct,
       dim: section === "done", selected: focused, where: this.whereOf(list.machine, placeName(list)),
       action: section === "ready" ? this.acceptButton(p, t) : null,
       pin: this.shelved(p) ? null : { key, on: this.pins().has(key) },
@@ -832,7 +833,8 @@ export default class Tasks extends View {
   // the row can only name an error (`why`, its message); the second line, when it was cut.
   // `left`: the minutes left, small under the glyph in the working color. `meta`: a short note at
   // the first line's end (an automation's next run). `pin`: { key, on }: Pin / Unpin in the row's right-click menu.
-  line(id, { go, why, glyph, ref, title, sub, left, dim, selected, meta, metaColor, where, action, pin }, t) {
+  // `acct`: the Claude account its agent runs on, as an initial at the first line's end (App 02).
+  line(id, { go, why, glyph, ref, title, sub, left, dim, selected, meta, metaColor, where, action, pin, acct }, t) {
     const idCol = this.idWidth > 1 && Boolean(ref);
     const two = Boolean(sub) || Boolean(action);
     const tip = [this.titleCut(title, { meta }) ? title : null, why].filter(Boolean).join(" · ");
@@ -844,7 +846,9 @@ export default class Tasks extends View {
       .when(idCol, (el) => el.child(div().flex_none().w(this.idWidth).font_family(ID_FONT).text_size(ID_SIZE).text_color(t.dim).child(ref)))
       .child(div().id(`${id}-title`).flex_auto().min_w(64).truncate().text_color(dim ? t.muted : t.foreground).when(Boolean(tip), (el) => el.tooltip(tip)).child(title))
       .when(Boolean(meta), (el) => el.child(div().flex_none().pl(4).text_size(TEXT.id).text_color(metaColor ?? t.dim).child(meta)))
-      .when(!two && Boolean(where), (el) => el.child(place().flex_shrink(1000).when(!meta, (el) => el.pl(4))));
+      .when(!two && Boolean(where), (el) => el.child(place().flex_shrink(1000).when(!meta, (el) => el.pl(4))))
+      .when(Boolean(acct), (el) => el.child(div().id(`${id}-acct`).size(16).flex_none().flex().items_center().justify_center().rounded(8)
+        .bg(t.hover).border_1().border_color(t.border).text_size(8.5).font_semibold().text_color(t.muted).tooltip(acct).child(acct[0].toUpperCase())));
     const row = h_flex().id(id).relative().flex_none().px(8).gap(10).rounded(RADIUS.card)
       .when(Boolean(selected), (el) => el.bg(t.selected))
       .when(Boolean(pin), (el) => el.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.rowMenu(pin); }))
@@ -881,6 +885,15 @@ export default class Tasks extends View {
     if (meta) room -= est(meta) + 12;
     return est(title) > room;
   }
+}
+
+// The Claude account a task's agent runs on (herdr-task records it on launch), by the person's name for it
+// (Settings > Accounts, shared "usage.prefs"); null with only one account here, or none recorded.
+function accountOf(task) {
+  if ((shared("usage")?.claude ?? []).length < 2) return null;
+  const id = [...(task.agents ?? [])].reverse().find((a) => typeof a?.account === "string")?.account;
+  if (!id) return null;
+  return shared("usage.prefs")?.names?.[id] || (id === "default" ? "Default" : id[0].toUpperCase() + id.slice(1));
 }
 
 const searchKey = (t) => h_flex().h(18).px(5).mr(3).flex_none().items_center().rounded(4).border_1().border_color(t.border)
