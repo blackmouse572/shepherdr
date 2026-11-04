@@ -7,7 +7,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex } from "gpui-base";
 import { run, props, closeOverlay, theme } from "herdr";
-import { dialogFooter, TEXT } from "./ui.js";
+import { dialogFooter, dialogTitle, TEXT } from "./ui.js";
 
 export default class Confirm extends View {
   init(_props, cx) {
@@ -40,7 +40,7 @@ export default class Confirm extends View {
       .gap(8)
       .bg(t.popover)
       .text_size(TEXT.body)
-      .child(div().text_size(TEXT.title).font_semibold().text_color(t.foreground).child(p.title ?? "Are you sure?"))
+      .child(dialogTitle("confirm-title", p.title ?? "Are you sure?"))
       .child(div().flex_1().min_h(0).text_color(t.muted).child(p.detail ?? ""))
       .child(div().h(8).flex_none())
       .child(dialogFooter({ onCancel: () => closeOverlay(props().overlay),

@@ -5,7 +5,7 @@
 import { View, div } from "gpui-kit";
 import { v_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme } from "herdr";
-import { dialogFooter, TEXT, RADIUS, H } from "./ui.js";
+import { dialogFooter, dialogTitle, TEXT, RADIUS, H } from "./ui.js";
 
 export default class Prompt extends View {
   init(_props, cx) {
@@ -39,7 +39,7 @@ export default class Prompt extends View {
     const p = props() ?? {};
     return v_flex().id("prompt").track_focus(this.handle).on_key_down((e, cx) => this.key(e, cx))
       .size_full().min_h(0).p(18).bg(t.popover).text_size(TEXT.body).text_color(t.foreground)
-      .child(div().text_size(TEXT.title).font_semibold().child(p.title ?? ""))
+      .child(dialogTitle("prompt-title", p.title ?? ""))
       .child(div().pt(16).pb(4).text_size(TEXT.label).text_color(t.dim).child(p.label ?? "Name"))
       .child(Input.new(this.input).h(H.lg).px(10).rounded(RADIUS.control).border_1().border_color(this.inputFocused ? t.accent : t.input)
         .bg(t.background).text_size(TEXT.body).text_color(t.foreground))
