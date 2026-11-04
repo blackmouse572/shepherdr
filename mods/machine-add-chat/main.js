@@ -10,7 +10,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { hc, exec, home, readTextFile, theme, props, closeOverlay, openOverlay } from "herdr";
-import { button, dialogTitle, DIALOG_ICON, fieldFrame, MONO, TEXT, RADIUS, H, red, green } from "./ui.js";
+import { button, dialogTitle, DIALOG_ICON, fieldFrame, MONO, TEXT, RADIUS, H, red, green, submitKeys, isSubmitKey } from "./ui.js";
 
 // The words, the ssh config's hosts and when an add needs a terminal: core/machine-add.js, shared with
 // the web app's Add machine.
@@ -167,7 +167,8 @@ export default class MachineAdd extends View {
   }
 
   key(e, cx) {
-    if (e.key === "escape") { this.close(); cx.stop_propagation(); }
+    if (isSubmitKey(e)) { cx.stop_propagation(); this.add(this.typed, cx); }
+    else if (e.key === "escape") { this.close(); cx.stop_propagation(); }
   }
 
   // The terminal window's title bar.
@@ -281,7 +282,7 @@ export default class MachineAdd extends View {
               .text_color(t.foreground),
           )
           // The dialog's one primary.
-          .child(button("ma-add-typed", W.add, { kind: "primary", size: "lg", disabled: !this.typed.trim(), onClick: (_e, cx) => this.add(this.typed, cx) })),
+          .child(button("ma-add-typed", W.add, { kind: "primary", size: "lg", disabled: !this.typed.trim(), onClick: (_e, cx) => this.add(this.typed, cx), keys: submitKeys() })),
       )
       .when(Boolean(this.typed.trim() && this.note(t, this.typed.trim(), 0)), (el) => el.child(this.note(t, this.typed.trim(), 0).pt(6)));
   }

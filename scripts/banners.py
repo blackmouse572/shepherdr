@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Draw the duotone banner patterns as SVG files: halftone dots for the state banners (.bn.half) and diagonal hatch
-lines for the neutral "wool" one (.bn.wool.hatch), both fading out toward the left.
+lines for the neutral "wool" one (.bn.wool.hatch), both fading out toward the left (the hatch's fade is lib/ui.js's).
 
 Herdr mods can't mask or fade a pattern at runtime, so the fade is baked into each dot's opacity: no SVG mask or
 gradient is used, only circles, so any SVG renderer draws it the same. The file is wider than any header and is pinned
@@ -32,40 +32,21 @@ def alpha(d):
 
 
 # The hatch (.bn.hatch): 1px "/" lines 6px apart (repeating-linear-gradient(-45deg, fg 0 1px, transparent 1px 6px)),
-# at .22, under a left-to-right fade (transparent 5%, .35 at 45%, solid at 100%). The fade is measured in px from the
-# right edge, as a 460 dialog would draw it, so every header gets the same hatch at its right whatever its width.
-HATCH_PEAK, HATCH_GAP, HATCH_STRIP = 0.22, 6.0, 8
-HATCH_FADE = (437.0, 253.0)  # px from the right: 0 from the first, .35 at the second, 1 at the edge
-
-
-def hatch_alpha(d):
-    full, mid = HATCH_FADE[1], HATCH_FADE[0]
-    if d <= full:
-        return 1 - 0.65 * d / full
-    if d <= mid:
-        return 0.35 * (mid - d) / (mid - full)
-    return 0.0
+# at .22. Drawn evenly, with no fade: its left-to-right fade (transparent 5%, .35 at 45%, solid at 100%) is a share of
+# the header's width, so lib/ui.js paints it over the hatch at run time as a gradient of the banner's own wash.
+# Wider than any header (HATCH_W), pinned to the right edge like the dots.
+HATCH_PEAK, HATCH_GAP, HATCH_W = 0.22, 6.0, 2400
 
 
 def draw_hatch(color):
-    """The lines cut into 8px strips, each strip one path at its own opacity: no mask or gradient."""
     step = HATCH_GAP * math.sqrt(2)  # the lines' spacing along x for 6px between them
-    paths = []
-    for x0 in range(W - HATCH_STRIP, -HATCH_STRIP, -HATCH_STRIP):
-        a = HATCH_PEAK * hatch_alpha(W - (x0 + HATCH_STRIP / 2))
-        if a < 0.01:
-            break
-        segs, c = [], x0 + 0.0
-        # Lines x + y = c crossing this strip: from (x0, c - x0) up to (x0 + strip, c - x0 - strip).
-        k = math.floor(x0 / step)
-        while k * step - x0 - HATCH_STRIP <= H:
-            c = k * step
-            if c - x0 >= 0:
-                segs.append(f"M{x0} {c - x0:.2f}l{HATCH_STRIP} -{HATCH_STRIP}")
-            k += 1
-        paths.append(f'<path stroke-opacity="{a:.3f}" d="{"".join(segs)}"/>')
-    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">'
-            f'<g fill="none" stroke="{color}" stroke-width="1">{"".join(paths)}</g></svg>\n')
+    segs, k = [], 0
+    # Lines x + y = c, from the top edge (c, 0) down-left to (c - H, H).
+    while k * step < HATCH_W + H:
+        segs.append(f"M{k * step:.2f} 0l-{H} {H}")
+        k += 1
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{HATCH_W}" height="{H}" viewBox="0 0 {HATCH_W} {H}">'
+            f'<path fill="none" stroke="{color}" stroke-width="1" stroke-opacity="{HATCH_PEAK}" d="{"".join(segs)}"/></svg>\n')
 
 
 def draw(color, peak=PEAK):

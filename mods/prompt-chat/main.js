@@ -1,11 +1,11 @@
 // A text prompt (Herdr's prompt, ours: the app's one dialog footer), e.g. Rename tab. Opened as a
 // dialog with props { title, label (over the field, default "Name"), value, placeholder, hint,
 // verb (the button, default "Save"), command: { name, args } }: the command runs with
-// { ...args, name: the text }. Enter saves, Esc cancels.
+// { ...args, name: the text }. Enter or ⌘⏎ saves, Esc cancels.
 import { View, div } from "gpui-kit";
 import { v_flex, InputState, Input } from "gpui-base";
 import { run, props, closeOverlay, theme } from "herdr";
-import { dialogFooter, dialogTitle, fieldFrame, TEXT, RADIUS, H } from "./ui.js";
+import { dialogFooter, dialogTitle, fieldFrame, TEXT, RADIUS, H, submitKeys, isSubmitKey } from "./ui.js";
 
 export default class Prompt extends View {
   init(_props, cx) {
@@ -25,13 +25,16 @@ export default class Prompt extends View {
   close() { this.input.release(); }
 
   submit() {
+    if (this.done) return;
+    this.done = true;
     const p = props();
     closeOverlay(p.overlay);
     run(p.command.name, { ...(p.command.args ?? {}), name: this.text.trim() });
   }
 
   key(e, cx) {
-    if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
+    if (isSubmitKey(e)) { cx.stop_propagation(); this.submit(); }
+    else if (e.key === "escape") { closeOverlay(props().overlay); cx.stop_propagation(); }
   }
 
   render() {
@@ -45,6 +48,6 @@ export default class Prompt extends View {
       .child(div().h(20).pt(4).text_size(TEXT.label).text_color(t.dim).child(p.hint ?? ""))
       .child(div().flex_1().min_h(12))
       .child(dialogFooter({ onCancel: () => closeOverlay(p.overlay),
-        primary: { id: "pm-save", label: p.verb ?? "Save", onClick: () => this.submit() } }));
+        primary: { id: "pm-save", label: p.verb ?? "Save", onClick: () => this.submit(), keys: submitKeys() } }));
   }
 }

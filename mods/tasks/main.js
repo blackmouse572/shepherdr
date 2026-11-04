@@ -372,7 +372,7 @@ export default class Tasks extends View {
         .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
         .child(v_flex().flex_1().min_w(0).gap(4)
           .child(div().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child("Tasks"))
-          .child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(this.headLine())))
+          .child(this.headLine(t)))
         .child(h_flex().id("task-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
           // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
@@ -466,8 +466,9 @@ export default class Tasks extends View {
 
   // Archived (herdr-task's archive_pass), unless its agent works or asks again: someone wrote to
   // it, and it's back (herdr-task's next tick makes that stick).
-  // The header's line: "<space> · N open · N done this week", for the shown space's list, else every list's.
-  headLine() {
+  // The header's line: "<space> · N open · N done this week" for the shown space's list, else "N open · N done this
+  // week" for every list's. The counts never cut: a long space name truncates first.
+  headLine(t) {
     const s = spaces().find((x) => x.active);
     const mine = s ? this.lists.filter((l) => (l.machine ?? null) === (s.machine ?? null) && l.folder === s.folder) : [];
     const ls = mine.length ? mine : this.lists;
@@ -475,7 +476,9 @@ export default class Tasks extends View {
     const week = Date.now() - 7 * 86400000;
     const open = tasks.filter((x) => x.state !== "done").length;
     const done = tasks.filter((x) => x.state === "done" && (x.done_at ?? 0) >= week).length;
-    return `${mine.length ? s.name : "All spaces"} · ${open} open · ${done} done this week`;
+    return h_flex().min_w(0).font_family(MONO).text_size(TEXT.id).text_color(t.muted).whitespace_nowrap()
+      .when(mine.length > 0, (el) => el.child(div().min_w(0).truncate().child(s?.name ?? "")).child(div().flex_none().child("\u00a0·\u00a0")))
+      .child(div().flex_none().child(`${open} open · ${done} done this week`));
   }
 
   shelved(p) {
