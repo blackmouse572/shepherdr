@@ -150,9 +150,13 @@ export class UsagePopover {
     const t = theme();
     const open = this.detail === a.id && provider === "claude";
     const right = [];
-    // Only the active card has a badge; Use and Sign in sit in the detail panel the chevron opens.
+    // The active card has its badge; another has a quick Switch (Sign in when signed out).
     if (provider === "claude") {
       if (active) right.push(activeBadge(WORDS.active));
+      else if (a.error === "signed-out") right.push(button(`sign-${a.id}`, WORDS.signIn, { size: "sm",
+        onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } }));
+      else right.push(button(`use-${a.id}`, "Switch", { size: "sm", icon: I("switch"),
+        onClick: () => setPrefs({ active: a.id }) }));
       right.push(this.iconButton(`more-${a.id}`, "chevron-right", WORDS.detail,
         () => this.reopen({ detail: open ? null : a.id }), open));
     }
@@ -273,7 +277,7 @@ export class UsagePopover {
           .child(wk?.resets_at ? `Weekly resets ${resetsWhen(wk.resets_at)}` : ""))
         .when(!isActive, (el) => el.child(a.error === "signed-out"
           ? button("detail-sign", WORDS.signIn, { onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })
-          : button("detail-use", "Use for new work", { disabled: Boolean(a.error), onClick: () => setPrefs({ active: a.id }) })))
+          : button("detail-use", "Use for new work", { onClick: () => setPrefs({ active: a.id }) })))
         .child(button("detail-settings", WORDS.openSettings, { onClick: () => { this.close(); openSettings({ section: "accounts" }); } })));
   }
 
