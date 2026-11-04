@@ -37,6 +37,7 @@ export function usagePill() {
   if (!u || (!list.length && !u.codex?.signed_in)) return null;
   const a = activeOf(list, prefs());
   const p = pillParts(a);
+  const rule = list.length ? statusSwitch(list, prefs()) : null;
   const mono = (s, c = t.muted) => div().flex_none().whitespace_nowrap().font_family(MONO).text_size(TEXT.id).text_color(c).child(s);
   return h_flex().id("usage-pill").h(20).min_w(0).px(8).gap(7).items_center().rounded(RADIUS.control).cursor_pointer()
     .hover((s) => s.bg(t.hover))
@@ -48,22 +49,25 @@ export function usagePill() {
       .when(Boolean(p.error), (el) => el.child(mono(p.error, t.dim)))
       .when(!p.error && Boolean(p.session), (el) => el.child(mono(p.session)).child(meterBar("pill-meter", p.sessionPct, { width: 46, height: 4 })))
       .when(!p.error && Boolean(p.rest), (el) => el.child(mono(p.rest, t.dim))))
-    .when(!p, (el) => el.child(div().text_size(TEXT.label).child(WORDS.codex)));
+    .when(!p, (el) => el.child(div().text_size(TEXT.label).child(WORDS.codex)))
+    // The switch rule rides in the pill: one hover and one click for the same popover.
+    .when(Boolean(rule), (el) => el.child(h_flex().flex_none().ml(6).gap(6).items_center().whitespace_nowrap()
+      .font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(svg(I("switch")).size(12).flex_none()).child(rule)));
 }
 
-// The pill's neighbours: the switch rule and Codex, each opening the popover (Codex on its tab).
+const tokensText = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M tokens` : n >= 1e3 ? `${Math.round(n / 1e3)}k tokens` : `${n} tokens`);
+
+// The pill's neighbour: Codex, opening the popover on its tab.
 export function usageRest() {
   const t = theme();
   const u = usage();
   if (!u) return [];
   const out = [];
-  const rule = statusSwitch(accounts(), prefs());
   const seg = (id, tab, kids) => h_flex().id(id).h(20).flex_none().px(6).gap(6).items_center().whitespace_nowrap().rounded(RADIUS.control)
     .cursor_pointer().hover((s) => s.bg(t.hover))
     .on_mouse_down("left", (e) => { anchor = e.bounds ?? (e.position ? { x: e.position.x - 60, y: e.position.y - 10, width: 120, height: 20 } : null); })
     .on_click((_e, cx) => { cx.stop_propagation(); openUsage({ at: anchor, tab }); })
     .font_family(MONO).text_size(TEXT.id).text_color(t.dim).children(kids);
-  if (rule && accounts().length) out.push(seg("usage-rule", "claude", [svg(I("switch")).size(12).flex_none(), rule]));
   const cx = u.codex;
   if (cx?.signed_in && accounts().length) {
     const words = [cx.plan, session(cx) ? `${pctText(session(cx).pct)} 5h` : null].filter(Boolean).join(" · ");
@@ -123,7 +127,7 @@ export class UsagePopover {
       .when(d, (el) => el.bg(bannerBg("neutral")).child(bannerDots("neutral")))
       .child(h_flex().absolute().inset_0().px(14).gap(10).items_center()
         .when(Boolean(lead), (el) => el.child(lead))
-        .child(v_flex().flex_1().min_w(0).gap(3)
+        .child(v_flex().flex_1().min_w(0).gap(5)
           .child(div().min_w(0).truncate().text_color(t.foreground)
             .when(d, (el) => el.font_family(SERIF).text_size(size))
             .when(!d, (el) => el.text_size(TEXT.title).font_semibold())
@@ -225,7 +229,8 @@ export class UsagePopover {
     if (!a) return null;
     const isActive = activeOf(accounts(), prefs())?.id === a.id;
     const tiles = [session(a), weekly(a), models(a)[0]].filter(Boolean);
-    const tile = (m, i) => v_flex().flex_1().min_w(0).px(12).py(10).gap(3).when(i > 0, (el) => el.border_l(1).border_color(t.border))
+    const tile = (m, i) => v_flex().id(`tile-${i}`).flex_1().min_w(0).px(12).py(10).gap(3).when(i > 0, (el) => el.border_l(1).border_color(t.border))
+      .hover((s) => s.bg(t.hover)).when(Boolean(m.resets_at), (el) => el.tooltip(`${m.label}: ${pctText(m.pct)} used · resets ${resetsWhen(m.resets_at)}`))
       .child(div().truncate().text_size(TEXT.label).text_color(t.muted).child(m.label))
       .child(div().font_family(MONO).text_size(18).font_medium().text_color(t.foreground).child(pctText(m.pct)))
       .child(div().whitespace_nowrap().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(resetsLine(m.resets_at)));
@@ -248,14 +253,17 @@ export class UsagePopover {
           .child(v_flex().gap(6)
             .child(heading(WORDS.weekChart))
             .child(anyUse
-              ? h_flex().h(80).gap(8).items_end().children(bars.map((b, i) => v_flex().flex_1().h_full().gap(5).items_center().justify_end()
+              ? h_flex().h(80).gap(8).items_end().children(bars.map((b, i) => v_flex().id(`bar-${i}`).flex_1().h_full().gap(5).items_center().justify_end()
+                .rounded(RADIUS.control).hover((s) => s.bg(t.hover))
+                .tooltip(`${b.today ? "Today" : b.label} · ${tokensText(b.tokens)}`)
                 .child(div().w_full().h(b.h).rounded(3).bg(green()).opacity(b.today ? 1 : 0.4))
                 .child(div().font_family(MONO).text_size(10).text_color(b.today ? t.foreground : t.dim).child(b.label))))
               : dim("No use on this computer in the last 7 days.")))
           .when(split.rows.length > 0, (el) => el.child(v_flex().gap(6)
             .child(heading(WORDS.bySpace))
-            .children(split.rows.map((r, i) => h_flex().id(`sp-${i}`).h(16).gap(10).items_center().whitespace_nowrap()
-              .child(div().w(96).flex_none().truncate().text_size(TEXT.label).text_color(t.muted).tooltip(r.name).child(r.name))
+            .children(split.rows.map((r, i) => h_flex().id(`sp-${i}`).h(22).mx(-6).px(6).gap(10).items_center().whitespace_nowrap().rounded(RADIUS.control)
+              .hover((s) => s.bg(t.hover)).tooltip(`${r.name}: ${pctText(r.pct)} of the weekly limit`)
+              .child(div().w(96).flex_none().truncate().text_size(TEXT.label).text_color(t.muted).child(r.name))
               .child(div().relative().w(BAR_W).h(5).flex_none().rounded(3).bg(t.background).border_1().border_color(t.border)
                 .child(div().absolute().left(0).top(0).bottom(0).w(Math.max(2, Math.round(BAR_W * r.frac))).rounded(3).bg(green()).opacity(0.75)))
               .child(div().w(34).flex_none().text_right().font_family(MONO).text_size(TEXT.id).text_color(t.foreground).child(pctText(r.pct)))))

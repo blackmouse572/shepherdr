@@ -349,7 +349,7 @@ export function updatedLine(iso, now = Date.now()) {
 }
 
 // Sizes the popover is drawn with, so the overlay is as tall as it (mods/workspace-status-chat/usage.js).
-export const POP = { width: 420, detail: 360, gap: 8, head: 64, seg: 46, card: 44, meterRow: 20, cardPad: 22,
+export const POP = { width: 420, detail: 360, gap: 8, head: 64, seg: 46, card: 56, meterRow: 20, cardPad: 22,
   gapCards: 10, rule: 66, foot: 54, maxShare: 0.7 };
 export function popoverHeight(accounts, tab = "claude") {
   const list = tab === "codex" ? [{ meters: [1, 2] }] : accounts ?? [];
