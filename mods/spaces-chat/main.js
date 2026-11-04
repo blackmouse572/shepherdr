@@ -14,10 +14,13 @@
 // A machine that isn't connected reads "Offline", dimmed and folded, with no + or meter.
 // Opened as an overlay (props.view), this mod is instead one of its menus (popups.js), the
 // rename and New section dialog (rename.js) or that dialog's icon picker (icon.js).
+// Under each space (Doop App 02): its repo's checkouts ("main · checkout" first, each with ↑ahead ↓behind and a dot
+// while dirty) and the agents and programs it runs, each with its status dot; a row's right side is its most urgent
+// status and how many are so. What needs you inside a folded group shows as a pill at the list's foot (App 13).
 
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { machines, panes, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand, spaces as allSpaces } from "herdr";
+import { machines, panes, run, props, exec, hc, home, theme, shared, setShared, watchFolder, window, layout, nextCommand, spaces as allSpaces, terminals, agents } from "herdr";
 import { countsByTab, readyByTab, count as needsCount, showInbox } from "./inbox.js";
 import { spacesWithChats } from "./parked.js";
 import { sectionsOf, sectionOf, iconOf, placeSpace, foldSection, prune, data, pin, foldPinned, machineLook, restoreSection } from "./sections.js";
@@ -27,11 +30,14 @@ import { Rename } from "./rename.js";
 import { unreadSpaces, readShown } from "./unread.js";
 import { muted } from "./notify.js";
 import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.js";
-import { startPolling, allStats, healthMeters, bars } from "./machines.js";
+import { startPolling, allStats } from "./machines.js";
 // The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
 import { meterWords, healthErrorWords } from "./core/machines.js";
 import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS } from "./ui.js";
-import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees } from "./core/spaces.js";
+import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees, assistantOf, machineOf } from "./core/spaces.js";
+import { READ_LISTS, taskLists } from "./core/tasklists.js";
+import { autoPrefix } from "./core/tasks.js";
+import { taskDot } from "./dot.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup };
 
@@ -82,6 +88,25 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
+
+// Each worktree after the base branch's name: its ref and its folder, a line each back: "<ahead> <behind> <1 if dirty>".
+const TREE_STATE = 'b=$1; shift; while [ $# -gt 1 ]; do a=$(git rev-list --count "$b..$1" 2>/dev/null || echo 0); c=$(git rev-list --count "$1..$b" 2>/dev/null || echo 0); d=$(git -C "$2" --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null | head -c 1); echo "$a $c ${d:+1}"; shift 2; done';
+// An agent's status as the design's dot: needs you, working, done, else idle.
+const dotOf = (status) => (status === "blocked" ? "needs" : status === "working" ? "working" : status === "done" ? "done" : "idle");
+const STATUS_WORDS = { needs: "Needs you", working: "Working", done: "Done", idle: "Idle" };
+const short = (address) => String(address ?? "").split("/").pop();
+// A dev server's port from its title ("vite :5173", "localhost:3000").
+const PORT = /\s*(?:localhost|127\.0\.0\.1)?:(\d{2,5})\b/;
+const portOf = (title) => PORT.exec(String(title ?? ""))?.[0]?.trim().replace(/^(localhost|127\.0\.0\.1)/, "") ?? null;
+
+// A task's worker chat inside the Tasks panel (as Jump opens it: mods/chat/panel.js openTaskThread).
+function openTaskThread(terminal, task, title) {
+  setShared("tasks.thread", { terminal, task: task ?? null, title: title ?? null, at: Date.now() });
+  run("layout.select", { stack: "panel-body", child: "tasks" });
+  run("layout.select", { stack: "tasks", child: "tasks-thread" });
+  if (find(layout(), "tasks-thread-body")) run("layout.select", { stack: "tasks-thread-body", child: "tasks-thread-chat" });
+  run("layout.show", { id: "panel" });
+}
 
 // What a stored color name looks like on an avatar (the same in every mod
 // that draws space avatars): one strong color per hue, light and dark alike.
@@ -137,6 +162,10 @@ export default class Spaces extends View {
     this.folded = new Set(JSON.parse(localStorage.getItem("machines.folded") ?? "[]"));
     this.openOffline = new Set(); // offline machines opened anyway (they start folded)
     this.machinesRead = false; // hc machine ls answered once: a machine missing from it is offline
+    this.tasks = new Map(); // "<machine>|<slug>#<id>" -> { ref, title, pct }, for the agent rows
+    this.agents = {}; // space id -> its agent rows (agentIndex), per render
+    this.readTasks(cx);
+    cx.timer.every(20000, (cx) => { if (window().active) this.readTasks(cx); });
     this.refreshMachines(cx);
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // Each machine's health and plan limits (machines.js): read every 45 s / 10 min, not per render.
@@ -209,6 +238,25 @@ export default class Spaces extends View {
   sameRepo(key, keys) {
     const repo = this.git[key]?.repo;
     return [key, ...(repo ? [...keys].filter((k) => this.git[k]?.repo === repo) : [])];
+  }
+
+  // Every machine's task lists (as Jump reads them): a task agent's row shows its id and title.
+  readTasks(cx) {
+    if (this.readingTasks) return;
+    this.readingTasks = true;
+    cx.spawn(async (cx) => {
+      const found = new Map();
+      for (const m of [null, ...machines().filter((x) => x.name && x.layout === "ready").map((x) => x.name)]) {
+        try {
+          const r = await exec("sh", ["-c", READ_LISTS], m ? { on: m } : {});
+          for (const list of taskLists(r.stdout)) for (const task of Array.isArray(list.tasks) ? list.tasks : [])
+            found.set(`${m ?? ""}|${list.slug}#${task.id}`, { ref: `${list.prefix || autoPrefix(list.folder)}-${task.id}`, title: task.title ?? null, pct: task.progress?.done ?? null });
+        } catch {}
+      }
+      this.tasks = found;
+      this.readingTasks = false;
+      cx.notify();
+    });
   }
 
   refreshMachines(cx) {
@@ -284,9 +332,10 @@ export default class Spaces extends View {
       const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
       const repo = common.stdout.trim();
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
-      const info = { name, branch: null, ahead: 0, behind: 0, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git`, top: top.stdout.trim() };
+      const info = { name, branch: null, ahead: 0, behind: 0, dirty: false, repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git`, top: top.stdout.trim() };
       for (const line of r.stdout.split("\n")) {
-        if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
+        if (/^[12u?] /.test(line)) info.dirty = true;
+        else if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
         else if (line.startsWith("# branch.ab ")) {
           const [a, b] = line.slice(12).split(" ");
           info.ahead = Math.abs(parseInt(a, 10)) || 0;
@@ -304,18 +353,21 @@ export default class Spaces extends View {
     }
   }
 
-  // A repo's worktrees (git worktree list), each with how many commits its branch has that the repo's own branch
-  // hasn't (its ahead count, as the design's "↑3"): one git and one sh, whatever the number of worktrees.
+  // A repo's checkouts (git worktree list, its own first), each with ahead/behind the repo's own branch and whether
+  // it has uncommitted changes: one git and one sh, whatever the number of worktrees.
   async listTrees(on, cwd, info) {
     const r = await exec("git", ["--no-optional-locks", "worktree", "list", "--porcelain"], { cwd, on });
     if (r.code !== 0) return;
-    const list = parseWorktrees(r.stdout);
-    if (!list.length) { this.trees[info.repo] = []; return; }
+    const list = parseWorktrees(r.stdout, { main: true });
+    if (list.length < 2) { this.trees[info.repo] = []; return; }
     const from = info.branch && info.branch !== "(detached)" ? info.branch : "HEAD";
-    const refs = list.map((w) => (w.branch ? `refs/heads/${w.branch}` : w.head));
-    const n = await exec("sh", ["-c", 'b=$1; shift; for r in "$@"; do git rev-list --count "$b..$r" 2>/dev/null || echo 0; done', "sh", from, ...refs], { cwd, on });
-    const counts = n.code === 0 ? n.stdout.trim().split("\n").map((x) => parseInt(x, 10) || 0) : [];
-    this.trees[info.repo] = list.map((w, i) => ({ ...w, ahead: counts[i] ?? 0 }));
+    const args = list.flatMap((w) => [w.branch ? `refs/heads/${w.branch}` : w.head, w.path]);
+    const n = await exec("sh", ["-c", TREE_STATE, "sh", from, ...args], { cwd, on });
+    const lines = n.code === 0 ? n.stdout.split("\n") : [];
+    this.trees[info.repo] = list.map((w, i) => {
+      const [a, b, d] = (lines[i] ?? "").split(" ");
+      return { ...w, ahead: parseInt(a, 10) || 0, behind: parseInt(b, 10) || 0, dirty: d === "1" };
+    });
   }
 
   watch(repo, cx) {
@@ -382,15 +434,18 @@ export default class Spaces extends View {
   // A repo's worktrees, each { path, branch, ahead, space } (space: the row of the space open in it, or null). A
   // worktree space git's list didn't have (not read yet) still shows, with its own branch. Shepherdr settings'
   // "Worktrees in the sidebar" off (shared "sidebar.worktrees" false): only the one being looked at.
+  // The repo's own checkout comes first ({ main: true }), shown only beside other worktrees.
   kidsOf(r, spacesIn) {
     const used = new Set();
     const kids = (this.trees[r.g.repo] ?? []).map((w) => {
-      const space = spacesIn.find((k) => k.g.top === w.path) ?? null;
+      const space = w.main ? null : spacesIn.find((k) => k.g.top === w.path) ?? null;
       if (space) used.add(space.w.id);
-      return { path: w.path, branch: w.branch, ahead: w.ahead, space };
+      return { path: w.path, branch: w.branch, ahead: w.ahead, behind: w.behind ?? 0, dirty: Boolean(w.dirty), main: Boolean(w.main), space };
     });
-    for (const k of spacesIn) if (!used.has(k.w.id)) kids.push({ path: k.g.top ?? k.at, branch: k.g.branch, ahead: k.g.ahead, space: k });
-    return shared("sidebar.worktrees") === false ? kids.filter((k) => k.space?.w.active) : kids;
+    for (const k of spacesIn) if (!used.has(k.w.id))
+      kids.push({ path: k.g.top ?? k.at, branch: k.g.branch, ahead: k.g.ahead, behind: k.g.behind, dirty: Boolean(k.g.dirty), main: false, space: k });
+    const all = kids.some((k) => !k.main) ? kids : [];
+    return shared("sidebar.worktrees") === false ? all.filter((k) => k.space?.w.active) : all;
   }
 
   // What never folds away (R5): the space you're in, one that needs you, one with something new.
@@ -404,7 +459,7 @@ export default class Spaces extends View {
     const kept = (r) => this.keeps(r) || r.kids.some((k) => this.keeps(k.space));
     const { shown, hidden } = foldList(tops, { limit: FOLD, open: this.more.has(key), keep: kept });
     const out = shown.flatMap((r, n) => [this.row({ ...r, ...opts(r, n, shown.length) }, t), ...this.treeRows(r, t)]);
-    if (hidden || (this.more.has(key) && tops.length > FOLD)) out.push(this.moreRow(key, hidden, t, 0));
+    if (hidden || (this.more.has(key) && tops.length > FOLD)) out.push(this.moreRow(key, hidden, t, "spaces"));
     return out;
   }
 
@@ -441,12 +496,16 @@ export default class Spaces extends View {
       const offline = state !== null && !connected;
       // Offline, it starts folded; a click opens it for now.
       const folded = offline ? !this.openOffline.has(m) : this.folded.has(m);
+      if (folded && !collapsed) this.hide(all.filter((r) => (r.w.machine ?? null) === m), machineLook(m).name, () => {
+        if (offline) this.openOffline.add(m);
+        else { this.folded.delete(m); localStorage.setItem("machines.folded", JSON.stringify([...this.folded])); }
+      });
       const health = this.stats?.[m ?? ""];
       // A space dropped on its machine's header leaves its section, for the top.
       const out = this.pressed && (sectionOf(this.pressed) || data().pinned.includes(this.pressed)) && this.over === `top:${m}`;
       // The machine's header, as the design's group headings: its icon and its name in small mono capitals, dim,
-      // above its sections and spaces. Connected: its + (New space, New section) and its meter; a red dot only
-      // when its health couldn't be read. Offline: the word, dimmed, nothing else.
+      // above its sections and spaces. Connected: its + (New space, New section) and machineNote(). Offline: the
+      // word, dimmed, nothing else.
       const head = this.groupHead(`machine-${m ?? "local"}`, t).px(collapsed ? 2 : 8).when(offline, (el) => el.opacity(0.7))
         .on_click((_e, cx) => {
           if (offline) this.openOffline.has(m) ? this.openOffline.delete(m) : this.openOffline.add(m);
@@ -468,9 +527,7 @@ export default class Spaces extends View {
           // + (New space or New section, there) hugging its one meter. HERD-70.
           .when(connected, el => el.child(h_flex().flex_none().gap(2).items_center()
             .child(this.plus(`machine-add-${m ?? "local"}`, "New space or section", (e) => { this.addAt = rectOf(e); }, () => this.addMenu(m), t))
-            .child(this.meter(m, t))))
-          .when(connected && Boolean(health?.error), el => el.child(div().id(`machine-dot-${m ?? "local"}`).size(6).rounded(3).flex_none().bg(red())
-            .tooltip(healthErrorWords(health.error))))
+            .child(this.machineNote(m, health, t))))
           .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(12).flex_none()));
       const own = !collapsed && sectionsOf(m).length;
       // An empty machine is just its header: its + makes a space.
@@ -478,22 +535,21 @@ export default class Spaces extends View {
     })];
   }
 
-  // A machine's health (CPU, memory, disk) as one set of thin bars, amber while new tasks wait
-  // there, red past its alert limit. No % beside it (HERD-70): numbers and plan left stay in
-  // the tooltip and the details a click opens (machine-popup.js). HERD-40, HERD-62.
-  // `this.stats`: read once per render (render()), as each read copies every machine's numbers.
-  meter(m, t) {
-    const s = this.stats?.[m ?? ""];
+  // A machine heading's right side (Doop App 02): here "9 terminals"; another machine a dot (green, red when its
+  // health couldn't be read), "ssh" and its load. Health stays in the tooltip and the details a click opens.
+  // `s`: this.stats, read once per render (each read copies every machine's numbers).
+  machineNote(m, s, t) {
     const id = `machine-meter-${m ?? "local"}`;
-    if (!s?.health) return div().id(id);
-    const meters = healthMeters(s);
-    const words = meterWords(s);
-    return h_flex().id(id).flex_none().h(20).px(4).gap(4).items_center().rounded(RADIUS.control).cursor_pointer()
+    const n = this.terminalCount?.get(m ?? null) ?? 0;
+    const load = typeof s?.health?.load === "number" ? `load ${s.health.load.toFixed(2)}` : null;
+    const words = m ? ["ssh", load].filter(Boolean).join(" · ") : `${n} terminal${n === 1 ? "" : "s"}`;
+    return h_flex().id(id).flex_none().h(20).px(4).gap(6).items_center().rounded(RADIUS.control).cursor_pointer()
       .hover((st) => st.bg(t.hover))
-      .tooltip(words)
+      .tooltip(s?.error ? healthErrorWords(s.error) : s?.health ? meterWords(s) : words)
       .on_mouse_down("left", (e) => { this.meterAt = rectOf(e); })
       .on_click((_e, cx) => { cx.stop_propagation(); openMachine(m, this.meterAt); })
-      .child(bars(t, meters, 11, `${id}-health`));
+      .when(Boolean(m) || Boolean(s?.error), (el) => el.child(div().size(6).rounded(3).flex_none().bg(s?.error ? red() : green())))
+      .child(words);
   }
 
   // Pinned, as Shepherdr's: a heading like a section's (its pin, no menu), shown while it holds
@@ -515,6 +571,7 @@ export default class Spaces extends View {
       .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none())
       .when(this.pressed !== null && this.over === "pinned" && !open, (el) => el.child(this.line(t, "bottom")));
     const shown = open ? members : members.filter((r) => r.w.active || this.unread.has(r.w.id));
+    if (!open) this.hide(members.filter((r) => !shown.includes(r)), "Pinned", () => foldPinned());
     // Each pinned space keeps its worktrees under it.
     const tops = shown.map((r) => ({ ...r, kids: r.g && !r.g.linked ? this.kidsOf(r, trees.filter((k) => k.g.repo === r.g.repo)) : [] }));
     return [head, ...this.drawList("pinned", tops, t, (r, n, len) => ({ pinned: true, tag: many ? machineLook(r.w.machine ?? null).name : null,
@@ -540,6 +597,7 @@ export default class Spaces extends View {
       out.push(this.sectionHead(s, members, t, open));
       // Folded, it still shows the space you're in and its unread ones, as Slack does.
       const shown = this.ordered(open ? members : members.filter((r) => r.w.active || this.unread.has(r.w.id)));
+      if (!open) this.hide(members.filter((r) => !(r.w.active || this.unread.has(r.w.id))), s.name, () => foldSection(s.id));
       // Dropped on the header, a space goes to the section's end: the line shows under its last row.
       out.push(...this.drawList(`section:${s.id}`, shown, t, (_r, n, len) => ({ end: open && n === len - 1 ? `section:${s.id}` : null })));
       if (open && !members.length) out.push(this.emptySection(s, t));
@@ -588,44 +646,212 @@ export default class Spaces extends View {
       .child(svg("mods/workspace-chrome/plus.svg").size(13));
   }
 
-  // "N more" under a folded list (`hidden` rows), or "Show fewer" once it's open. `indent`: a worktree list's.
-  moreRow(key, hidden, t, indent) {
+  // "N more spaces, none need you" (App 13; what needs you never folds), "N more worktrees", "N more agents"; or
+  // "Show fewer" once open.
+  moreRow(key, hidden, t, what) {
     const open = this.more.has(key);
-    return h_flex().id(`more-${key}`).h(24).flex_none().pl(8 + indent).pr(8).gap(9).items_center().rounded(RADIUS.card)
-      .text_size(TEXT.id).font_family(MONO).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.muted))
+    const noun = hidden === 1 ? what.slice(0, -1) : what;
+    const words = open ? "Show fewer" : what === "spaces" ? `${hidden} more ${noun}, none need you` : `${hidden} more ${noun}`;
+    return h_flex().id(`more-${key}`).h(26).flex_none().px(10).gap(8).items_center().rounded(RADIUS.card)
+      .text_size(TEXT.id + 0.5).font_family(MONO).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.muted))
       .on_click((_e, cx) => { open ? this.more.delete(key) : this.more.add(key); cx.notify(); })
-      .child(div().w(indent ? 12 : 18).flex_none())
-      .child(open ? "Show fewer" : `${hidden} more`);
+      .child(svg(`mods/workspace-chrome/chevron-${open ? "right" : "down"}.svg`).size(12).flex_none())
+      .child(div().min_w(0).truncate().child(words));
   }
 
-  // A repo's worktrees under its row (Doop App 02): a guide line, and per worktree its branch (cut in the middle
-  // to fit, R2) and how far ahead of the repo's own branch it is. One open as a space is that space: a click
-  // shows it, a right-click its menu, its counts at the right, a flat fill while shown. Past 5 the rest fold,
-  // except one you're in or that needs you.
+  // Under a space (Doop App 02), beside a guide line: its agents and programs, then its repo's checkouts, each with
+  // its own agents (by the folder each runs in). Past 5 the worktrees fold, and past 5 the agents (helpers go with
+  // theirs), never one that needs you.
   treeRows(r, t) {
-    if (!r.kids?.length) return [];
+    const kids = r.kids ?? [];
+    const all = [r, ...kids.map((k) => k.space).filter(Boolean)].flatMap((x) => this.agents[x.w.id] ?? []);
+    if (!kids.length && !all.length) return [];
+    const akey = `agents:${r.w.id}`;
+    const tops = all.filter((a) => !a.helper);
+    const folded = foldList(tops, { limit: FOLD, open: this.more.has(akey), keep: (a) => a.status === "blocked" || all.some((h) => h.helper === a.address && h.status === "blocked") });
+    const shownAgents = new Set(folded.shown.map((a) => a.address));
+    const visible = all.filter((a) => shownAgents.has(a.helper ?? a.address));
+    // Each agent under the checkout it runs in (the deepest folder holding its own), else its worktree space's, else
+    // the repo's own checkout; none: under the space itself.
+    const byKid = new Map();
+    const main = kids.find((k) => k.main) ?? null;
+    for (const a of visible) {
+      const at = kids.filter((k) => a.cwd && inside(a.cwd, k.path)).sort((x, y) => y.path.length - x.path.length)[0]
+        ?? kids.find((k) => k.space?.w.id === a.space) ?? (a.space === r.w.id ? main : null);
+      const list = byKid.get(at) ?? [];
+      list.push(a);
+      byKid.set(at, list);
+    }
     const key = `tree:${r.w.id}`;
-    const { shown, hidden } = foldList(r.kids, { limit: FOLD, open: this.more.has(key), keep: (k) => this.keeps(k.space) });
-    const max = fits(8 * 2 + 18 + 8 * 2 + 12 + 7 + 64);
-    const rows = shown.map((k) => {
-      const s = k.space, on = Boolean(s?.w.active);
-      const label = k.branch ?? "detached";
-      const needs = s ? this.needs(s.w) : 0, ready = s ? this.readyIn(s.w) : 0;
-      return h_flex().id(`tree-${r.w.id}-${k.path}`).h(TREE).flex_none().px(8).gap(7).items_center().rounded(RADIUS.card)
-        .text_size(TEXT.id).font_family(MONO).text_color(on ? t.foreground : s ? t.muted : t.dim)
-        .tooltip(`${label} · ${tilde(k.path)}`)
-        .when(on, (el) => el.bg(t.selected))
-        .when(Boolean(s) && !on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
-        .when(Boolean(s), (el) => el.on_click(() => run("space.select", { id: s.w.id }))
-          .on_mouse_down("right", (e) => this.menu(s.w, s.g, s.name, e)))
-        .child(svg("mods/workspace-chrome/branch.svg").size(12).flex_none().text_color(on ? working() : t.dim))
-        .child(div().flex_1().min_w(0).truncate().child(midCut(label, max)))
-        .when(k.ahead > 0, (el) => el.child(div().flex_none().text_color(green()).child(`↑${k.ahead > 99 ? "99+" : k.ahead}`)))
-        .when(Boolean(s) && muted(s.w.id), (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(12).flex_none().text_color(t.dim)))
-        .when(needs > 0 || ready > 0, (el) => el.child(countBadge(needs, ready, on ? t.selected : t.chrome)));
-    });
-    if (hidden || (this.more.has(key) && r.kids.length > FOLD)) rows.push(this.moreRow(key, hidden, t, 0));
+    const { shown, hidden } = foldList(kids, { limit: FOLD, open: this.more.has(key), keep: (k) => this.keeps(k.space) || k.main });
+    const rows = (byKid.get(null) ?? []).map((a) => this.agentRow(a, t, false));
+    for (const k of shown) rows.push(this.treeRow(r, k, t), ...(byKid.get(k) ?? []).map((a) => this.agentRow(a, t, true)));
+    if (hidden || (this.more.has(key) && kids.length > FOLD)) rows.push(this.moreRow(key, hidden, t, "worktrees"));
+    if (folded.hidden || (this.more.has(akey) && tops.length > FOLD)) rows.push(this.moreRow(akey, folded.hidden, t, "agents"));
     return [v_flex().id(`trees-${r.w.id}`).flex_none().ml(16).pl(4).border_l(1).border_color(t.border).children(rows)];
+  }
+
+  // A checkout: its branch (cut in the middle, R2), "checkout" for the repo's own, else ↑ahead ↓behind and a dot while
+  // it has uncommitted changes. One open as a space is that space: a click shows it, a right-click its menu, its roll
+  // at the right, a flat fill while shown.
+  treeRow(r, k, t) {
+    const s = k.space, on = Boolean(s?.w.active);
+    const label = k.branch ?? "detached";
+    const max = fits(8 * 2 + 18 + 8 * 2 + 12 + 7 + 64);
+    return h_flex().id(`tree-${r.w.id}-${k.path}`).h(TREE).flex_none().px(8).gap(7).items_center().rounded(RADIUS.card)
+      .text_size(TEXT.id).font_family(MONO).text_color(on ? t.foreground : s ? t.muted : t.dim)
+      .tooltip(`${label} · ${tilde(k.path)}${k.dirty ? " · uncommitted changes" : ""}`)
+      .when(on, (el) => el.bg(t.selected))
+      .when(Boolean(s) && !on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
+      .when(Boolean(s), (el) => el.on_click(() => run("space.select", { id: s.w.id }))
+        .on_mouse_down("right", (e) => this.menu(s.w, s.g, s.name, e)))
+      .child(svg("mods/workspace-chrome/branch.svg").size(12).flex_none().text_color(on ? working() : t.dim))
+      .child(div().flex_1().min_w(0).truncate().child(midCut(label, max)))
+      .when(k.main, (el) => el.child(div().flex_none().child("checkout")))
+      .when(!k.main && k.ahead > 0, (el) => el.child(div().flex_none().text_color(green()).child(`↑${k.ahead > 99 ? "99+" : k.ahead}`)))
+      .when(!k.main && k.behind > 0, (el) => el.child(div().flex_none().child(`↓${k.behind > 99 ? "99+" : k.behind}`)))
+      .when(k.dirty, (el) => el.child(div().size(6).rounded(3).flex_none().bg(need())))
+      .when(Boolean(s) && muted(s.w.id), (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(12).flex_none().text_color(t.dim)))
+      .when(Boolean(s), (el) => el.child(this.roll(s.w, t)));
+  }
+
+  // What each space runs, for the rows under it: its Assistant, its tasks' agents (hc children of the Assistant,
+  // labelled herdr.task, no pane), the agents and programs in its tabs (plain shells left out), and after each its
+  // helpers (its own children, a task's reviewer). space id -> [{ address, kind, name, ref, sub, status, pct,
+  // program, cwd, space, tab, pane, helper (its agent's address) }]. Once per render.
+  agentIndex(sp, ps) {
+    const ts = terminals().filter((k) => k.state === "live");
+    const said = new Map(agents().map((a) => [a.address, a.status]));
+    const byAddress = new Map(ts.map((k) => [k.address, k]));
+    const statusOf = (address, fallback) => said.get(address) ?? byAddress.get(address)?.status ?? fallback ?? null;
+    this.terminalCount = new Map();
+    for (const k of ts) this.terminalCount.set(machineOf(k.address), (this.terminalCount.get(machineOf(k.address)) ?? 0) + 1);
+    const out = {};
+    for (const s of sp) {
+      const m = s.machine ?? null, id = String(s.id).split("/").pop();
+      const full = (a) => (a && m && !String(a).includes("/") ? `${m}/${a}` : a);
+      const mine = ts.filter((k) => machineOf(k.address) === m);
+      const rows = [], seen = new Set();
+      const add = (row) => { if (seen.has(row.address)) return; seen.add(row.address); rows.push({ space: s.id, ...row }); };
+      const coord = assistantOf(s, ts);
+      if (coord) add({ address: coord.address, kind: "assistant", name: "Assistant", status: statusOf(coord.address), cwd: coord.cwd });
+      const task = (k, p = null) => {
+        const key = k.labels["herdr.task"], info = this.tasks.get(`${m ?? ""}|${key}`);
+        return { address: k.address, kind: "task", key, ref: info?.ref ?? null, name: info?.title ?? k.name ?? "Task", status: statusOf(k.address, p?.status),
+          pct: info?.pct, program: k.program ?? p?.program, cwd: p?.cwd ?? k.cwd, tab: p?.tab, pane: p?.pane };
+      };
+      const tabs = new Set(s.tabs.map((x) => x.id));
+      for (const p of ps) {
+        if (!tabs.has(p.tab) || !p.terminal || p.program?.shell) continue;
+        const k = byAddress.get(p.terminal), l = k?.labels ?? {};
+        if (l["herdr.role"] === "coordinator") continue;
+        if (l["herdr.task"]) { add(task(k, p)); continue; }
+        const tab = s.tabs.find((x) => x.id === p.tab);
+        const agent = Boolean(p.program?.agent);
+        add({ address: p.terminal, kind: agent ? "agent" : "terminal", name: agent ? (tab?.named ? tab.name : p.program?.name ?? p.title) : String(p.title ?? "").replace(PORT, "").trim() || p.program?.name || "Terminal",
+          sub: agent ? null : [short(p.terminal), portOf(p.title)].filter(Boolean).join(" · "), status: agent ? statusOf(p.terminal, p.status) : null,
+          program: p.program, cwd: p.cwd, tab: p.tab, pane: p.pane, focused: p.focused && s.active });
+      }
+      for (const k of mine) {
+        const l = k.labels ?? {};
+        if (l["herdr.role"] === "reviewer" || l["herdr.role"] === "coordinator") continue;
+        const under = l["herdr.task.space"] === id || (coord && full(k.parent) === coord.address);
+        if (l["herdr.task"] && under) add(task(k));
+        else if (under) add({ address: k.address, kind: "agent", name: k.name || k.program?.name || short(k.address), status: statusOf(k.address), program: k.program, cwd: k.cwd });
+      }
+      const RANK = { assistant: 0, task: 1, agent: 2, terminal: 3 };
+      rows.sort((x, y) => RANK[x.kind] - RANK[y.kind]);
+      out[s.id] = rows.flatMap((row) => {
+        if (row.kind === "assistant") return [row];
+        const helpers = mine.filter((k) => !seen.has(k.address) && (full(k.parent) === row.address
+          || (row.key && k.labels?.["herdr.task"] === row.key && k.labels?.["herdr.role"] === "reviewer")));
+        for (const k of helpers) seen.add(k.address);
+        return [row, ...helpers.map((k) => ({ space: s.id, address: k.address, kind: "helper", helper: row.address, status: statusOf(k.address), program: k.program, cwd: k.cwd,
+          name: k.labels?.["herdr.role"] === "reviewer" ? "review" : k.name || k.program?.name || short(k.address), sub: "helper" }))];
+      });
+    }
+    return out;
+  }
+
+  // One agent or program (Doop App 02 .ag): its icon (the Assistant's compass, a program's terminal, else its logo),
+  // a task's id, its name, a quiet second part, its status dot at the right. A helper sits further in, a corner guide
+  // pointing up to its agent. A click shows it: its pane, a task's chat, else a peek.
+  agentRow(a, t, nested) {
+    const logo = (p, n) => (p?.icon ? (p.tint ? svg(p.icon).size(n).flex_none().text_color(t.muted) : image(p.icon).size(n).flex_none()) : null);
+    const icon = a.kind === "assistant" ? svg("mods/spaces-chat/compass.svg").size(14).flex_none().text_color(t.dim)
+      : a.kind === "terminal" ? svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.dim)
+      : logo(a.program, a.helper ? 13 : 14) ?? svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.dim);
+    const kind = a.kind === "terminal" ? "idle" : dotOf(a.status);
+    const left = (nested ? 12 : 4) + (a.helper ? 16 : 0);
+    return h_flex().relative().id(`agent-${a.address}`).h(26).flex_none().pl(left + 4).pr(8).gap(8).items_center().rounded(RADIUS.control)
+      .text_size(TEXT.body - 0.5).text_color(a.focused ? t.foreground : t.muted).whitespace_nowrap().cursor_pointer()
+      .when(Boolean(a.focused), (el) => el.bg(t.selected))
+      .hover((s) => s.bg(a.focused ? t.selected : t.hover))
+      .tooltip([a.ref, a.name, a.kind === "terminal" ? null : STATUS_WORDS[kind]].filter(Boolean).join(" · "))
+      .on_click(() => this.openAgent(a))
+      .when(Boolean(a.helper), (el) => el.child(div().absolute().left(left - 5).top(4).w(7).h(9).border_l(1).border_b(1).border_color(t.input ?? t.border).rounded_bl(4)))
+      .child(icon)
+      .when(Boolean(a.ref), (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).font_medium().text_color(t.dim).child(a.ref)))
+      .child(div().min_w(0).truncate().child(a.name))
+      .when(Boolean(a.sub), (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(a.sub)))
+      .child(div().flex_1())
+      .child(this.statusDot(kind, t, a.status === "working" ? a.pct : null));
+  }
+
+  openAgent(a) {
+    if (a.pane) {
+      run("space.select", { id: a.space });
+      run("tab.select", { id: a.tab });
+      return run("pane.focus", { pane: a.pane });
+    }
+    if (a.kind === "assistant") return run("space.select", { id: a.space });
+    if (a.kind === "task") return openTaskThread(a.address, a.ref, a.name);
+    run("terminal.peek", { terminal: a.address });
+  }
+
+  // The design's status dot (Doop App 02 .dot): needs you (amber, pulsing), working (blue, an arc going round it; a
+  // task's pie once it reports its %), done (green), idle (hollow). 14 square, so nothing moves when it changes.
+  statusDot(kind, t, pct = null) {
+    const box = () => div().relative().size(14).flex_none().flex().items_center().justify_center();
+    if (kind === "working" && Number.isFinite(pct)) return taskDot("working", { pct });
+    if (kind === "needs") return box()
+      .child(div().absolute().top(1).left(1).size(12).rounded(6).bg(need()).loop("opacity", { from: 0.1, to: 0.45, period: 2000 }))
+      .child(div().size(8).rounded(4).bg(need()));
+    if (kind === "working") return box().child(div().size(6).rounded(3).bg(working()))
+      .child(div().absolute().inset_0().child(svg("mods/workspace-chrome/spinner.svg").size(14).text_color(working()).spin(1200)));
+    if (kind === "done") return box().child(div().size(8).rounded(4).bg(green()));
+    return box().child(div().size(8).rounded(4).border(1.5).border_color(t.dim));
+  }
+
+  // A row's right side (App 02 .roll): its most urgent status as a dot and how many are so (needs you: the Inbox's
+  // items in its tabs; working: its agents at work; done: its tasks in Ready and its agents done). Nothing: hollow.
+  roll(w, t) {
+    const list = this.agents[w.id] ?? [];
+    const count = (st) => list.filter((a) => a.status === st).length;
+    const needs = this.needs(w), busy = count("working"), done = this.readyIn(w) + count("done");
+    const [kind, n] = needs ? ["needs", needs] : busy ? ["working", busy] : done ? ["done", done] : ["idle", 0];
+    return h_flex().flex_none().gap(5).items_center().font_family(MONO).text_size(TEXT.id).font_medium().text_color(t.muted)
+      .child(this.statusDot(kind, t)).when(n > 0, (el) => el.child(n > 99 ? "99+" : String(n)));
+  }
+
+  // R5: rows inside a folded group (a machine, a section, Pinned) whose needs show in the edge pill.
+  hide(rows, name, open) {
+    const n = rows.reduce((sum, r) => sum + this.needs(r.w), 0);
+    if (n > 0) this.hidden.push({ n, name, open });
+  }
+
+  // "2 need you below · build-box" (App 13), over the list's foot; a click opens those groups.
+  edgePill(t) {
+    const n = this.hidden.reduce((sum, h) => sum + h.n, 0);
+    if (!n) return null;
+    const where = this.hidden.length === 1 ? this.hidden[0].name : `${this.hidden.length} groups`;
+    const groups = [...this.hidden];
+    return h_flex().absolute().left(0).right(0).bottom(12).justify_center()
+      .child(h_flex().id("needs-below").h(26).px(11).gap(6).items_center().rounded(13).bg(need()).text_color(onStatus())
+        .text_size(TEXT.label - 0.5).font_medium().whitespace_nowrap().cursor_pointer()
+        .on_click((_e, cx) => { for (const h of groups) h.open(); cx.notify(); })
+        .child(svg("mods/spaces-chat/arrow-down.svg").size(13).flex_none())
+        .child(`${n} need${n === 1 ? "s" : ""} you below · ${where}`));
   }
 
   emptySection(s, t) {
@@ -761,8 +987,7 @@ export default class Spaces extends View {
     // counts still show.
     const quiet = muted(w.id);
     const parent = at ? parentOf(at) : "";
-    const sub = [tag, parent ? midCut(parent, fits(8 * 2 + 8 * 2 + 18 + 9 + 8 + (tag ? tag.length * MONO_CHAR : 0))) : null].filter(Boolean).join(" · ");
-    const needs = this.needs(w), ready = this.readyIn(w);
+    const sub = [tag, parent ? `in ${midCut(parent, fits(8 * 2 + 8 * 2 + 18 + 9 + 8 + 3 * MONO_CHAR + (tag ? tag.length * MONO_CHAR : 0)))}` : null].filter(Boolean).join(" · ");
     return v_flex()
       .relative()
       .id(`space-${w.id}`)
@@ -799,8 +1024,7 @@ export default class Spaces extends View {
               .child(g ? this.gitTail(g, false, name, t, null) : div().flex_1()))
             .when(Boolean(sub), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(sub))))
           .when(quiet, (el) => el.child(svg("mods/spaces-chat/bell-off.svg").size(13).flex_none().text_color(t.dim)))
-          // What needs the person in this space (the Inbox's items in its tabs), and its tasks in Ready, green.
-          .when(needs > 0 || ready > 0, el => el.child(countBadge(needs, ready, on ? t.selected : t.chrome))),
+          .child(this.roll(w, t)),
       );
   }
 
@@ -864,11 +1088,17 @@ export default class Spaces extends View {
       changed = true;
     }
     if (changed) setShared("space.colors", kept);
+    this.agents = collapsed ? {} : this.agentIndex(sp, panes());
+    this.hidden = [];
+    const rows = this.grouped(t, collapsed);
+    const pill = collapsed ? null : this.edgePill(t);
     return v_flex().size_full().min_h(0).bg(t.chrome).text_size(13)
       // Needs you on top; New space moved to the sidebar's footer (workspace-chrome-shepherdr), as the design has it.
       .child(this.needsRow(t, collapsed))
-      .child(v_flex().flex_1().min_h(0).px(8).pb(14).overflow_y_scrollbar().mode("always")
-        .on_mouse_up("left", (_e, cx) => this.release(cx))
-        .children(this.grouped(t, collapsed)));
+      .child(div().relative().flex_1().min_h(0).flex().flex_col()
+        .child(v_flex().flex_1().min_h(0).px(8).pb(pill ? 48 : 14).overflow_y_scrollbar().mode("always")
+          .on_mouse_up("left", (_e, cx) => this.release(cx))
+          .children(rows))
+        .when(Boolean(pill), (el) => el.child(pill)));
   }
 }
