@@ -44,7 +44,7 @@ export class BranchMenu {
     ];
     const others = otherTrees(s).map((x) => ({ id: `tree-${x.path}`, tree: x }));
     const rows = [...actions, ...others];
-    const pick = (i, cx) => { const r = rows[i]; if (!r) return; this.close(); if (r.tree) this.goTo(r.tree, p.machine); else r.fn(cx); };
+    const pick = (i, cx) => { const r = rows[i]; if (!r) return; if (r.tree) this.goTo(r.tree, p.machine); else r.fn(cx); this.close(); };
     const row = (r, i, child) => h_flex().id(`bm-${i}`).h(M.row).px(10).gap(10).items_center().rounded(RADIUS.card).whitespace_nowrap()
       .cursor_pointer().when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((st) => st.bg(t.hover)))
       .on_click((_e, cx) => pick(i, cx)).child(child);
