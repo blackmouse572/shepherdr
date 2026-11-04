@@ -28,7 +28,7 @@ import { NOTIFY, NOTIFY_DEFAULT, notifyMachine, notifyMachineOwn, notifyOf, noti
 import { machinesSection } from "./machines-section.js";
 import { TEXT, RADIUS, H, button, link, toggleSwitch, segmented, dialogTitle } from "./ui.js";
 import { webSection } from "./web-section.js";
-import { accountsSection } from "./accounts-section.js";
+import { accountsInit, accountsSection } from "./accounts-section.js";
 // Every page's, row's and button's words, and the rows' choices: core/settings.js, shared with the web app.
 // herdr-task's merge policy (MERGE): "ask" waits for the person's Accept (which merges), the others merge without it.
 // NOTES: what a task's agent is told to do first and last (tasks.start_notes / finish_notes): herdr-task puts them
@@ -79,6 +79,8 @@ export default class ShepherdrSettings extends View {
     this.handle.focus();
     // Secrets: its boxes and list (secrets-section.js); a space's settings add for that space.
     this.sec = secretsInit(cx);
+    // Accounts: the new account's name box and a rename's (accounts-section.js).
+    this.acc = accountsInit(cx);
     this.secFor();
     // Tasks > Base branch, a space's (base-branch.js).
     this.bb = baseInit(this);
@@ -605,6 +607,7 @@ export default class ShepherdrSettings extends View {
       .on_key_down((e, cx) => {
         if (e.key !== "escape") return;
         if (this.sec?.open) { this.sec.open = false; cx.stop_propagation(); cx.notify(); }
+        else if (this.acc?.renaming || this.acc?.confirm) { this.acc.renaming = null; this.acc.confirm = null; cx.stop_propagation(); cx.notify(); }
         else this.close();
       })
       .child(head)

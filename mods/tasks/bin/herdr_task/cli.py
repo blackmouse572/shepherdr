@@ -22,6 +22,7 @@ from .automations import auto_list, cmd_auto, cmd_scheduler, cmd_track, EVENTS, 
 from .machines import cmd_assistants, cmd_machines, cmd_sync_auto, cmd_tell
 from .autopilot import cmd_autopilot, cmd_complete, cmd_progress
 from .home import cmd_home
+from .accounts import cmd_accounts
 
 
 # ---- another machine ------------------------------------------------------------------------
@@ -357,6 +358,11 @@ def main():
     c.add_argument("--space")
     c.add_argument("--parent")
     c.add_argument("--keep", action="store_true", help="add the agent beside the old one")
+    c = sub.add_parser("accounts", help="the Claude account new agents here start on (Settings > Accounts), or prepare one's folder")
+    c.add_argument("action", nargs="?", choices=["active", "prepare"], default="active")
+    c.add_argument("account", nargs="?", help="prepare: the account's name (its folder is ~/.claude-<name>)")
+    c.add_argument("--json", action="store_true")
+    c.set_defaults(fn=cmd_accounts)
     c = sub.add_parser("_allow")  # Codex's PermissionRequest hook (own_argv)
     c.add_argument("--command", required=True)
     c.set_defaults(fn=cmd_allow, json=False)

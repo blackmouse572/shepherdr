@@ -23,8 +23,55 @@ export const WORDS = {
   addHow: "Another account is another Claude folder: run CLAUDE_CONFIG_DIR=~/.claude-<name> claude and sign in. It shows here within 5 minutes.",
   accounts: "Accounts",
   accountsAbout: "The Claude accounts and the Codex sign-in on this computer, what each has used, and which one new work starts on.",
-  notYet: "Switching which account a new task starts on comes with herdr-task's accounts support; until then this marks the one you use.",
+  newWork: "New tasks start on the ACTIVE account; a task you resume stays on the account it started on.",
+  add: "Add an account",
+  addField: "Name",
+  addPlaceholder: "Work",
+  addButton: "Add and sign in",
+  addHint: (id) => (id ? `Its folder is ~/.claude-${id}. A terminal opens to sign in.` : "A Claude Code folder of its own, and a terminal to sign in."),
+  signIn: "Sign in",
+  signInAgain: "Sign in again",
+  rename: "Rename",
+  save: "Save",
+  cancel: "Cancel",
+  remove: "Remove",
+  removeYes: "Remove from Shepherdr",
+  keep: "Keep",
+  removeAbout: (folder) => `Hides it here and in the popover. ${folder} and its sign-in stay; Show again brings it back.`,
+  hidden: (names) => `Removed from Shepherdr: ${names}`,
+  showAgain: "Show again",
+  signInTitle: (name) => `Sign in to ${name}`,
+  signInBody: "Finish in the terminal that opened, then close it. The account's meters show within a minute.",
 };
+
+// ---- names, hidden accounts, new accounts ------------------------------------------------------------------------
+// The person's own names for accounts (prefs.names: { id: name }) and the ones removed from Shepherdr (prefs.hidden):
+// a renamed account keeps its folder (a Mac keeps its sign-in under the folder's path), a removed one stays on disk.
+export function shown(accounts, prefs) {
+  const names = prefs?.names ?? {}, hidden = new Set(prefs?.hidden ?? []);
+  return (accounts ?? []).filter((a) => !hidden.has(a.id)).map((a) => (names[a.id] ? { ...a, name: names[a.id] } : a));
+}
+export function hiddenOf(accounts, prefs) {
+  const names = prefs?.names ?? {}, hidden = new Set(prefs?.hidden ?? []);
+  return (accounts ?? []).filter((a) => hidden.has(a.id)).map((a) => (names[a.id] ? { ...a, name: names[a.id] } : a));
+}
+
+// A new account's id from the name typed: lowercase letters, digits and dashes, at most 24 (herdr_task/accounts.py ID).
+export function accountId(name) {
+  return String(name ?? "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24).replace(/-+$/, "");
+}
+// Why a name can't be a new account, or "" when it can.
+export function addProblem(name, accounts) {
+  const id = accountId(name);
+  if (!String(name ?? "").trim()) return "Give it a name.";
+  if (!id) return "Use letters or digits in the name.";
+  if (id === "default") return "Default is ~/.claude itself.";
+  if ((accounts ?? []).some((a) => a.id === id)) return `There is already an account in ~/.claude-${id}.`;
+  return "";
+}
+// A rename's name: trimmed, one line, at most 40; "" keeps the folder's own name.
+export const cleanName = (name) => String(name ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
 
 // An account's error as a short line.
 export const ERRORS = {

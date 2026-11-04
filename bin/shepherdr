@@ -20,7 +20,8 @@ What goes where (each under --root, default your home):
   .local/share/shepherdr/               the Shepherdr service (service/, core/) and the built web app (web/dist)
   .config/systemd/user/shepherdr.service    Linux: keeps the service running (systemctl --user)
   Library/LaunchAgents/dev.shepherdr.service.plist   macOS: the same with launchd
-  ~/.claude/settings.json, ~/.codex/hooks.json   the question-card hooks (not with --no-hooks)
+  ~/.claude/settings.json, ~/.codex/hooks.json   the question-card hooks (not with --no-hooks), and each
+                                                 other Claude account's ~/.claude-<id>/settings.json
 
 Never overwritten: a mod, layout or lib file that isn't ours (it refuses, naming each; --adopt backs
 them up and takes them over), a key you set (unless you say yes), a file you changed since the last
@@ -514,12 +515,21 @@ def install_guard(r, src, rec):
     rec.setdefault("files", {})[rel] = fsha(rel, data)
 
 
+def claude_accounts(r):
+    """Every other Claude account's folder under the home (~/.claude-<id>, Settings > Accounts), as home-relative paths."""
+    return sorted(d for d in os.listdir(r.root) if d.startswith(".claude-") and os.path.isdir(r.p(d))) if os.path.isdir(r.root) else []
+
+
 def add_hooks(r, rec):
     app = r.p(APP)
     done = []
     by_file = {}
     for f, event, entry in HOOKS:
         by_file.setdefault(f, []).append((event, entry))
+        # Each other Claude account gets the same hooks, so its agents' questions reach the chat too.
+        if f.startswith(".claude/"):
+            for acct in claude_accounts(r):
+                by_file.setdefault(f"{acct}/{f[len('.claude/'):]}", []).append((event, entry))
     for f, entries in by_file.items():
         path = r.p(f)
         if not os.path.isdir(os.path.dirname(path)):

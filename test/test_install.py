@@ -43,6 +43,8 @@ class Install(unittest.TestCase):
         os.makedirs(os.path.join(self.root, ".claude"))
         with open(os.path.join(self.root, ".claude", "settings.json"), "w") as f:
             json.dump({"model": "x"}, f)
+        # Another Claude account (Settings > Accounts) with no settings yet.
+        os.makedirs(os.path.join(self.root, ".claude-work"))
         self.before = tree(self.root)
 
     def tearDown(self):
@@ -67,6 +69,9 @@ class Install(unittest.TestCase):
         hooks = json.load(open(self.p(".claude/settings.json")))
         self.assertEqual(hooks["model"], "x")
         self.assertIn("ask-hook.sh", json.dumps(hooks["hooks"]["PermissionRequest"]))
+        work = json.load(open(self.p(".claude-work/settings.json")))
+        self.assertIn("ask-hook.sh", json.dumps(work["hooks"]["PermissionRequest"]))
+        self.assertIn("session-note.sh", json.dumps(work["hooks"]["SessionStart"]))
         # Helpers changed: the sync to other machines is held until doctor passes.
         self.assertTrue(os.path.exists(self.p(".herdr/sync-hold")))
         d = run("doctor", "--root", self.root)

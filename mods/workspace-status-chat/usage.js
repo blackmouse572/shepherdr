@@ -1,10 +1,11 @@
 // Usage and accounts in the status bar (Doop "App 04 · Usage and accounts"): the pill at the bar's right, and the
 // popover it opens above itself.
 //   pill      the active account's provider logo, name, session use with a small meter, then its week and first
-//             model week ("59% 5h ▬ 51% wk · 37% Fable"). The name gives way first; numbers are never cut.
+//             model week ("59% 5h ▬ 51% wk · 37% Fable"). Accounts show by the names the person gave them, without the
+//             ones removed from Shepherdr (usage-data.js accounts()). The name gives way first; numbers are never cut.
 //   popover   banner header ("Usage", when it last read, Refresh, Close); Claude | Codex; one card per account
 //             (logo, name in the serif, plan · folder, the filled amber ACTIVE badge and an amber edge on the one new
-//             work starts on, "Use" on the others, a chevron for its detail); every card's meters with the switch
+//             work starts on, "Use" on the others ("Sign in" on a signed-out one), a chevron for its detail); every card's meters with the switch
 //             tick; "Switch above" with its stepper; Manage accounts. At most 70% of the window tall: the header and
 //             footer stay, the cards scroll (overflow rule R8).
 //   detail    a second panel beside the popover for one account: Session / Weekly / model tiles, the last 7 days as
@@ -15,8 +16,8 @@
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, openOverlay, closeOverlay, window } from "herdr";
-import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need } from "./ui.js";
-import { usage, prefs, setPrefs, refresh, logo, meterBar, activeBadge, MONO } from "./usage-data.js";
+import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need, toast, plainError } from "./ui.js";
+import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, MONO } from "./usage-data.js";
 import { WORDS, POP, pctText, resetsLine, resetsWhen, activeOf, switchLine, accountSub, weekBars, spaceSplit,
   pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut } from "./core/usage.js";
 
@@ -30,7 +31,7 @@ let anchor = null; // the pill's bounds when last pressed: the popover sits abov
 export function usagePill() {
   const t = theme();
   const u = usage();
-  const list = u?.claude ?? [];
+  const list = accounts();
   if (!u || (!list.length && !u.codex?.signed_in)) return null;
   const a = activeOf(list, prefs());
   const p = pillParts(a);
@@ -52,7 +53,7 @@ export function usagePill() {
 export function openUsage({ at = null, detail = null, tab = "claude" } = {}) {
   const u = usage();
   const winH = at ? at.y + at.height : window()?.height ?? null;
-  const popH = popoverHeight(u?.claude ?? [], tab);
+  const popH = popoverHeight(accounts(), tab);
   const H = capHeight(Math.max(popH, detail ? DETAIL_H : 0), winH);
   const W = POP.width + (detail ? POP.gap + POP.detail : 0);
   const where = at ? { x: Math.max(8, at.x), y: Math.max(8, at.y - H - 6) } : "pointer";
@@ -124,7 +125,9 @@ export class UsagePopover {
     const right = [];
     if (provider === "claude") {
       right.push(active ? activeBadge(WORDS.active)
-        : button(`use-${a.id}`, WORDS.use, { kind: "plain", size: "xs", disabled: Boolean(a.error), onClick: () => setPrefs({ active: a.id }) }));
+        : a.error === "signed-out"
+          ? button(`sign-${a.id}`, WORDS.signIn, { kind: "plain", size: "xs", onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } })
+          : button(`use-${a.id}`, WORDS.use, { kind: "plain", size: "xs", disabled: Boolean(a.error), onClick: () => setPrefs({ active: a.id }) }));
       right.push(this.iconButton(`more-${a.id}`, "chevron-right", WORDS.detail,
         () => this.reopen({ detail: open ? null : a.id }), open));
     }
@@ -161,7 +164,7 @@ export class UsagePopover {
   popover(H) {
     const t = theme();
     const u = usage();
-    const list = u?.claude ?? [];
+    const list = accounts();
     const pr = prefs();
     const active = activeOf(list, pr);
     const cx = u?.codex;
@@ -197,7 +200,7 @@ export class UsagePopover {
 
   detailPanel(H) {
     const t = theme();
-    const a = (usage()?.claude ?? []).find((x) => x.id === this.detail);
+    const a = accounts().find((x) => x.id === this.detail);
     if (!a) return null;
     const tiles = [session(a), weekly(a), models(a)[0]].filter(Boolean);
     const tile = (m, i) => v_flex().flex_1().min_w(0).px(12).py(10).gap(3).when(i > 0, (el) => el.border_l(1).border_color(t.border))

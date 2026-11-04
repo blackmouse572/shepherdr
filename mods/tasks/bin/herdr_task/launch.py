@@ -21,6 +21,7 @@ from .templates import instructions
 from .agents import detail, LINE_MAX, live_agents, SUMMARY_MAX
 from .github import finish, remote_of
 from .browsers import browser_line, browser_path
+from . import accounts
 
 
 # ---- an agent's own herdr-task commands never ask -------------------------------------------
@@ -418,13 +419,14 @@ def folder_for(s, task):
     return path
 
 
-def launch(s, task, argv, space, message=None, parent=None, resume=None, role=None):
+def launch(s, task, argv, space, message=None, parent=None, resume=None, role=None, account=None):
     """Starts one agent for the task with no tab or pane of its own (a space can hold thousands
     of tasks): an hc child of `parent`, which parent_for() makes the space's coordinator, reached
     through the Tasks panel. Labels: herdr.task (its task), herdr.task.space (its space; never
     herdr.space, which Herdr gives a pane), herdr.agent, herdr.coordinator (its coordinator's tab,
     which keeps it under a restarted coordinator) and herdr.role=reviewer for a reviewer, kept
-    apart from the task's agents. Returns its record."""
+    apart from the task's agents. A Claude agent starts on `account` (a resumed session's own), else on the
+    active account (accounts.py), and its record says which. Returns its record."""
     key = s.key(task)
     cmd = list(resume or argv)
     if not role:
@@ -440,9 +442,14 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
         labels += ["--label", f"herdr.role={role}"]
     rel = ["--parent", parent, "--outlive-parent"] if parent else ["--no-parent"]
     name = agent_name(s, task, "review" if role else None)
+    claude = agent_key(argv) == "claude"
+    if claude:
+        account = account or accounts.active()
+        accounts.ensure_hooks(account)
+    on = accounts.env(account) if claude else []
     # HERDR_BROWSER_TASK: which task's browser herdr-browser drives (HERD-57), for it and its children.
     r = run(["hc", "run", "--bg", "--json", "--keep", "--cwd", folder_for(s, task), "--name", name,
-             *labels, *rel, "--", *low_priority(["env", f"HERDR_BROWSER_TASK={key}", *in_shell(cmd)], name)])
+             *labels, *rel, "--", *low_priority(["env", f"HERDR_BROWSER_TASK={key}", *on, *in_shell(cmd)], name)])
     try:
         out = json.loads(r.stdout)
     except ValueError:
@@ -450,6 +457,8 @@ def launch(s, task, argv, space, message=None, parent=None, resume=None, role=No
     if r.returncode != 0 or not out.get("address"):
         raise Fail((r.stderr or r.stdout).strip() or "hc run failed")
     a = {"address": out["address"], "agent": agent_key(argv), "argv": argv, "at": now()}
+    if claude:
+        a["account"] = account
     if parent:
         a["parent"] = parent
     s.dirty = True
