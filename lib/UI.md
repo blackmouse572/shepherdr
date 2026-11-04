@@ -106,13 +106,14 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
   never sentences that explain how it works. None where the name already shows, nor on a control that's off.
 
 Already on these parts: the count badges (`tabs-tasks`, `spaces-chat`), the task dots
-(`dot.js`), the New space dialog's footer (`newspace`). Everything else moves area by area.
+(`dot.js`), the dialog footer and header (New space, Rename, Add machine, Settings, confirm, prompt), the switch.
+Everything else moves area by area. The theme has no key for the design's accent-shade (#EA9C27), so it has none.
 
 ## Usage parts (lib/usage-data.js)
 
 The status bar's usage pill and popover and Settings > Accounts share these, not ui.js (only those two mods copy it):
 
-- `logo(provider, size)`: Claude's logo in its colour, OpenAI's in the text colour. Accounts show these, never avatars.
-- `meterBar(id, pct, { width, height, switchAt })`: a fixed-width meter, green, amber within 20 of the switch point,
+- `logo(provider, size)`: Claude's logo in its colour, OpenAI's in the text colour. Account rows and usage cards show an initial avatar beside them.
+- `meterBar(id, pct, { width, height, switchAt })`: a fixed-width meter, green, amber within 40 below the switch point,
   red past it, with a tick at the switch point. Its percent and reset sit in fixed mono columns beside it, never cut.
 - `activeBadge()`: the filled amber ACTIVE badge on the account new work starts on (that card also gets an amber edge).
