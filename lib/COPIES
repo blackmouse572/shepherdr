@@ -10,14 +10,14 @@ core/toasts.js: toasts
 core/menus.js: spaces-chat tasks-menu menu-tasks new-menu-tasks pane-chat tabs-tasks coordinator
 core/asks.js: chat jump spaces-chat tabs-tasks tasks workspace-status-chat toasts
 core/needs.js: chat jump spaces-chat tabs-tasks tasks workspace-status-chat toasts
-core/tasks.js: chat jump tasks
+core/tasks.js: chat jump tasks spaces-chat
 core/notify.js: chat spaces-chat tabs-tasks tasks shepherdr-settings workspace-status-chat
 parked.js: chat spaces-chat tabs-tasks workspace-status-chat
 unread.js: chat spaces-chat
 agent.js: chat newspace shepherdr-settings
 settings.js: chat newspace shepherdr-settings
-dot.js: chat jump tasks
-core/tasklists.js: jump tasks
+dot.js: chat jump tasks spaces-chat
+core/tasklists.js: jump tasks spaces-chat
 core/chat-log.js: chat
 core/chat-view.js: chat
 core/screens.js: chat
@@ -29,7 +29,7 @@ core/worktree.js: task-changes task-pr
 core/recipe.js: artifacts
 core/newspace.js: newspace
 core/machine-add.js: machine-add-chat
-core/keys.js: keybinds jump
+core/keys.js: keybinds jump workspace-chrome-shepherdr
 core/machines.js: spaces-chat shepherdr-settings
 usage-data.js: workspace-status-chat shepherdr-settings
 core/usage.js: workspace-status-chat shepherdr-settings

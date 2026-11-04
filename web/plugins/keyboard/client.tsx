@@ -1,4 +1,4 @@
-import { Search } from './search.tsx'
+import { Search, openCommands, setCommands } from './search.tsx'
 // Keys, as the window's: Herdr's and Shepherdr's keys (keys.json) that mean something on the web, under the window's
 // Keybinds names (core/keys.js; Ctrl+Shift+? or the tab bar's menu opens the Keybinds dialog). Those a browser keeps
 // for itself (Ctrl+Tab, Ctrl+1–9, Ctrl+Shift+N, T, W) stay the window's. Ctrl+K jumps.
@@ -92,6 +92,18 @@ function back(ui: UI): Partial<UI> | null {
   return null
 }
 
+// Jump's commands: what these keys do, for the web (the window's command bar has its own).
+setCommands((ui, snap) => {
+  const caps = (k: string) => (K as any).keyText(k, apple) as string
+  return [
+    { id: 'settings', label: 'Settings', keys: caps('ctrl-,'), go: () => setUI({ settings: { section: ui.device === 'phone' ? null : 0 }, kb: true }) },
+    { id: 'keybinds', label: 'Keybinds', keys: caps('ctrl-shift-?'), go: () => { openKeybinds(true); setUI({ kb: true }) } },
+    { id: 'places', label: 'Show or hide the spaces', keys: caps('ctrl-shift-b'), go: () => (ui.device === 'desktop' ? togglePlaces() : setUI({ drawer: !ui.drawer })) },
+    ...(ui.place ? [{ id: 'rename', label: 'Rename space', keys: caps('shift-f2'), go: () => dispatchEvent(new CustomEvent('shepherdr:rename', { detail: ui.place })) }] : []),
+    { id: 'find', label: 'Find in this chat', keys: caps('ctrl-f'), go: () => openFind(keysChat(ui, snap)) },
+  ]
+})
+
 export default definePlugin({
   name: 'keyboard',
   setup(reg) {
@@ -145,6 +157,13 @@ export default definePlugin({
           if (to >= tabs.length) return false
           e.preventDefault()
           setUI({ term: tabs[to], task: null, arts: null, menu: false, plus: null, pick: null, kb: true })
+          return true
+        }
+        // Ctrl+Shift+P (⇧⌘P on a Mac too): Jump on commands only; again closes it
+        if ((e.metaKey || e.ctrlKey) && e.shiftKey && !e.altKey && e.code === 'KeyP') {
+          e.preventDefault()
+          if (ui.search) setUI({ search: false })
+          else openCommands()
           return true
         }
         // Ctrl+K and Ctrl+Shift+K: Jump (⌘K on a Mac too)

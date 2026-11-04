@@ -54,4 +54,7 @@ test("a repo's worktrees come from git's porcelain list, its own folder and prun
     { path: "/srv/wt/detached", branch: null, head: "ccc" },
   ]);
   expect(parseWorktrees("")).toEqual([]);
+  expect(parseWorktrees(out, { main: true })[0]).toEqual({ path: "/srv/app", branch: "main", head: "aaa", main: true });
+  expect(parseWorktrees(out, { main: true })).toHaveLength(3);
+  expect(parseWorktrees("", { main: true })).toEqual([]);
 });
