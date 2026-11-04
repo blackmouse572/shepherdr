@@ -13,7 +13,7 @@ export const WORDS = {
   switchAbove: "Switch above",
   manage: "Manage accounts",
   openSettings: "Open in Settings",
-  weekChart: "Weekly use, last 7 days",
+  weekChart: "Weekly use · last 7 days",
   bySpace: "This week by space",
   detail: "Usage detail",
   checks: "checks every 5 min",
@@ -42,6 +42,41 @@ export const WORDS = {
   showAgain: "Show again",
   signInTitle: (name) => `Sign in to ${name}`,
   signInBody: "Finish in the terminal that opened, then close it. The account's meters show within a minute.",
+  setDefault: "Set as default",
+  openFolder: "Open folder",
+  skip: "Skip when switching",
+  unskip: "Use when switching",
+  moveUp: "Move up",
+  moveDown: "Move down",
+  removeMenu: "Remove…",
+  keepsFolder: "keeps folder",
+  badgeDefault: "Default",
+  badgeNext: "Next",
+  badgeSkipped: "Skipped",
+  skippedLine: "not used for switching",
+  claudeSub: (n) => `${n} ${n === 1 ? "folder" : "folders"} · switch order top to bottom`,
+  addAccount: "Add account",
+  switching: "Switching",
+  switchingSub: (where) => `One rule for every space on ${where}`,
+  auto: "Switch automatically",
+  autoAbout: "Past the limit, new work goes to the next account",
+  switchAboutRow: "Measured on the 5h session window",
+  running: "Work already running",
+  stays: "Stays",
+  moves: "Moves",
+  runningStays: "Keeps the account it started on",
+  runningMoves: "Running sessions can't move yet: they finish on their account",
+  undoToast: "Toast with Undo",
+  undoAbout: "Undo stays open for 10 seconds",
+  undo: "Undo",
+  view: "View",
+  codexSub: "One sign-in · no folders",
+  signedIn: "Signed in",
+  signOut: "Sign out",
+  signOutAbout: "Codex stops working on this computer until you sign in again.",
+  codexAbout: "Codex has one sign-in, so it can't switch accounts: it pauses at its limit.",
+  remoteNote: (m) => `Read-only: ${m}'s own ~/.claude and Codex, as Settings > Machines reads them. Its accounts are set on ${m}.`,
+  remoteNone: (m) => `Nothing read from ${m} yet. Its plan usage shows here once Settings > Machines has read it.`,
 };
 
 // ---- names, hidden accounts, new accounts ------------------------------------------------------------------------
@@ -111,16 +146,35 @@ export function resetsWhen(iso) {
   return `${DAY[at.getDay()]} ${hh}:${mm}`;
 }
 
-// The switch point: 50 to 100 in steps of 5; 100 is "never switch".
+// The switch point: 50 to 95 in steps of 5. Whether it switches at all is its own pick (prefs.auto).
 export const SWITCH_DEFAULT = 95;
-export const clampSwitch = (v) => Math.min(100, Math.max(50, Math.round((n(v) ?? SWITCH_DEFAULT) / 5) * 5));
+export const clampSwitch = (v) => Math.min(95, Math.max(50, Math.round((n(v) ?? SWITCH_DEFAULT) / 5) * 5));
+// Amber this far under the switch point (Doop App 02/04: 59% is amber, 51% green at 95).
+export const AMBER_WITHIN = 40;
 
-// A meter's colour: red at or past the switch point, amber within 20 of it, else green.
+// A meter's colour: red at or past the switch point, amber within AMBER_WITHIN of it, else green.
 export function meterTone(pct, switchAt = SWITCH_DEFAULT) {
   if (n(pct) === null) return "none";
   if (pct >= switchAt) return "red";
-  if (pct >= switchAt - 20) return "amber";
+  if (pct >= switchAt - AMBER_WITHIN) return "amber";
   return "green";
+}
+
+const strs = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string") : []);
+// ~/.herdr/accounts.json as the window uses it. Note: switch_at 100 used to mean "never switch"; it reads as auto off.
+export function normPrefs(p) {
+  const d = p && typeof p === "object" ? p : {};
+  const old = n(d.switch_at) !== null && d.switch_at >= 100;
+  const names = d.names && typeof d.names === "object"
+    ? Object.fromEntries(Object.entries(d.names).filter(([, v]) => typeof v === "string")) : {};
+  return {
+    active: typeof d.active === "string" ? d.active : null,
+    switch_at: old ? SWITCH_DEFAULT : clampSwitch(d.switch_at),
+    auto: typeof d.auto === "boolean" ? d.auto : !old,
+    running: d.running === "moves" ? "moves" : "stays",
+    undo: typeof d.undo === "boolean" ? d.undo : true,
+    names, hidden: strs(d.hidden), order: strs(d.order), skipped: strs(d.skipped),
+  };
 }
 
 const meter = (a, id) => (a?.meters ?? []).find((m) => m.id === id) ?? null;
@@ -129,11 +183,23 @@ export const weekly = (a) => meter(a, "weekly");
 // The model weeks (Fable, Opus, ...), as the endpoint names them.
 export const models = (a) => (a?.meters ?? []).filter((m) => m.id !== "session" && m.id !== "weekly");
 
-// What decides a switch: the fuller of the session and the week.
-export function binding(a) {
-  const ps = [session(a)?.pct, weekly(a)?.pct].filter((p) => n(p) !== null);
-  return ps.length ? Math.max(...ps) : null;
+// What decides a switch: the 5h session window only (Doop App 05).
+export const binding = (a) => n(session(a)?.pct);
+
+// The accounts in the person's switch order (prefs.order), the ones not in it after, as found.
+export function ordered(accounts, prefs) {
+  const at = new Map((prefs?.order ?? []).map((id, i) => [id, i]));
+  return (accounts ?? []).map((a, i) => [a, at.has(a.id) ? at.get(a.id) : 1e6 + i]).sort((x, y) => x[1] - y[1]).map(([a]) => a);
 }
+// The order with `id` moved by `delta` places (Move up / down).
+export function moved(accounts, prefs, id, delta) {
+  const ids = ordered(accounts, prefs).map((a) => a.id);
+  const i = ids.indexOf(id), j = i + delta;
+  if (i < 0 || j < 0 || j >= ids.length) return ids;
+  [ids[i], ids[j]] = [ids[j], ids[i]];
+  return ids;
+}
+export const skipped = (a, prefs) => (prefs?.skipped ?? []).includes(a?.id);
 
 // The account new work starts on: the one picked, else the first that works, else the first.
 export function activeOf(accounts, prefs) {
@@ -141,31 +207,89 @@ export function activeOf(accounts, prefs) {
   return list.find((a) => a.id === prefs?.active) ?? list.find((a) => !a.error) ?? list[0] ?? null;
 }
 
-// Where new work goes once the active one passes the switch point: the emptiest other working account under it.
-export function nextAccount(accounts, activeId, switchAt = SWITCH_DEFAULT) {
-  return (accounts ?? []).filter((a) => a.id !== activeId && !a.error && n(binding(a)) !== null && binding(a) < switchAt)
-    .sort((x, y) => binding(x) - binding(y))[0] ?? null;
+// Where new work goes once the active one passes the switch point: the first in the switch order that isn't
+// skipped, works, and has room in its 5h window.
+export function nextAccount(accounts, activeId, switchAt = SWITCH_DEFAULT, prefs = null) {
+  return ordered(accounts, prefs).find((a) => a.id !== activeId && !a.error && !skipped(a, prefs)
+    && binding(a) !== null && binding(a) < switchAt) ?? null;
 }
 
-// An automatic switch due now: the active account at or past the point and another under it. 100 never switches.
+// An automatic switch due now: switching on, the active account's 5h window at or past the point, another with room.
 export function dueSwitch(accounts, prefs) {
   const at = clampSwitch(prefs?.switch_at);
   const from = activeOf(accounts, prefs);
-  if (!from || at >= 100 || n(binding(from)) === null || binding(from) < at) return null;
-  const to = nextAccount(accounts, from.id, at);
+  if (!from || prefs?.auto === false || binding(from) === null || binding(from) < at) return null;
+  const to = nextAccount(accounts, from.id, at, prefs);
   if (!to) return null;
-  const which = (session(from)?.pct ?? -1) >= at ? "5h window" : "week";
-  return { from, to, at, why: `${from.name} passed ${at}% of its ${which}` };
+  return { from, to, at, why: `${from.name} passed ${at}% of its 5h window` };
 }
 
 // The rule row's second line.
 export function switchLine(accounts, prefs) {
+  if (prefs?.auto === false) return "Never switches by itself";
   const at = clampSwitch(prefs?.switch_at);
-  if (at >= 100) return "Never switches by itself";
   const from = activeOf(accounts, prefs);
-  const to = from && nextAccount(accounts, from.id, at);
+  const to = from && nextAccount(accounts, from.id, at, prefs);
   if ((accounts ?? []).length < 2) return "Add a second account to switch to";
   return to ? `Then new work goes to ${to.name}` : "No other account has room";
+}
+
+// The status bar's rule: "switch at 95% · Personal next"; null with one account.
+export function statusSwitch(accounts, prefs) {
+  if ((accounts ?? []).length < 2) return null;
+  if (prefs?.auto === false) return "switching off";
+  const at = clampSwitch(prefs?.switch_at);
+  const from = activeOf(accounts, prefs);
+  const to = from && nextAccount(accounts, from.id, at, prefs);
+  return `switch at ${at}% · ${to ? `${to.name} next` : "none next"}`;
+}
+
+// A row's badge in Settings > Accounts: "default" (new work starts there), "next", "skipped", or null.
+export function badgeOf(a, accounts, prefs) {
+  const active = activeOf(accounts, prefs);
+  if (a.id === active?.id) return "default";
+  if (skipped(a, prefs)) return "skipped";
+  if (prefs?.auto !== false && active && nextAccount(accounts, active.id, clampSwitch(prefs?.switch_at), prefs)?.id === a.id) return "next";
+  return null;
+}
+
+// The switch toast (Doop App 04): who passed the point, and what starts where now. `ref`: the next queued task.
+export function switchToast(d, ref = null) {
+  const first = ref ? `${ref} will start on ${d.to.name}.` : `New tasks start on ${d.to.name}.`;
+  return { title: `New work now goes to ${d.to.name}`, sub: d.why, body: `${first} Running tasks stay on ${d.from.name}.` };
+}
+
+// The next task to start: the earliest queued one in these task lists (~/.herdr/tasks/*.json), as "SHE-15".
+export function nextQueued(lists) {
+  const q = [];
+  for (const l of lists ?? []) {
+    for (const t of l?.tasks ?? []) if (t?.state === "queued") q.push({ at: String(t.queued_at ?? ""), ref: l.prefix ? `${l.prefix}-${t.id}` : String(t.id) });
+  }
+  return q.sort((x, y) => x.at.localeCompare(y.at))[0]?.ref ?? null;
+}
+
+// An account's initial, for its avatar.
+export const initial = (name) => (String(name ?? "").trim()[0] ?? "?").toUpperCase();
+// A row's usage words: "59% 5h · 51% wk".
+export const usageShort = (a) => [session(a) ? `${pctText(session(a).pct)} 5h` : null, weekly(a) ? `${pctText(weekly(a).pct)} wk` : null]
+  .filter(Boolean).join(" · ");
+
+// Another machine's plan windows (lib/machines.js stats: { name, used, resets_at ms }) as meters.
+export function metersOf(windows) {
+  const out = [];
+  for (const w of windows ?? []) {
+    const p = n(w?.used);
+    if (p === null) continue;
+    const at = n(w.resets_at) !== null ? new Date(w.resets_at).toISOString() : null;
+    const name = String(w.name ?? "");
+    const label = (/^Weekly \((.+?)(?: only)?\)$/.exec(name)?.[1] ?? /^(.+?) · (?:Weekly|5-hour)$/.exec(name)?.[1] ?? name).trim().slice(0, 24) || "Limit";
+    const m = name === "5-hour" ? { id: "session", label: "Session" }
+      : name === "Weekly" || name === "Weekly (all models)" ? { id: "weekly", label: "Weekly" }
+      : { id: label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "limit", label, model: true };
+    if (!out.some((x) => x.id === m.id)) out.push({ ...m, pct: p, resets_at: at });
+  }
+  const rank = (m) => (m.id === "session" ? 0 : m.id === "weekly" ? 1 : 2);
+  return out.sort((x, y) => rank(x) - rank(y));
 }
 
 // A path cut in the middle so both ends show (overflow rule R2): "~/.claude-…/work-account".

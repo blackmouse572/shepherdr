@@ -22,22 +22,57 @@ test("reset times read short and never cut", () => {
 test("the switch point and the meters' colours", () => {
   expect(clampSwitch(93)).toBe(95);
   expect(clampSwitch(20)).toBe(50);
+  expect(clampSwitch(100)).toBe(95);
   expect(clampSwitch(undefined)).toBe(95);
-  expect(meterTone(59, 95)).toBe("green");
-  expect(meterTone(80, 95)).toBe("amber");
+  // Doop App 02/04: 59% amber, 51% green with the switch at 95.
+  expect(meterTone(59, 95)).toBe("amber");
+  expect(meterTone(51, 95)).toBe("green");
+  expect(meterTone(55, 95)).toBe("amber");
   expect(meterTone(95, 95)).toBe("red");
+  expect(meterTone(45, 80)).toBe("amber");
+});
+
+test("prefs: switch_at 100 reads as switching off, and the new picks get defaults", async () => {
+  const { normPrefs } = await import("./usage.js");
+  expect(normPrefs({ switch_at: 100 })).toMatchObject({ auto: false, switch_at: 95 });
+  expect(normPrefs({ switch_at: 80 })).toMatchObject({ auto: true, switch_at: 80, running: "stays", undo: true, order: [], skipped: [] });
+  expect(normPrefs({ auto: false, switch_at: 70, running: "moves", undo: false, order: ["b", 3], skipped: ["c"] }))
+    .toMatchObject({ auto: false, switch_at: 70, running: "moves", undo: false, order: ["b"], skipped: ["c"] });
+  expect(normPrefs(null)).toMatchObject({ active: null, auto: true, switch_at: 95 });
 });
 
 test("which account is active, and where new work goes next", () => {
   const list = [acct("default", 59, 51), acct("personal", 27, 50), acct("work", 10, 99)];
   expect(binding(list[0])).toBe(59);
+  expect(binding(acct("x", 10, 99))).toBe(10);
   expect(activeOf(list, { active: "personal" }).id).toBe("personal");
   expect(activeOf(list, { active: "gone" }).id).toBe("default");
   expect(activeOf([{ id: "a", error: "signed-out" }, { id: "b", error: null }], {}).id).toBe("b");
   expect(nextAccount(list, "default", 95).id).toBe("personal");
   expect(switchLine(list, { active: "default", switch_at: 95 })).toBe("Then new work goes to Personal");
   expect(switchLine([list[0]], {})).toBe("Add a second account to switch to");
-  expect(switchLine(list, { switch_at: 100 })).toBe("Never switches by itself");
+  expect(switchLine(list, { auto: false })).toBe("Never switches by itself");
+});
+
+test("the switch order, skipped accounts and the badges", async () => {
+  const { ordered, moved, badgeOf, statusSwitch } = await import("./usage.js");
+  const list = [acct("default", 59, 51), acct("personal", 27, 50), acct("work", 10, 99), acct("client", 5, 5)];
+  // The 5h window only: work (99% of its week) still has room.
+  expect(nextAccount(list, "default", 95).id).toBe("personal");
+  const pr = { active: "default", order: ["work", "default"], skipped: ["personal"] };
+  expect(ordered(list, pr).map((a) => a.id)).toEqual(["work", "default", "personal", "client"]);
+  expect(nextAccount(list, "default", 95, pr).id).toBe("work");
+  expect(nextAccount(list, "default", 95, { skipped: ["personal", "work"] }).id).toBe("client");
+  expect(moved(list, pr, "client", -1)).toEqual(["work", "default", "client", "personal"]);
+  expect(moved(list, pr, "work", -1)).toEqual(["work", "default", "personal", "client"]);
+  expect(badgeOf(list[0], list, pr)).toBe("default");
+  expect(badgeOf(list[2], list, pr)).toBe("next");
+  expect(badgeOf(list[1], list, pr)).toBe("skipped");
+  expect(badgeOf(list[3], list, pr)).toBe(null);
+  expect(badgeOf(list[2], list, { ...pr, auto: false })).toBe(null);
+  expect(statusSwitch(list, pr)).toBe("switch at 95% · Work next");
+  expect(statusSwitch(list, { auto: false })).toBe("switching off");
+  expect(statusSwitch([list[0]], {})).toBe(null);
 });
 
 test("an automatic switch only past the point and only to an account with room", () => {
@@ -45,8 +80,29 @@ test("an automatic switch only past the point and only to an account with room",
   const d = dueSwitch(list, { active: "default", switch_at: 95 });
   expect(d.to.id).toBe("personal");
   expect(d.why).toBe("Default passed 95% of its 5h window");
-  expect(dueSwitch(list, { active: "default", switch_at: 100 })).toBe(null);
+  expect(dueSwitch(list, { active: "default", auto: false })).toBe(null);
   expect(dueSwitch([acct("default", 96, 51), acct("personal", 97, 50)], { active: "default" })).toBe(null);
+  // The week alone never switches.
+  expect(dueSwitch([acct("default", 40, 99), acct("personal", 27, 50)], { active: "default" })).toBe(null);
+  expect(dueSwitch(list, { active: "default", skipped: ["personal"] })).toBe(null);
+});
+
+test("the switch toast, the next queued task and another machine's meters", async () => {
+  const { switchToast, nextQueued, metersOf, initial, usageShort } = await import("./usage.js");
+  const d = dueSwitch([acct("default", 96, 51), acct("personal", 27, 50)], { active: "default" });
+  expect(switchToast(d, "SHE-15")).toEqual({ title: "New work now goes to Personal", sub: "Default passed 95% of its 5h window",
+    body: "SHE-15 will start on Personal. Running tasks stay on Default." });
+  expect(switchToast(d).body).toBe("New tasks start on Personal. Running tasks stay on Default.");
+  const lists = [{ prefix: "SHE", tasks: [{ id: 15, state: "queued", queued_at: "2026-11-04T10:12:00" }, { id: 9, state: "todo" }] },
+    { prefix: "", tasks: [{ id: 3, state: "queued", queued_at: "2026-11-04T09:00:00" }] }];
+  expect(nextQueued(lists)).toBe("3");
+  expect(nextQueued([lists[0]])).toBe("SHE-15");
+  expect(nextQueued([])).toBe(null);
+  const ms = metersOf([{ name: "Weekly (all models)", used: 51 }, { name: "5-hour", used: 59, resets_at: now }, { name: "Weekly (Fable only)", used: 37 }]);
+  expect(ms.map((m) => [m.id, m.label, m.pct])).toEqual([["session", "Session", 59], ["weekly", "Weekly", 51], ["fable", "Fable", 37]]);
+  expect(ms[0].resets_at).toBe(new Date(now).toISOString());
+  expect(initial(" personal")).toBe("P");
+  expect(usageShort(acct("default", 59, 51))).toBe("59% 5h · 51% wk");
 });
 
 test("paths are cut in the middle, names and numbers are not", () => {

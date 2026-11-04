@@ -5,11 +5,13 @@
 // error, amber a warning, green done, the accent otherwise), its title on one line, its body
 // wrapped to at most 3 lines, and an X on hover. A click runs its action (going to the agent)
 // and closes it. Each goes after its timeout; never while the pointer is on them.
+// Props of a toast: `sub` a dim mono line under the title; `buttons` [{ id, label, kind, set: [shared key, value] }]
+// under the body (the account switch's Undo and View): a press sets that shared value and closes the toast.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { placement, run, shared, setShared, theme } from "herdr";
-import { TOASTS, TEXT, RADIUS, red, amber, green } from "./ui.js";
+import { TOASTS, TEXT, RADIUS, red, amber, green, button, MONO } from "./ui.js";
 // How many, how wide, how long and in which color: core/toasts.js, shared with the web app's toasts.
 import { SHOWN, WIDTH, LINES, BODY_MAX, tone, clip, unexpired } from "./core/toasts.js";
 
@@ -44,8 +46,14 @@ export default class Toasts extends View {
       .child(div().size(8).mt(5).flex_none().rounded(4).bg(color(n.level, t)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().min_w(0).truncate().text_size(TEXT.body).font_semibold().text_color(t.foreground).child(String(n.title ?? "")))
+        .when(Boolean(n.sub), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(String(n.sub))))
         .when(Boolean(n.body), (el) => el.child(div().max_h(LINE * LINES).overflow_hidden().line_height(`${LINE}px`)
-          .text_size(TEXT.label).text_color(t.muted).child(clip(String(n.body), BODY_MAX)))))
+          .text_size(TEXT.label).text_color(t.muted).child(clip(String(n.body), BODY_MAX))))
+        .when(Array.isArray(n.buttons) && n.buttons.length > 0, (el) => el.child(h_flex().pt(6).gap(6).items_center()
+          .children(n.buttons.map((b) => button(`toast-${n.id}-${b.id}`, String(b.label), { kind: b.kind ?? "secondary", onClick: () => {
+            if (Array.isArray(b.set)) setShared(b.set[0], b.set[1]);
+            this.dismiss(n.id);
+          } }))))))
       // The X's place is always kept, so nothing moves when it shows.
       .child(div().id(`toast-x-${n.id}`).size(20).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
         .when(on, (el) => el.cursor_pointer().text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
