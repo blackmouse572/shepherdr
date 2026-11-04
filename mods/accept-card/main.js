@@ -307,8 +307,8 @@ export default class AcceptCard extends View {
         .when(settled, (el) => el.child(this.where(t, x)))
         // The dialog's one footer (ui.js): Cancel, then Accept; only Close once there's nothing
         // to accept.
-        .child(settled ? dialogFooter({ onCancel: () => this.close(), cancelLabel: ACCEPT.close })
-          : dialogFooter({ onCancel: () => this.close(), cancelLabel: ACCEPT.cancel,
+        .child(settled ? dialogFooter({ pad: 22, onCancel: () => this.close(), cancelLabel: ACCEPT.close })
+          : dialogFooter({ pad: 22, onCancel: () => this.close(), cancelLabel: ACCEPT.cancel,
             primary: { id: "accept", label: this.busy ? ACCEPT.accepting : ACCEPT.accept, disabled: !(ready && !this.busy), onClick: (_e, cx) => this.accept(cx) } })));
   }
 }

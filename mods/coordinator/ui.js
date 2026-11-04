@@ -8,14 +8,14 @@ import { h_flex, v_flex } from "gpui-base";
 import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces } from "herdr";
 
 // Sizes -------------------------------------------------------------------
-// Buttons: 24 in panels, rows and headers; 32 in dialogs and cards; 20 only inside a row's
-// 16 tall second line (a Ready row's Accept), so the row keeps its height.
-export const H = { xs: 20, sm: 24, lg: 32 };
+// Buttons: 24 in panels, rows and headers; 30 in dialogs and cards (H.button, the design's .btn); 20 only inside a
+// row's 16 tall second line (a Ready row's Accept), so the row keeps its height. H.lg 32: fields and rows beside them.
+export const H = { xs: 20, sm: 24, lg: 32, button: 30 };
 // Text: 11 IDs and times, 12 second lines and labels, 13 body and titles, 15 page titles.
 export const TEXT = { id: 11, label: 12, body: 13, title: 15 };
 // Corners: 6 on controls, 8 on cards (and hovers), 12 on bubbles, 16 on dialogs that draw their own frame, 18 on
 // the Settings window. Those dialogs' surface is theme().chrome (the design's bg-panel).
-export const RADIUS = { control: 6, card: 8, bubble: 12, dialog: 16, window: 18 };
+export const RADIUS = { control: 6, card: 8, bubble: 12, dialog: 16, window: 18, button: 8, field: 9 };
 
 // Status colors -----------------------------------------------------------
 // The design system's status colours (night pasture), light and dark, the same as the task dots (dot.js uses
@@ -123,52 +123,73 @@ const WELL = "#0A0B0A";
 export function fieldFrame(el, { focused = false, error = false } = {}) {
   const t = theme();
   const d = dark();
-  return el.rounded(RADIUS.control).border_1()
+  return el.rounded(RADIUS.field).border_1()
     .border_color(error ? t.blocked : focused ? t.accent : d ? t.border : t.input)
     .bg(d ? WELL : t.background);
 }
 
 // Buttons -------------------------------------------------------------------
 // The raised look's colours (dark only): the outline, the lit top hairline and the shaded bottom one, and the
-// secondary's own fill and hover (the primary's fill is the theme's solid, the accent).
+// secondary's own fill and hover (the primary's fill is the theme's solid, the accent; wool's the foreground).
+// The design's fills are gradients (lantern #FFD27A to #EA9C27, wool #FBFAF6 to #D9D6CB): mods can't draw one, so
+// each is flat.
 const RAISED = {
   primary: { border: "#5C3504", lit: "#FFF4D6D9", shade: "#964A0059" },
   secondary: { border: "#000000", lit: "#FFFFFF17", shade: "#00000073", bg: "#22231E", hover: "#2A2B26" },
+  wool: { border: "#050505", lit: "#FFFFFF", shade: "#0000002E" },
 };
-// kind: "primary" (solid; one per panel or dialog), "secondary" (bordered), "plain" (words
-// only, a hover behind them). size: "xs" 20 (in a row's second line), "sm" 24 or "lg" 32. Sized
-// to its words, never cut.
-// opts: { kind, size, icon (an svg path), disabled, onClick }.
-export function button(id, label, { kind = "secondary", size = "sm", icon = null, disabled = false, onClick = null } = {}) {
+// kind: "primary" (solid accent; one per panel or dialog), "wool" (solid light: a confirm beside the accent, as Merge),
+// "secondary" (bordered), "plain" (words only, a hover behind them). size: "xs" 20 (in a row's second line), "sm" 24
+// or "lg" 30 (radius 8). Sized to its words, never cut.
+// opts: { kind, size, icon (an svg path), disabled, onClick, keys (keycaps drawn inside, after the words: ["⌘", "⏎"]) }.
+export function button(id, label, { kind = "secondary", size = "sm", icon = null, disabled = false, onClick = null, keys = null } = {}) {
   const t = theme();
   const lg = size === "lg", xs = size === "xs";
-  const h = lg ? H.lg : xs ? H.xs : H.sm;
+  const h = lg ? H.button : xs ? H.xs : H.sm;
+  const radius = lg ? RADIUS.button : RADIUS.control;
   const iconSize = lg ? 16 : xs ? 12 : 14;
   const pad = lg ? 12 : xs ? 6 : 8;
   const live = !disabled && Boolean(onClick);
   // Dark: the design's raised (skeuomorphic) buttons, as near as a mod can draw them. Mods have no inset shadow or
   // gradient fill, so the lit top edge and the shaded bottom are two hairlines inside the button, kept off the
   // rounded corners; a small drop shadow lifts it, and a press dims it (motion is opacity only).
-  const raised = dark() && (kind === "primary" || kind === "secondary");
+  const solid = kind === "primary" || kind === "wool";
+  const raised = dark() && (solid || kind === "secondary");
   const R = RAISED[kind] ?? RAISED.secondary;
-  const edge = (top, color, px) => div().absolute().left(RADIUS.control).right(RADIUS.control).h(px).bg(color)
+  // Wool: the light fill with dark words in dark; light mode inverts it (ink on paper).
+  const fill = kind === "wool" ? t.foreground : t.solid;
+  const ink = kind === "wool" ? t.background : t.solid_foreground;
+  const edge = (top, color, px) => div().absolute().left(radius).right(radius).h(px).bg(color)
     .when(top, (el) => el.top(0)).when(!top, (el) => el.bottom(0));
-  return h_flex().id(id).h(h).flex_none().gap(6).items_center().rounded(RADIUS.control).whitespace_nowrap()
-    .text_size(lg ? TEXT.body : TEXT.label).font_medium()
+  return h_flex().id(id).h(h).flex_none().gap(6).items_center().rounded(radius).whitespace_nowrap()
+    .text_size(lg ? 12.5 : TEXT.label).font_medium()
     // An icon's side is padded like its top, so it sits square in the corner.
     .pl(icon ? (h - iconSize) / 2 : pad).pr(pad)
     .when(raised, (el) => el.relative().overflow_hidden().border_1().border_color(R.border).shadow_sm()
       .child(edge(true, R.lit, 1)).child(edge(false, R.shade, kind === "primary" ? 2 : 1))
       .when(live, (el) => el.active((s) => s.opacity(0.8))))
-    .when(raised && kind === "primary", (el) => el.bg(t.solid).text_color(t.solid_foreground).when(live, (el) => el.hover((s) => s.opacity(0.92))))
+    .when(raised && solid, (el) => el.bg(fill).text_color(ink).when(live, (el) => el.hover((s) => s.opacity(0.92))))
     .when(raised && kind === "secondary", (el) => el.bg(R.bg).text_color(t.foreground).when(live, (el) => el.hover((s) => s.bg(R.hover))))
-    .when(!raised && kind === "primary", (el) => el.bg(t.solid).text_color(t.solid_foreground).when(live, (el) => el.hover((s) => s.opacity(0.88))))
+    .when(!raised && solid, (el) => el.bg(fill).text_color(ink).when(live, (el) => el.hover((s) => s.opacity(0.88))))
     .when(!raised && kind === "secondary", (el) => el.border_1().border_color(t.input).bg(t.background).text_color(t.foreground)
       .when(live, (el) => el.hover((s) => s.bg(t.hover))))
     .when(kind === "plain", (el) => el.text_color(t.muted).when(live, (el) => el.hover((s) => s.bg(t.hover).text_color(t.foreground))))
     .when(disabled, (el) => el.opacity(0.5))
     .when(live, (el) => el.cursor_pointer().on_click((e, cx) => { cx.stop_propagation(); onClick(e, cx); cx.notify(); }))
     .when(Boolean(icon), (el) => el.child(svg(icon).size(iconSize).flex_none()))
+    .child(label)
+    .when(Boolean(keys?.length), (el) => el.child(h_flex().flex_none().ml(2).gap(2).items_center()
+      .children(keys.map((k) => kbd(k, solid ? ink : null)))));
+}
+
+// A small keycap (the design's .kbd, 18 tall, mono 10): a dialog footer's Esc, a key inside a button. `on`: the
+// text colour of the solid button it sits in (its cap is then a faint tint of it, no border).
+function kbd(label, on = null) {
+  const t = theme();
+  return div().h(18).min_w(18).px(5).flex_none().flex().items_center().justify_center().rounded(5)
+    .font_family(MONO).text_size(10).font_medium().whitespace_nowrap()
+    .when(Boolean(on), (el) => el.bg(`${on.slice(0, 7)}1F`).text_color(on))
+    .when(!on, (el) => el.border_1().border_color(dark() ? "#000000" : t.border).bg(t.raised).text_color(t.dim))
     .child(label);
 }
 
@@ -182,14 +203,19 @@ export function link(id, label, onClick) {
 }
 
 // Switch ---------------------------------------------------------------------
-// On: the accent track, the knob at the right. 36 × 20.
+// 34 × 20, as Doop's .tg. On: the accent track with its dark ring, a light knob at the right. Off: a sunken well
+// with the strong border's ring and a gray knob. The design's gradients are flat here (mods can't draw one).
+const SWITCH = { well: "#0E0F0D", knob: "#4A4B45" };
 export function toggleSwitch(id, on, onToggle, { disabled = false } = {}) {
   const t = theme();
-  return div().id(id).w(36).h(20).flex_none().rounded(10).p(2).flex().bg(on ? t.accent : t.hover)
+  const d = dark();
+  return div().id(id).w(34).h(20).flex_none().rounded(10).p(1).flex().border_1()
+    .bg(on ? t.accent : d ? SWITCH.well : t.hover)
+    .border_color(on ? (d ? RAISED.primary.border : t.accent) : t.input)
     .when(on, (el) => el.justify_end())
     .when(disabled, (el) => el.opacity(0.5))
     .when(!disabled, (el) => el.cursor_pointer().on_click((e, cx) => { cx.stop_propagation(); onToggle(!on, e, cx); cx.notify(); }))
-    .child(div().w(16).h(16).rounded(8).bg(on ? t.accent_foreground : t.muted));
+    .child(div().w(16).h(16).rounded(8).bg(on ? (d ? t.foreground : t.background) : d ? SWITCH.knob : t.muted));
 }
 
 // Segmented control ----------------------------------------------------------
@@ -256,16 +282,24 @@ export function cardHeader(title, actions = []) {
     .when(actions.length > 0, (el) => el.child(h_flex().flex_none().gap(12).items_center().children(actions)));
 }
 
-// A dialog's footer, 32 tall: an optional dim note at the left (`error` turns it red), then a
-// plain Cancel and the one solid primary. No "Esc" hint: Esc closing a dialog goes unsaid.
-// opts: { onCancel, primary: { id, label, onClick, disabled }, cancelLabel, note, error }.
-export function dialogFooter({ onCancel, primary, cancelLabel = "Cancel", note = "", error = false }) {
+// A dialog's footer, as Doop App 06: a full-bleed strip across the dialog's bottom (negative margins past the root's
+// `pad`, as dialogTitle's), a top border on a darker chrome, an Esc keycap at the left, an optional note (`error`
+// turns it red), then a plain Cancel and the one solid primary. It takes H.lg (32) of the flow, as the old row did,
+// so fixed dialog heights hold. `keys`: keycaps inside the primary (only for a key the dialog handles).
+// opts: { onCancel, primary: { id, label, onClick, disabled, keys }, cancelLabel, note, error, pad (the root's, 18),
+// radius (the dialog's own corner radius less its border, for one that draws its own frame), esc (the Esc cap) }.
+const FOOT = "#0F100E";
+export function dialogFooter({ onCancel, primary, cancelLabel = "Cancel", note = "", error = false, pad = 18, radius = 0, esc = true }) {
   const t = theme();
-  return h_flex().h(H.lg).w_full().flex_none().gap(8).items_center()
+  const d = dark();
+  return h_flex().h(H.lg + pad).mx(-pad).mb(-pad).px(pad).flex_none().gap(8).items_center()
+    .border_t(1).border_color(t.border).bg(d ? FOOT : t.chrome)
+    .when(radius > 0, (el) => el.rounded_b(radius))
+    .when(esc, (el) => el.child(kbd("Esc")))
     .child(div().flex_1().min_w(0).truncate().text_size(TEXT.label).text_color(error ? red() : t.dim).child(note || ""))
     .child(button("dialog-cancel", cancelLabel, { kind: "plain", size: "lg", onClick: onCancel }))
     .when(Boolean(primary), (el) => el.child(button(primary.id ?? "dialog-primary", primary.label,
-      { kind: "primary", size: "lg", disabled: primary.disabled, onClick: primary.onClick })));
+      { kind: "primary", size: "lg", disabled: primary.disabled, onClick: primary.onClick, keys: primary.keys })));
 }
 
 // Count badge ------------------------------------------------------------------------------

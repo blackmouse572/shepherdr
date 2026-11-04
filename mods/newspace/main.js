@@ -27,7 +27,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
-import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
+import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused, window } from "herdr";
 import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, fieldFrame, MONO, TEXT, RADIUS } from "./ui.js";
 import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator } from "./coordinator.js";
 import * as N from "./core/newspace.js";
@@ -69,7 +69,8 @@ export default class NewSpace extends View {
       if (v === this.text) return;
       this.text = v; this.listOpen = true; this.browse = null; this.hi = -1; this.error = ""; this.check(cx); cx.notify();
     });
-    this.input.on("submit", (_e, cx) => this.enter(cx));
+    // Enter picks a suggestion or creates; Cmd+Enter (the primary's keycaps) always creates.
+    this.input.on("submit", (e, cx) => (e?.secondary ? this.create(cx) : this.enter(cx)));
     this.input.on("focus", (_e, cx) => { this.focused = true; cx.notify(); });
     this.input.on("blur", (_e, cx) => { this.focused = false; cx.notify(); });
     this.input.focus();
@@ -247,6 +248,7 @@ export default class NewSpace extends View {
 
   // Esc closes the suggestions first, then the dialog. Up and Down open them and walk them.
   key(e, cx) {
+    if (e.keystroke === "cmd-enter" || e.keystroke === "ctrl-enter") { cx.stop_propagation(); return this.create(cx); }
     if (e.key === "escape") {
       if (!this.listOpen) return this.close();
       this.listOpen = false; this.browse = null; this.hi = -1; cx.stop_propagation(); cx.notify(); return;
@@ -337,8 +339,9 @@ export default class NewSpace extends View {
       .child(div().h(4).flex_none())
       .child(this.repoLine(t, folder))
       .child(div().h(K.section).flex_none())
-      .child(dialogFooter({ onCancel: () => this.close(), note: this.error, error: true,
-        primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx) } }));
+      .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.close(), note: this.error, error: true,
+        primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx),
+          keys: window()?.platform === "macos" ? ["⌘", "⏎"] : ["Ctrl", "⏎"] } }));
     // The overlay is the panel at its tallest; the panel sits in its middle.
     return v_flex().size_full().justify_center().child(panel);
   }

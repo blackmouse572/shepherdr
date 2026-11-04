@@ -11,13 +11,15 @@ picker, peek, help, ...) are read-only: clone them first.
 
 | What | Value |
 |---|---|
-| `H.sm` / `H.lg` | buttons 24 in panels, rows and headers; 32 in dialogs and cards |
+| `H.sm` / `H.button` | buttons 24 in panels, rows and headers; 30 in dialogs and cards (radius `RADIUS.button` 8) |
+| `H.lg` | 32: fields, menu rows and other rows beside a dialog's buttons |
 | `H.xs` | 20: a button inside a row's 16 tall second line (a Ready row's Accept), so the row keeps its height |
 | `TEXT.id` 11 | IDs, times, badges |
 | `TEXT.label` 12 | second lines, labels, small headings, button words (24) |
 | `TEXT.body` 13 | body, row titles, menu rows, button words (32) |
 | `TEXT.title` 15 | page and dialog titles (light; dark headers use `HEAD`: 20, 16 small, 22 Settings, in the serif) |
-| `RADIUS.control` 6 | buttons, fields, segmented, menu rows |
+| `RADIUS.control` 6 | small buttons, segmented, menu rows |
+| `RADIUS.field` 9 | text fields (`fieldFrame`) |
 | `RADIUS.card` 8 | cards, popovers, every hover background |
 | `RADIUS.bubble` 12 | chat bubbles |
 | `RADIUS.dialog` 16 | dialogs that draw their own frame (New space, Rename), on `theme().chrome` (the design's bg-panel) |
@@ -35,17 +37,20 @@ text on one of them (white in light, black in dark). Everything else comes from 
 The dark look itself is a Herdr theme, `themes/shepherdr-night.json` (installed into the app's `themes/`), which the
 layout picks for dark mode (`paper` stays for light). A theme the person picks in Herdr overrides it.
 
-Dark buttons are raised: `primary` and `secondary` get an outline, a lit top hairline, a shaded bottom one and a
-small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Serif, in `mods/pane-chat/fonts/`).
+Dark buttons are raised: `primary`, `wool` and `secondary` get an outline, a lit top hairline, a shaded bottom one and
+a small drop shadow, and dim while pressed. The design's lantern and wool fills are gradients (#FFD27A to #EA9C27,
+#FBFAF6 to #D9D6CB); mods can't draw a gradient, so they are flat (`solid`, `foreground`). Same for the switch. Headers' titles use `SERIF` (Geist Serif, in `mods/pane-chat/fonts/`).
 
 ## Parts
 
-- `button(id, label, { kind, size, icon, disabled, onClick })`: `primary` (solid, one per panel
-  or dialog), `secondary` (bordered), `plain` (words only). `size` `"xs"` 20 (a row's second
-  line only) / `"sm"` 24 / `"lg"` 32. Always
-  as wide as its words; never truncated. Disabled: half opacity, no pointer, no hover.
+- `button(id, label, { kind, size, icon, disabled, onClick, keys })`: `primary` (solid accent, one per panel
+  or dialog), `wool` (solid light, DS 02's `.btn.wool`: a confirm such as Merge), `secondary` (bordered), `plain`
+  (words only). `size` `"xs"` 20 (a row's second line only) / `"sm"` 24 / `"lg"` 30, radius 8, 12.5 words. `keys`:
+  small keycaps inside, after the words (only for a key the view handles). Always as wide as its words; never
+  truncated. Disabled: half opacity, no pointer, no hover.
 - `link(id, label, onClick)`: a quiet text link (card headers, "Show all").
-- `toggleSwitch(id, on, onToggle(next), { disabled })`: the on/off switch, accent when on.
+- `toggleSwitch(id, on, onToggle(next), { disabled })`: the on/off switch, 34 × 20 (Doop `.tg`): on, the accent
+  track with a dark ring and a light knob; off, a sunken well with the strong border's ring and a gray knob.
 - `segmented(id, [[value, label]...], value, onPick, { size, disabled, fill })`: segments sized to
   their words, never cut; `fill` stretches them over the row.
 - `menuRow(id, label, { icon, hint, check, danger, disabled, onClick })`: a popup menu's 32 row:
@@ -62,12 +67,15 @@ small drop shadow, and dim while pressed. Headers' titles use `SERIF` (Geist Ser
   plain title. Content sits `TITLE_SHIFT` (8) lower: a fixed-height dialog takes it off the space under the title.
   On: confirm, prompt, Close the Assistant, Keyboard shortcuts, Accept, New space, Rename / New section, Add machine,
   Settings (across the top, over its nav) and the instructions editor over Settings.
-- `dialogFooter({ onCancel, primary: { id, label, onClick, disabled }, note, error })`: 32 tall,
-  optional dim note left (red when `error`), plain Cancel, then the solid primary. No "Esc" hint.
+- `dialogFooter({ onCancel, primary: { id, label, onClick, disabled, keys }, note, error, pad, radius, esc })`: Doop
+  App 06's footer, a full-bleed strip (negative margins past the root's `pad`) on a darker chrome with a top border:
+  an Esc keycap left (`esc: false` drops it), an optional note (red when `error`), plain Cancel, then the solid
+  primary, with `keys` inside it (New space: ⌘⏎). It takes 32 of the flow, as the old row did; `radius` rounds its
+  bottom in a dialog that draws its own frame.
 - `clickable(el, onClick, { radius })`: pointer + rounded 8 hover + click for a whole row (`el`
   needs an id).
 - `fieldFrame(el, { focused, error })`: a text field's frame (and boxes beside one, as New space's icon), as Doop
-  App 06: in dark a sunken well (#0A0B0A, darker than the dialog) with the quiet border, the accent border while focused,
+  App 06: radius 9; in dark a sunken well (#0A0B0A, darker than the dialog) with the quiet border, the accent border while focused,
   red for an error; light keeps the plain field. Paths and hosts are typed in `MONO` (JetBrains Mono) at 12.5.
   On: New space, Rename / New section, Add machine, the name prompt.
 - `countBadge(need, ready, line)`: the red / green / split count badge (Tasks, tabs, spaces).

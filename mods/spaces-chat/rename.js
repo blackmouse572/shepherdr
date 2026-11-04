@@ -135,7 +135,7 @@ export class Rename {
         .child(fieldFrame(Input.new(this.input).flex_1().h(K.field).px(10).items_center(), { focused: this.focused, error: Boolean(this.error) })
           .text_color(t.foreground)))
       .child(div().h(K.section).flex_none())
-      .child(dialogFooter({ onCancel: () => this.cancel(), note: this.error, error: true,
+      .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.cancel(), note: this.error, error: true,
         primary: { id: "save", label: this.p.new ? "Create section" : "Save", onClick: () => this.save() } }));
     return v_flex().size_full().justify_center().child(panel);
   }
