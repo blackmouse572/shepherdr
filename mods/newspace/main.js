@@ -18,8 +18,9 @@
 // folder, the Name (empty: from the folder), "Start a coordinator" (the Assistant chat, on Shepherdr
 // settings' coordinator, else the CLI's default; this computer only) and "Open a terminal tab too"
 // (keeps Herdr's first shell tab beside it). The model is changed in the chat's own model button. Task
-// IDs aren't asked: herdr-task picks the folder's prefix and the coordinator may change it. Section
-// isn't asked yet (sections belong to the sidebar, mods/spaces-chat).
+// IDs aren't asked: herdr-task picks the folder's prefix and the coordinator may change it. Beside the Name, the
+// Section (when the machine has any): the sidebar's sections (mods/spaces-chat, read from shared "spaces-chat"),
+// None by default; createSpace files the new space there.
 // A folder that isn't in a git repo (one made on Create too, never home) offers "Make it a git
 // repo", on by default (Shepherdr makes every such folder one): Create runs git init on main with
 // an empty first commit, so tasks get worktrees; files already there stay uncommitted. The line
@@ -36,6 +37,8 @@ import * as N from "./core/newspace.js";
 
 // The suggestions' width (the field's: the dialog's 460 less its padding, the icon, Browse… and the gaps).
 const LIST_W = 290;
+// The Section's list: its column's width (the dialog's 460 less its padding and the gap, halved).
+const SECTION_W = 206;
 // The icon picker's answer (mods/spaces-chat rename.js PICK): { for (this overlay), emoji, at }.
 const PICK = "spaces-chat.iconpick";
 // The home folder paths are shown from: the dialog's machine's (props.home).
@@ -62,6 +65,8 @@ export default class NewSpace extends View {
     this.busy = false;
     this.error = "";
     this.icon = null; // an emoji, null: "#"
+    this.section = null; // the sidebar section picked (its id), null: none
+    this.sectionOpen = false; // the Section's list
     // "Start a coordinator": the Assistant chat, on as Shepherdr settings' "Open the Assistant" says; this computer only.
     this.assistant = autoCoordinator() && !this.machine;
     this.shell = false; // "Open a terminal tab too": keep Herdr's first shell tab beside the Assistant
@@ -246,7 +251,7 @@ export default class NewSpace extends View {
         // space keeps Herdr's own first tab and gets no Assistant.
         const assistant = this.assistant && !this.machine;
         setShared("newspace.createreq", { folder, machine: this.machine, settings: assistant ? choice : null, icon: this.icon,
-          name: this.name.value().trim(), shell: this.shell, at: Date.now() });
+          name: this.name.value().trim(), shell: this.shell, section: this.pickedSection()?.id ?? null, at: Date.now() });
         this.close();
         return;
       } catch (e) {
@@ -257,9 +262,42 @@ export default class NewSpace extends View {
     });
   }
 
-  // Esc closes the suggestions first, then the dialog. Up and Down open them and walk them.
+  // The sidebar's sections on the dialog's machine (mods/spaces-chat sections.js keeps them).
+  sections() {
+    return (shared("spaces-chat")?.sections ?? []).filter((s) => (s.machine ?? null) === this.machine);
+  }
+
+  pickedSection() {
+    return this.sections().find((s) => s.id === this.section) ?? null;
+  }
+
+  // The Section: a select (the design's .in.sel) whose list hangs under it, None first.
+  sectionPicker(t) {
+    const picked = this.pickedSection();
+    const look = (s) => (s?.icon ? div().w(14).flex_none().text_size(13).child(s.icon)
+      : svg("mods/workspace-chrome-shepherdr/folder.svg").size(14).flex_none().text_color(t.muted));
+    const trigger = h_flex().id("section").w_full().h(K.field).px(10).gap(8).items_center().rounded(RADIUS.field)
+      .border_1().border_color(t.border).bg(t.raised).cursor_pointer().hover((s) => s.bg(t.hover))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.sectionOpen = !this.sectionOpen; this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); })
+      .child(look(picked))
+      .child(div().flex_1().min_w(0).truncate().text_color(picked ? t.foreground : t.muted).child(picked?.name ?? W.noSection))
+      .child(svg("mods/workspace-chrome-shepherdr/chevron-down.svg").size(14).flex_none().text_color(t.muted));
+    const row = (s) => h_flex().id(`section-${s?.id ?? "none"}`).h(K.row).flex_none().px(9).gap(10).rounded(6).items_center().cursor_pointer()
+      .hover((st) => st.bg(t.hover))
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.section = s?.id ?? null; this.sectionOpen = false; cx.notify(); })
+      .child(look(s))
+      .child(div().flex_1().min_w(0).truncate().text_color(s ? t.foreground : t.muted).child(s?.name ?? W.noSection))
+      .when((s?.id ?? null) === (picked?.id ?? null), (el) => el.child(svg("mods/workspace-chrome-shepherdr/check.svg").size(14).flex_none().text_color(t.foreground)));
+    return Popup.new("section-list", trigger).w_full().anchor("top_left")
+      .when(this.sectionOpen, (el) => el.content(v_flex().id("section-rows").w(SECTION_W).max_h(K.row * 8 + 8).overflow_y_scrollbar().mt(4).p(4)
+        .rounded(8).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
+        .children([null, ...this.sections()].map(row))));
+  }
+
+  // Esc closes the suggestions (or the Section's list) first, then the dialog. Up and Down open them and walk them.
   key(e, cx) {
     if (isSubmitKey(e)) { cx.stop_propagation(); return this.create(cx); }
+    if (e.key === "escape" && this.sectionOpen) { this.sectionOpen = false; cx.stop_propagation(); cx.notify(); return; }
     if (e.key === "escape") {
       if (!this.listOpen) return this.close();
       this.listOpen = false; this.browse = null; this.hi = -1; cx.stop_propagation(); cx.notify(); return;
@@ -349,7 +387,10 @@ export default class NewSpace extends View {
         .when(Boolean(empty), (el) => el.child(div().h(K.row).flex_none().px(9).flex().items_center().text_color(t.dim).child(empty)))));
     const panel = v_flex().id("newspace").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(13)
       .on_key_down((e, cx) => this.key(e, cx))
-      .on_mouse_down("left", (_e, cx) => { if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); } })
+      .on_mouse_down("left", (_e, cx) => {
+        if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); }
+        if (this.sectionOpen) { this.sectionOpen = false; cx.notify(); }
+      })
       // The design's banner header (ui.js dialogTitle), its machine at the right; the space under it gives up what
       // the banner adds, so newSpaceHeight() holds.
       .child(dialogTitle("newspace-title", W.title, { pad: K.pad, radius: RADIUS.dialog - 1, lead: DIALOG_ICON.folder, sub: W.sub, onClose: () => this.close(),
@@ -377,11 +418,18 @@ export default class NewSpace extends View {
       .child(div().h(4).flex_none())
       .child(this.repoLine(t, folder))
       .child(div().h(K.section).flex_none())
-      .child(h_flex().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim)
-        .child(div().flex_1().child(W.name))
-        .child(div().font_family(MONO).text_size(TEXT.id).child(W.nameFrom)))
-      .child(div().h(K.gap).flex_none())
-      .child(fieldFrame(Input.new(this.name).w_full().h(K.field).px(10).items_center(), { focused: this.nameFocused }).text_color(t.foreground))
+      // The Name and, when the machine has sections, the Section beside it (App 06): one row, the same height.
+      .child(h_flex().flex_none().gap(12).items_start()
+        .child(v_flex().flex_1().min_w(0)
+          .child(h_flex().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim)
+            .child(div().flex_1().child(W.name))
+            .child(div().font_family(MONO).text_size(TEXT.id).child(W.nameFrom)))
+          .child(div().h(K.gap).flex_none())
+          .child(fieldFrame(Input.new(this.name).w_full().h(K.field).px(10).items_center(), { focused: this.nameFocused }).text_color(t.foreground)))
+        .when(this.sections().length > 0, (el) => el.child(v_flex().flex_1().min_w(0)
+          .child(div().h(K.label).flex_none().text_size(TEXT.label).text_color(t.dim).child(W.section))
+          .child(div().h(K.gap).flex_none())
+          .child(this.sectionPicker(t)))))
       .child(div().h(K.section).flex_none())
       .child(this.toggleRow(t, "start-assistant", "mods/shepherdr-settings/bot.svg", W.assistant, this.machine ? W.assistantOff : W.assistantWhy,
         withAssistant, (v) => { this.assistant = v; }, Boolean(this.machine)))

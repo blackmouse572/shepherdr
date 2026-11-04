@@ -14,6 +14,8 @@ export const WORDS = {
   name: "Name",
   nameFrom: "from folder",
   namePlaceholder: "From the folder",
+  section: "Section",
+  noSection: "None",
   assistant: "Start a coordinator",
   assistantWhy: "Opens the Assistant chat. Tasks start from there.",
   assistantOff: "The Assistant runs on this computer only",

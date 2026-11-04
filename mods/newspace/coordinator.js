@@ -238,8 +238,8 @@ export async function recentFolders(machine = null) {
 // (mods/spaces-chat sections.js setIcon). Resolves with the space id.
 // With a coordinator, the space has only its Coordinator tab: Herdr's first shell tab goes, while
 // it is still a fresh shell nobody used, unless `shell` (New space's "Open a terminal tab too").
-// opts: { name (the dialog's; empty: from the folder), shell }.
-export async function createSpace(folder, settings, machine = null, icon = null, { name: given = "", shell = false } = {}) {
+// opts: { name (the dialog's; empty: from the folder), shell, section (a sidebar section's id on that machine) }.
+export async function createSpace(folder, settings, machine = null, icon = null, { name: given = "", shell = false, section = null } = {}) {
   setShared("coordinator.creating", Date.now());
   // Named from the start, as Herdr would call it (the repo's name, else the folder's) but "Home" at home:
   // an unnamed space follows its first terminal, and with the coordinator parked in a chat that
@@ -254,6 +254,15 @@ export async function createSpace(folder, settings, machine = null, icon = null,
   if (icon) {
     const d = shared("spaces-chat") ?? {};
     setShared("spaces-chat", { ...d, icons: { ...(d.icons ?? {}), [out.space]: icon } });
+  }
+  // The section New space picked: the space at its end, as the sidebar's placeSpace (mods/spaces-chat sections.js)
+  // files it, under the id the sidebar knows it by (a remote one's has its machine first).
+  if (section) {
+    const id = machine && !out.space.includes("/") ? `${machine}/${out.space}` : out.space;
+    const d = shared("spaces-chat") ?? {};
+    const sections = (d.sections ?? []).map((s) => ({ ...s, spaces: (s.spaces ?? []).filter((x) => x !== id) }));
+    const into = sections.find((s) => s.id === section);
+    if (into) { into.spaces.push(id); setShared("spaces-chat", { ...d, sections }); }
   }
   if (settings === null) return out.space;
   await openCoordinator({ id: out.space, tabs: [], active: true, folder }, true, settings);
@@ -346,7 +355,7 @@ export function watchNewSpaces(spaces) {
   const make = shared("newspace.createreq");
   if (make) {
     setShared("newspace.createreq", null);
-    if (Date.now() - make.at < 10000) createSpace(make.folder, make.settings ?? null, make.machine ?? null, make.icon ?? null, { name: make.name, shell: make.shell })
+    if (Date.now() - make.at < 10000) createSpace(make.folder, make.settings ?? null, make.machine ?? null, make.icon ?? null, { name: make.name, shell: make.shell, section: make.section ?? null })
       .catch((e) => toast({ title: "Space wasn't made", body: plainError(e), level: "error" }));
   }
   // Settings > Machines turned a machine's Home Assistant on: its home space, made if missing.
