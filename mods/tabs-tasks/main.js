@@ -8,7 +8,7 @@ import { startInbox, count as inboxCount, countsByTab, readyCount, readyByTab, s
 import { serveRemote } from "./secrets.js";
 import { watchService } from "./service.js";
 import { startBridge } from "./bridge.js";
-import { countBadge, H, TEXT, RADIUS } from "./ui.js";
+import { countBadge, H, TEXT, RADIUS, openSettings } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 // A tab's name (what runs in it while Herdr named it): core/menus.js, as the web app's tab bar names it.
 import { tabName } from "./core/menus.js";
@@ -66,6 +66,8 @@ export default class Tabs extends View {
         if (c === "newspace") newSpace(spaces().find(s => s.active));
         // Ctrl+Shift+P (keys.json): the command bar (mods/jump) on commands only.
         if (c === "commands") openOverlay({ mod: "jump", kind: "popup", ...JUMP_POPUP, props: { mode: "commands" } });
+        // Cmd+, / Ctrl+, (keys.json): Shepherdr's Settings, as the sidebar foot's Settings.
+        if (c === "settings") openSettings();
         // This computer's + in the Spaces sidebar: the dialog here, whatever space is shown.
         if (c === "newspace-local") newSpace(null);
         // A machine's New space in the Spaces sidebar: the dialog there (shared "newspace.on" =
