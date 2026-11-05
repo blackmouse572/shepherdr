@@ -2694,8 +2694,9 @@ export default class Chat extends View {
     const theirs = (text) => h_flex().w_full().justify_start().child(
       prose(div().w_full().max_w(this.proseW()).py(2))
         .child(x.clip ? this.clipped(t.background, x.clip, div().id(`${pre}fold-in-${x.id}`).flex_none()
-          // Its words' drawn height: a reply shorter than it looked isn't folded (foldOf()).
-          .on_size_change((size, cx) => { const was = this.natural.get(x.id); if (!was || Math.abs(was - size.height) > 1) { this.natural.set(x.id, size.height); cx.notify(); } })
+          // Its words' drawn height: a reply shorter than it looked isn't folded (foldOf()). Taken in the
+          // measurer only: a handler in the list's rows throws there, and the list draws blank.
+          .when(pre === "m-", (el) => el.on_size_change((size, cx) => { const was = this.natural.get(x.id); if (!was || Math.abs(was - size.height) > 1) { this.natural.set(x.id, size.height); cx.notify(); } }))
           .child(TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(text) || " ").selectable(true)))
           : TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(text) || " ").selectable(true)));
     const fileLine = (label) => h_flex().gap(5).items_center().text_size(12).text_color(t.dim)
@@ -3717,11 +3718,10 @@ export default class Chat extends View {
         })
         .child(v_virtual_list("chat-rows", rows.length, sizes, (i) => rows[i].id, (range) => {
           this.range = range;
-          this.drew = range.end > range.start ? frame : -1;
           // The first row on screen bounds the scroll position: keep the estimate inside it.
           const top = sizes.slice(0, range.start).reduce((a, b) => a + b, 0);
           if ((this.scrollTop ?? 0) < top || (this.scrollTop ?? 0) >= top + (sizes[range.start] ?? 0)) this.scrollTop = top;
-          return rows.slice(range.start, range.end).map((x, j) => {
+          const els = rows.slice(range.start, range.end).map((x, j) => {
             const flash = this.flash && (x.id === this.flash.id || String(x.id).startsWith(`${this.flash.id}:`));
             return div().relative().w_full().h(sizes[range.start + j]).when(!x.bar || x.kind === "band", (el) => el.overflow_hidden())
               // Find: rows with matches tinted, the current one the flat selected fill. Neutral, never amber (Doop App 07b).
@@ -3733,6 +3733,9 @@ export default class Chat extends View {
               .when(Boolean(flash), (el) => el.child(div().id(`flash-${x.id}`).absolute().inset_0().rounded(10).bg(t.accent + "26")
                 .opacity(this.flash.on ? 1 : 0).transition("opacity", { duration: 1100, easing: "ease-out" })));
           });
+          // Drew only once its rows are built: a row that throws leaves the frame blank, and the blank check sees it.
+          this.drew = range.end > range.start ? frame : -1;
+          return els;
         })
           .track_scroll(this.scroll).size_full()
           .on_item_click((key, cx) => this.clickRow(key, rows, cx, sizes)))
