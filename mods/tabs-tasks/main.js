@@ -37,7 +37,21 @@ const PANELS = [["tasks", "Tasks", "mods/tasks/tasks.svg"], ["changes", "Changes
 const openPanel = (id) => { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); };
 // The panel's head (the layout's "panel-switch" block): the shown panel's banner over the switcher, or the switcher
 // alone over a drilled-in view (a task's thread, an artifact), which has its own header. The block is resized to it.
-const BANNER_H = 60, SWITCH_H = 40, HEAD_H = BANNER_H + SWITCH_H + 8;
+// The switcher's well inside the head's card: the block is its bottom gap (8), the card's border (2), padding (8), the well.
+const BANNER_H = 60, WELL_H = 32, SWITCH_H = 8 + 2 + 8 + WELL_H, HEAD_H = SWITCH_H + BANNER_H + 1;
+// Motion (Emil Kowalski's): the strong ease-out for the head's height, as a function of time 0..1.
+const bezier = (x1, y1, x2, y2) => (t) => {
+  let u = t;
+  for (let i = 0; i < 8; i++) {
+    const x = 3 * (1 - u) ** 2 * u * x1 + 3 * (1 - u) * u * u * x2 + u ** 3 - t;
+    const dx = 3 * (1 - u) ** 2 * x1 + 6 * (1 - u) * u * (x2 - x1) + 3 * u * u * (1 - x2);
+    if (Math.abs(x) < 1e-4 || !dx) break;
+    u = Math.min(1, Math.max(0, u - x / dx));
+  }
+  return 3 * (1 - u) ** 2 * u * y1 + 3 * (1 - u) * u * u * y2 + u ** 3;
+};
+const EASE_OUT = bezier(0.23, 1, 0.32, 1);
+const HEAD_MS = 200, PILL = { duration: 180, easing: "ease-in-out" };
 
 export default class Tabs extends View {
   init(_props, cx) {
@@ -259,13 +273,14 @@ export default class Tabs extends View {
     const counts = shared("counts.red") !== false, greens = shared("counts.green") !== false;
     const dirty = enabled.includes("changes") ? this.branchOf(space, cx, false)?.state?.dirty ?? 0 : 0;
     const roomy = (this.width ?? 0) >= 400;
+    const shown = body?.active;
     const seg = ([id, label, icon]) => {
-      const on = body?.active === id;
+      const on = shown === id;
       const [need, ready] = id === "tasks" ? [counts ? inboxCount() : 0, greens ? readyCount() : 0] : [0, 0];
       const n = id === "changes" ? dirty : 0;
       return h_flex().id(`seg-${id}`).flex_1().min_w(0).h_full().px(6).gap(6).justify_center().items_center().rounded(7)
         .text_size(TEXT.label).font_medium().whitespace_nowrap()
-        .when(on, (el) => raisedLook(el, 7).text_color(t.foreground).when(!isDark(), (el) => el.bg(t.background)))
+        .when(on, (el) => el.text_color(t.foreground))
         .when(!on, (el) => el.text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click(() => openPanel(id)))
         .when(!roomy && !on, (el) => el.tooltip(label))
         .child(svg(icon).size(13).flex_none().when(on, (el) => el.text_color(t.accent)))
@@ -273,25 +288,55 @@ export default class Tabs extends View {
         .when(need + ready > 0, (el) => el.child(countBadge(need, ready, on ? t.raised : t.background)))
         .when(n > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).font_medium().text_color(t.dim).child(n > 99 ? "99+" : String(n))));
     };
-    const shown = body?.active;
     const inner = (shown === "tasks" && find(root, "tasks")?.active === "tasks-thread") || (shown === "artifacts" && find(root, "artifacts")?.active === "artifacts-view");
-    const px = inner ? SWITCH_H : HEAD_H;
-    if (this.headPx !== px) { this.headPx = px; cx.spawn(async () => run("layout.resize", { id: "panel-switch", px })); }
-    const segs = well(h_flex().w_full().h_full().p(2).gap(2), 10).children(PANELS.filter(([id]) => enabled.includes(id)).map(seg));
-    const box = div().id("panel-switch").size_full().pb(8)
-      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } });
-    if (inner) return box.child(segs);
+    this.resizeHead(inner ? SWITCH_H : HEAD_H, cx);
+    // The shown segment's raised pill slides under the segments (the tab indicator): equal segments, so its place
+    // is the well's width split n ways (border 1, padding 2, gap 2).
+    const list = PANELS.filter(([id]) => enabled.includes(id));
+    const at = list.findIndex(([id]) => id === shown), W = this.wellW ?? 0, n = list.length;
+    const segW = n ? (W - 6 - 2 * (n - 1)) / n : 0;
+    const pill = at >= 0 && segW > 0 && div().id("seg-pill").absolute().top(2).h(WELL_H - 6).left(2 + at * (segW + 2)).w(segW)
+      .transition("left", PILL).transition("width", PILL)
+      .child(raisedLook(div().size_full().rounded(7), 7).when(!isDark(), (el) => el.bg(t.background)));
+    const segs = well(h_flex().relative().w_full().h(WELL_H).flex_none().p(2).gap(2), 10)
+      .on_size_change((size, cx) => { if (size.width !== this.wellW) { this.wellW = size.width; cx.notify(); } })
+      .when(Boolean(pill), (el) => el.child(pill))
+      .children(list.map(seg));
     const [title, line, right] = this.headOf(shown, space, t, cx);
     // Doop App 02 .rp: the neutral wool banner, the panel's name in the serif and its line in mono, its control at
-    // the right; the switcher under it.
-    return box.child(v_flex().size_full().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
-      .child(banner("panel-banner", "neutral", BANNER_H).border_b(1).border_color(t.border)
-        .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
-          .child(v_flex().flex_1().min_w(0).gap(4)
-            .child(div().truncate().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child(title))
-            .when(Boolean(line), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(line))))
-          .when(Boolean(right), (el) => el.child(right))))
-      .child(div().w_full().flex_1().min_h(0).p(4).child(segs)));
+    // the right; the switcher under it. Over a drilled-in view the banner folds away (the block's height eases to
+    // the switcher's, the banner clipped and faded with it).
+    return div().id("panel-switch").size_full().pb(8)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .child(v_flex().size_full().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+        .child(div().id("panel-fold").w_full().flex_1().min_h(0).overflow_hidden()
+          .opacity(inner ? 0 : 1).transition("opacity", { duration: HEAD_MS, easing: "ease-out" })
+          .child(banner("panel-banner", "neutral", BANNER_H).border_b(1).border_color(t.border)
+            .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
+              .child(v_flex().flex_1().min_w(0).gap(4)
+                .child(div().truncate().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child(title))
+                .when(Boolean(line), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(line))))
+              .when(Boolean(right) && !inner, (el) => el.child(right)))))
+        .child(div().w_full().flex_none().p(4).child(segs)));
+  }
+
+  // The block has no transition of its own: its height steps to px a frame at a time (HEAD_MS, the strong
+  // ease-out); a newer target takes over from where it is. The first one is set at once.
+  resizeHead(px, cx) {
+    if (this.headTo === px) return;
+    this.headTo = px;
+    const from = this.headAt, token = (this.headToken = (this.headToken ?? 0) + 1);
+    cx.spawn(async (cx) => {
+      const start = Date.now();
+      for (;;) {
+        if (this.headToken !== token) return;
+        const k = from == null ? 1 : Math.min(1, (Date.now() - start) / HEAD_MS);
+        this.headAt = Math.round(from == null ? px : from + (px - from) * EASE_OUT(k));
+        run("layout.resize", { id: "panel-switch", px: this.headAt });
+        if (k >= 1) return;
+        await cx.sleep(16);
+      }
+    });
   }
 
   // The head's banner for a panel: [its name, its line, its control at the right or null].

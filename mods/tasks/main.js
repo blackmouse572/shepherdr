@@ -26,6 +26,8 @@ import { button, banner, TEXT, H, RADIUS, HEAD, MONO, red, working, isDark, SERI
 
 const CLI = () => `${appHome()}/mods/tasks/bin/herdr-task`;
 const DONE_SHOWN = 5; // Done rows a group shows before "Show N more"
+// A group folding (Emil Kowalski's accordion: height and opacity, short, the strong UI ease-out).
+const FOLD = { duration: 200, easing: "ease-out" };
 // Task ids in a monospace column (Herdr ships JetBrains Mono: each character is 0.6 em wide).
 const ID_FONT = "JetBrains Mono", ID_SIZE = TEXT.id, ID_CHAR = ID_SIZE * 0.6;
 // Every list in ~/.herdr/tasks on a machine is read with READ_LISTS and kept by taskLists (one
@@ -583,6 +585,7 @@ export default class Tasks extends View {
   shut(key) { return this.shutKeys.has(key); }
   fold(key, shut) {
     if (shut) this.shutKeys.add(key); else this.shutKeys.delete(key);
+    (this.foldedAt ??= new Map()).set(key, Date.now());
     try { localStorage.setItem("shut", JSON.stringify([...this.shutKeys])); } catch {}
   }
 
@@ -604,7 +607,8 @@ export default class Tasks extends View {
       .child(h_flex().id(`head-${key}`).h(30).px(8).gap(10).items_center().rounded(RADIUS.card).text_size(TEXT.label)
         .when(!open, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover))
           .on_hover((on, cx) => { this.hoverHead = on ? key : this.hoverHead === key ? null : this.hoverHead; cx.notify(); })
-          .on_click((_e, cx) => { this.fold(key, !shut); cx.notify(); }))
+          // A closing group keeps its rows until it has folded, then lets them go.
+          .on_click((_e, cx) => { this.fold(key, !shut); cx.notify(); cx.timer.after(FOLD.duration + 60, (cx) => cx.notify()); }))
         .child(h_flex().w(14).h(14).flex_none().items_center().justify_center()
           .child(svg(`mods/workspace-chrome/chevron-${shut ? "right" : "down"}.svg`).size(12).flex_none()
             .text_color(this.hoverHead === key ? t.foreground : t.dim)))
@@ -613,7 +617,7 @@ export default class Tasks extends View {
             .when(!machine, (el) => el.font_medium().text_color(t.dim)).child(label))
           .when(Boolean(note), (el) => el.child(div().flex_none().text_color(t.dim).child(`· ${note}`))))
         .child(div().flex_none().text_color(t.dim).child(count ? String(count) : "")))
-      .when(!shut, (el) => el.children(shown)
+      .child(this.foldBody(key, shut, v_flex().gap(1).children(shown)
         .when(cut > 0 || (!open && all && done > DONE_SHOWN), (el) => el.child(h_flex().id(`more-${key}`).h(28).pl(32).pr(8).items_center().rounded(RADIUS.card).cursor_pointer()
           .text_size(TEXT.label).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => {
@@ -621,7 +625,21 @@ export default class Tasks extends View {
             try { localStorage.setItem("alldone", JSON.stringify([...this.allDone])); } catch {}
             cx.notify();
           })
-          .child(all ? "Show less" : `Show ${cut} more`))));
+          .child(all ? "Show less" : `Show ${cut} more`)))));
+  }
+
+  // A group's rows in a clip whose height eases between 0 and theirs (measured while open), fading with it. Rows
+  // never measured open at once; a shut group draws no rows once it has folded.
+  foldBody(key, shut, rows) {
+    this.bodyH ??= new Map();
+    const h = this.bodyH.get(key);
+    const closing = shut && Date.now() - (this.foldedAt?.get(key) ?? 0) < FOLD.duration + 50;
+    return div().id(`body-${key}`).w_full().overflow_hidden()
+      .when(shut, (el) => el.h(0)).when(!shut && h != null, (el) => el.h(h)).when(h != null, (el) => el.transition("height", FOLD))
+      .opacity(shut ? 0 : 1).transition("opacity", FOLD)
+      .when(!shut || closing, (el) => el.child(rows.on_size_change((size, cx) => {
+        if (!shut && Math.abs((this.bodyH.get(key) ?? -1) - size.height) > 0.5) { this.bodyH.set(key, size.height); cx.notify(); }
+      })));
   }
 
   // A row's status mark: Shepherdr's task dot (dot.js); a Working row's pie shows its % done.
