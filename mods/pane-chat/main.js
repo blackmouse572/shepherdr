@@ -16,10 +16,10 @@
 // this device reads (core/reading.js, shared "chat.reading").
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, v_flex } from "gpui-base";
+import { h_flex, v_flex, Popup } from "gpui-base";
 import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
-import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF, dialogTitle, toggleSwitch } from "./ui.js";
+import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF, dialogTitle, toggleSwitch, menuRow, fieldFrame } from "./ui.js";
 import { READING_KEY, READING_WORDS, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice } from "./core/reading.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
@@ -204,6 +204,21 @@ export default class Pane extends View {
       (v, _e, cx) => (v === "chat" ? onChat(cx) : onTerminal(cx)));
   }
 
+  // The Font row: a select, each choice in its own face; a pick closes it.
+  fontSelect(t, p, pick) {
+    const face = (k, el) => (k === "serif" ? el.font_family(SERIF) : el);
+    const name = (o) => face(o[0], div().truncate()).child(o[1]);
+    const cur = FONTS.find((o) => o[0] === p.font) ?? FONTS[0];
+    const trigger = fieldFrame(h_flex().id("rd-font").w_full().h(30).pl(10).pr(8).gap(8).items_center().cursor_pointer()
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.fontOpen = !this.fontOpen; cx.notify(); }), { focused: this.fontOpen })
+      .child(div().flex_1().min_w(0).text_size(13).text_color(t.foreground).child(name(cur)))
+      .child(svg("mods/pane-chat/chevron-down.svg").size(12).flex_none().text_color(t.muted));
+    const list = v_flex().w(220).p(4).rounded(RADIUS.card).bg(t.popover).border_1().border_color(t.border).shadow_lg()
+      .children(FONTS.map((o) => menuRow(`rd-font-${o[0]}`, name(o), { check: o[0] === p.font,
+        onClick: () => { this.fontOpen = false; pick(o[0]); } })));
+    return Popup.new("rd-font-pop", trigger).anchor("top_left").when(Boolean(this.fontOpen), (el) => el.content(list));
+  }
+
   // Aa's popover (Doop App 14): every pick goes to shared "chat.reading" and shows at once in the chats behind it.
   reading() {
     const t = theme();
@@ -214,13 +229,14 @@ export default class Pane extends View {
       .child(div().w(92).flex_none().text_size(12.5).text_color(t.muted).child(label))
       .child(div().flex_1().min_w(0).child(ctl));
     const seg = (key, opts, labelOf = (o) => o[1]) => segmented(`rd-${key}`, opts.map((o) => [o[0], labelOf(o)]), p[key], set(key), { fill: true });
-    return v_flex().id("reading").size_full().p(pad).bg(isDark() ? t.chrome : t.background).text_size(TEXT.body).text_color(t.foreground)
+    // Note: a popup is as tall as its content, so the popover sets its own size (size_full collapses to the title).
+    return v_flex().id("reading").w(READING_W).h(READING_H).p(pad).bg(isDark() ? t.chrome : t.background).text_size(TEXT.body).text_color(t.foreground)
       .child(dialogTitle("reading-title", W.title, { pad, sub: W.sub, lead: "mods/pane-chat/type.svg", size: HEAD.small }))
       .child(v_flex().flex_1().min_h(0).pt(12).gap(10)
         .child(row(W.size, seg("size", SIZES)))
         .child(row(W.leading, seg("leading", LEADINGS)))
         .child(row(W.width, seg("width", WIDTHS)))
-        .child(row(W.font, seg("font", FONTS, (o) => (o[0] === "serif" ? div().font_family(SERIF).text_size(13).child(o[1]) : o[1]))))
+        .child(row(W.font, this.fontSelect(t, p, set("font"))))
         .child(h_flex().h(24).flex_none().gap(12).items_center()
           .child(div().flex_1().min_w(0).text_size(12.5).text_color(t.muted).child(W.fold))
           .child(toggleSwitch("rd-fold", p.fold, (on) => set("fold")(on)))))
