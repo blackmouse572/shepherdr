@@ -255,3 +255,15 @@ test("another machine's meters: --usage reads each account's limits; a later pla
   expect(kept.accounts[0].meters).toHaveLength(2);
   expect(keepMeters(null, plain)).toBe(plain);
 });
+
+test("another machine's switch: due past its point, unless a window there read usage lately", async () => {
+  const { remoteView, otherDue } = await import("./usage.js");
+  const acc = (id, used) => ({ id, name: id, folder: `~/.claude-${id}`, signed_in: true, tasks: [], limits: { state: "ok", windows: [{ name: "5-hour", used }] } });
+  const d = { accounts: [acc("default", 97), acc("work", 10)], active: "default", auto: true, switch_at: 95, order: [], skipped: [] };
+  expect(otherDue(remoteView(d))).toMatchObject({ from: { id: "default" }, to: { id: "work" } });
+  expect(remoteView({ ...d, window_at: Date.now() - 60000 }).window).toBe(true);
+  expect(otherDue(remoteView({ ...d, window_at: Date.now() - 60000 }))).toBe(null);
+  expect(otherDue(remoteView({ ...d, window_at: Date.now() - 3600000 }))).not.toBe(null);
+  expect(otherDue(remoteView({ ...d, auto: false }))).toBe(null);
+  expect(otherDue(remoteView({ ...d, accounts: [acc("default", 50), acc("work", 10)] }))).toBe(null);
+});

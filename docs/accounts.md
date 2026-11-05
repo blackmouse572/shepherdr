@@ -17,8 +17,11 @@ Shepherdr can use more than one Claude account on a machine. Each account is a C
   (This Mac | build-box) shows that machine's own accounts and picks: Settings runs herdr-task there (`herdr-task
   accounts list --json`, herdr's exec on that machine) and Set as default, Skip and Move up / down change them there
   (`accounts set '<json>'`). A signed-out account there with tasks gets **Move to Default** (`accounts move`). Its usage
-  meters come a moment after (`accounts list --usage` reads each account's limits there, at most every 5 minutes), and
-  switching by usage runs only where a window reads usage. A machine whose
+  meters come a moment after (`accounts list --usage` reads each account's limits there, at most every 5 minutes).
+  Switching by usage runs in a machine's own window; a machine with none (no window touched its
+  `~/.herdr/usage-read` in 15 minutes) is switched by this window: every 5 minutes it reads that machine's usage
+  and, past its switch point, sets its `active` (and `moving`, on Moves) there, with a toast naming the machine and no
+  Undo (set it back in its Settings > Accounts). A machine whose
   herdr-task can't answer yet shows its ~/.claude and Codex read-only, as Settings > Machines reads them.
 - **Settings > Machines** lists another machine's accounts the same way; a signed-out one says which tasks it holds
   ("EVL-3 and EVL-4 in eval-runner are paused until it signs in") and offers Move to Default.

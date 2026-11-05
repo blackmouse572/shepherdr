@@ -181,6 +181,15 @@ def limits_of(accounts):
     return got
 
 
+def window_at():
+    """When a window here last read usage (lib/usage-data.js touches ~/.herdr/usage-read), in ms, or None: while it's
+    fresh that window runs this machine's switch rule, and another machine's window leaves it alone."""
+    try:
+        return int(os.path.getmtime(os.path.join(HOME, ".herdr", "usage-read")) * 1000)
+    except OSError:
+        return None
+
+
 def listing(usage=False):
     """This machine's accounts and picks, for another machine's Settings > Accounts (`accounts list --json`).
     `usage`: each account's plan limits too ("limits", slow: Claude Code's /usage per account)."""
@@ -195,11 +204,12 @@ def listing(usage=False):
         for r in rows:
             r["limits"] = got.get(r["id"])
     return {"accounts": rows, "active": active(), "names": names, "hidden": hidden,
-            "undo": d["undo"] if isinstance(d.get("undo"), bool) else True, **rule}
+            "undo": d["undo"] if isinstance(d.get("undo"), bool) else True,
+            **({"moving": d["moving"]} if isinstance(d.get("moving"), dict) else {}), "window_at": window_at(), **rule}
 
 
 # The picks another machine may set here (`accounts set '<json>'`), each checked as normPrefs would.
-SETTABLE = ("active", "auto", "switch_at", "running", "undo", "order", "skipped", "hidden", "names")
+SETTABLE = ("active", "auto", "switch_at", "running", "undo", "order", "skipped", "hidden", "names", "moving")
 
 
 def set_picks(change):
@@ -220,9 +230,15 @@ def set_picks(change):
             raise Fail(f"{k} is a list of account names.")
         if k == "names" and (not isinstance(v, dict) or any(not isinstance(x, str) for x in v.values())):
             raise Fail("names maps an account to its name.")
+        if k == "moving" and v is not None and not (isinstance(v, dict) and isinstance(v.get("to"), str) and v["to"] in known
+                                                    and isinstance(v.get("from"), list) and all(isinstance(x, str) and ID.match(x) for x in v["from"])
+                                                    and isinstance(v.get("at"), (int, float)) and not isinstance(v.get("at"), bool)):
+            raise Fail("moving is {from: [account], to: account, at: ms} or null.")
     if "switch_at" in change:
         change = {**change, "switch_at": min(95, max(50, int(round(change["switch_at"] / 5.0)) * 5))}
     d = {**picks(), **change}
+    if "moving" in change and change["moving"] is None:
+        d.pop("moving", None)
     if change.get("running") == "stays":
         d.pop("moving", None)
     os.makedirs(os.path.dirname(FILE), exist_ok=True)

@@ -19,9 +19,10 @@
 
 import { div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { exec, appHome, home, spaces, shared, setShared, readTextFile, writeTextFile, theme, run } from "herdr";
+import { exec, appHome, home, spaces, machines, shared, setShared, readTextFile, writeTextFile, theme, run } from "herdr";
 import { TEXT, need, green, red, onStatus, toast } from "./ui.js";
-import { keepGood, dueSwitch, meterTone, shown, accountId, cleanName, normPrefs, switchToast, nextQueued, session, initial, movingAfter, WORDS } from "./core/usage.js";
+import { keepGood, dueSwitch, meterTone, shown, accountId, cleanName, normPrefs, switchToast, nextQueued, session, initial, movingAfter, WORDS,
+  readRemote, readRemoteUsage, setRemote, keepMeters, otherDue } from "./core/usage.js";
 
 export const USAGE = "usage";
 export const PREFS = "usage.prefs";
@@ -71,7 +72,11 @@ async function read() {
   try {
     const r = await exec("python3", [SCRIPT(), "--spaces", JSON.stringify(localSpaces())]);
     const lineOut = String(r.stdout ?? "").split("\n").find((l) => l.startsWith("{"));
-    if (lineOut) setShared(USAGE, keepGood(shared(USAGE), JSON.parse(lineOut)));
+    if (lineOut) {
+      setShared(USAGE, keepGood(shared(USAGE), JSON.parse(lineOut)));
+      // This machine's switch rule runs here: another machine's window leaves it alone (readOthers()).
+      exec("sh", ["-c", 'mkdir -p "$HOME/.herdr" && : > "$HOME/.herdr/usage-read"']).catch(() => {});
+    }
   } catch {
     // Keeps what it read last; the popover's "Updated" line shows how old that is.
   } finally {
@@ -120,6 +125,41 @@ function undo(u) {
   setPrefs({ active: u.to, moving: movingBefore });
 }
 
+// ---- another machine's switch rule -------------------------------------------------------------------------------
+// A connected machine with no window of its own reading usage (none touched its ~/.herdr/usage-read lately): every 5
+// minutes this window reads its accounts there (`accounts list`, then `--usage` when its rule is on and it has a
+// second account) and, past its switch point, moves its "active" (and "moving", on Moves) there with `accounts set`,
+// with a toast naming the machine. No Undo here: that machine's Settings > Accounts sets it back.
+// Shared "usage.remote" = { machine: view } (core/usage.js remoteView).
+export const REMOTE = "usage.remote";
+let othersBusy = false;
+async function readOthers() {
+  if (othersBusy) return;
+  othersBusy = true;
+  try {
+    const names = (machines() ?? []).filter((m) => m.name && m.layout !== "unavailable").map((m) => m.name);
+    const next = {};
+    await Promise.all(names.map(async (m) => {
+      try {
+        let v = await readRemote(exec, m);
+        // a herdr-task there from before --usage: its accounts without meters, never switched
+        if (v.prefs.auto !== false && !v.window && shown(v.accounts, v.prefs).length > 1) v = await readRemoteUsage(exec, m).catch(() => v);
+        next[m] = v;
+        const d = otherDue(v);
+        if (!d) return;
+        next[m] = keepMeters(v, await setRemote(exec, m, { active: d.to.id, ...(v.prefs.running === "moves" ? { moving: movingAfter(v.prefs.moving, d) } : {}) }));
+        const words = switchToast(d, null, v.prefs.running);
+        toast({ ...words, title: `${m}: ${words.title}`, level: "info" });
+      } catch {
+        if (shared(REMOTE)?.[m]) next[m] = shared(REMOTE)[m];
+      }
+    }));
+    setShared(REMOTE, next);
+  } finally {
+    othersBusy = false;
+  }
+}
+
 let started = false;
 // `onView`: the toast's View (the status bar opens its popover).
 export function startUsage(cx, { onView = null } = {}) {
@@ -128,7 +168,8 @@ export function startUsage(cx, { onView = null } = {}) {
   let asked = shared(REFRESH) ?? 0;
   let undone = shared(UNDO)?.at ?? 0, viewed = shared(VIEW) ?? 0;
   cx.spawn(async () => { await loadPrefs(); await read(); });
-  cx.timer.every(EVERY, (cx) => cx.spawn(async () => { await read(); }));
+  cx.timer.every(EVERY, (cx) => cx.spawn(async () => { await read(); await readOthers(); }));
+  cx.timer.after(30000, (cx) => cx.spawn(async () => { await readOthers(); }));
   let fastAt = 0;
   cx.timer.every(1000, (cx) => {
     const u = shared(UNDO);

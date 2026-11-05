@@ -135,7 +135,16 @@ class Moves(unittest.TestCase):
         self.acc.set_picks({"active": "work", "skipped": ["work"], "switch_at": 72, "running": "moves"})
         d = self.acc.listing()
         self.assertEqual((d["active"], d["skipped"], d["switch_at"], d["running"]), ("work", ["work"], 70, "moves"))
-        for bad in ({"active": "nope"}, {"evil": 1}, {"order": ["../x"]}, {"auto": "yes"}, {}):
+        self.acc.set_picks({"moving": {"from": ["default"], "to": "work", "at": 5}})
+        self.assertEqual(self.acc.listing()["moving"], {"from": ["default"], "to": "work", "at": 5})
+        self.acc.set_picks({"moving": None})
+        self.assertNotIn("moving", self.acc.listing())
+        self.assertIsNone(self.acc.listing()["window_at"])
+        os.makedirs(os.path.join(self.home, ".herdr"), exist_ok=True)
+        open(os.path.join(self.home, ".herdr", "usage-read"), "w").close()
+        self.assertIsInstance(self.acc.listing()["window_at"], int)
+        for bad in ({"active": "nope"}, {"evil": 1}, {"order": ["../x"]}, {"auto": "yes"}, {}, {"moving": {"from": ["x"], "to": "nope", "at": 1}},
+                    {"moving": {"from": "default", "to": "work", "at": 1}}):
             with self.assertRaises(self.acc.Fail):
                 self.acc.set_picks(bad)
 

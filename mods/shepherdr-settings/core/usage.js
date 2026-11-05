@@ -79,7 +79,7 @@ export const WORDS = {
   remoteNone: (m) => `Nothing read from ${m} yet. Its plan usage shows here once Settings > Machines has read it.`,
   remoteReading: (m) => `Reading ${m}'s accounts…`,
   remoteFailed: (m, why) => `Couldn't read ${m}'s accounts${why ? `: ${why}` : ""}. Its ~/.claude and Codex, as Settings > Machines reads them:`,
-  remoteSwitch: "On another machine, new work starts on its default; switching by usage runs where a window reads it.",
+  remoteSwitch: "Its switch rule runs in its own window; with none there, this window reads its usage every 5 minutes and switches it.",
   signedOutRow: "signed out",
   moveTo: (name) => `Move to ${name}`,
   moved: (r, to) => [r.moved?.length ? `Moved ${r.moved.join(", ")} to ${to}.` : "", r.repointed?.length ? `${r.repointed.join(", ")} resume on ${to}.` : "",
@@ -444,8 +444,13 @@ export function remoteView(d) {
       tasks: (Array.isArray(a.tasks) ? a.tasks : []).filter((t) => typeof t?.ref === "string"),
     };
   });
-  return { accounts: list, prefs: normPrefs(d) };
+  // a window there read usage within WINDOW_FRESH: it runs that machine's switch rule itself
+  const w = n(d?.window_at);
+  return { accounts: list, prefs: normPrefs(d), window: w !== null && Date.now() - w < WINDOW_FRESH };
 }
+const WINDOW_FRESH = 15 * 60000;
+// Another machine's switch due now (dueSwitch over its shown accounts), unless a window there runs it, or null.
+export const otherDue = (v) => (!v || v.window ? null : dueSwitch(shown(v.accounts, v.prefs), v.prefs));
 // A read without --usage (a change made there) keeps what the last --usage read gave.
 export function keepMeters(prev, next) {
   if (!prev?.accounts || !next?.accounts) return next;
