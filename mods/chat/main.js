@@ -3769,7 +3769,10 @@ export default class Chat extends View {
     const fresh = rows.map((_, i) => i).filter((i) => !this.heights.has(keys[i]))
       .sort((a, b) => Math.abs(a - near) - Math.abs(b - near)).slice(0, 30);
     const again = rows.map((_, i) => i).filter((i) => this.heights.has(keys[i]) && ((i >= lo && i < hi) || now - (this.measuredAt.get(keys[i]) ?? 0) < 4000));
-    const order = [...new Set([...fresh, ...again])].slice(0, 60);
+    // The rows on screen go first: behind a page of rows just loaded above, they'd fall past the 60 and keep a
+    // height taken before their words laid out (a bubble spilling over the next row, or a blank list).
+    const shown = again.filter((i) => i >= lo && i < hi);
+    const order = [...new Set([...shown, ...fresh, ...again])].slice(0, 60);
     return div().absolute().top(0).left(0).w(this.width).h(0).overflow_hidden().opacity(0)
       .child(v_flex().w_full().children(order.map((i) => div().id(`m${this.measureGen}-${keys[i]}`).flex_none().w_full()
         .on_size_change((size, cx) => {
