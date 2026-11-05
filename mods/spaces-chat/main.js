@@ -33,6 +33,7 @@ import { MachinePopup, openMachine, openMachineSettings } from "./machine-popup.
 import { NeedsDrawer, openNeeds } from "./needs-drawer.js";
 import { BranchMenu } from "./branch-menu.js";
 import { startPolling, allStats } from "./machines.js";
+import { startAllowRules } from "./allow.js";
 // The meter's tooltip and the red dot's words: the shared core's (the web's machine header says the same).
 import { meterWords, healthErrorWords } from "./core/machines.js";
 import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS } from "./ui.js";
@@ -174,6 +175,8 @@ export default class Spaces extends View {
     cx.timer.every(15000, cx => this.refreshMachines(cx));
     // Each machine's health and plan limits (machines.js): read every 45 s / 10 min, not per render.
     startPolling(cx);
+    // "Always in this space": waiting permission asks a space's rule answers (allow.js).
+    startAllowRules(cx);
     // spaces-chat.machine (a key, or `herdr-app do`): the details of the shown space's machine.
     cx.spawn(async (cx) => {
       for (;;) {
