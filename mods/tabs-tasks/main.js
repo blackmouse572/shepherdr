@@ -282,7 +282,9 @@ export default class Tabs extends View {
     // place is the row's measured width (an element with an id: one without loses its size) split n ways, in px so
     // the native transition can ease it.
     const list = PANELS.filter(([id]) => enabled.includes(id));
-    const at = list.findIndex(([id]) => id === shown), n = list.length, segW = n && this.rowW ? this.rowW / n : 0;
+    // Measured sizes come zoomed (settings' zoom); lengths are drawn at the zoom, so they're set unzoomed.
+    const at = list.findIndex(([id]) => id === shown), n = list.length, z = Number(settings()?.zoom) || 1;
+    const segW = n && this.rowW ? this.rowW / z / n : 0;
     const pill = at >= 0 && segW > 0 && div().id("seg-pill").absolute().top(0).h_full().left(at * segW).w(segW)
       .transition("left", PILL)
       .child(raisedLook(div().size_full().rounded(7), 7).when(!isDark(), (el) => el.bg(t.background)));

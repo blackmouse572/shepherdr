@@ -299,8 +299,10 @@ export function pillTabs(id, options, value, onPick, sizes) {
   const t = theme();
   const at = options.findIndex(([v]) => v === value);
   const known = at >= 0 && options.every(([v]) => sizes.has(v));
-  const left = known ? options.slice(0, at).reduce((a, [v]) => a + sizes.get(v) + 2, 0) : 0;
-  const pill = known && div().id(`${id}-pill`).absolute().top(0).h_full().left(left).w(sizes.get(value))
+  // Measured sizes come zoomed (settings' zoom); lengths are drawn at the zoom, so they're set unzoomed.
+  const z = Number(settings()?.zoom) || 1;
+  const left = known ? options.slice(0, at).reduce((a, [v]) => a + sizes.get(v) / z + 2, 0) : 0;
+  const pill = known && div().id(`${id}-pill`).absolute().top(0).h_full().left(left).w(sizes.get(value) / z)
     .transition("left", PILL_MOTION).transition("width", PILL_MOTION)
     .child(raisedLook(div().size_full().rounded(RADIUS.control - 2), RADIUS.control - 2).when(!dark(), (el) => el.bg(t.background)));
   return well(div().id(`${id}-well`).h(H.sm).flex_none().p(2), RADIUS.control)

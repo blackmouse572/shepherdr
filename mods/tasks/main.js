@@ -12,7 +12,7 @@
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
-import { spaces, panes, agents, terminals, machines, exec, readTextFile, watchFolder, appHome, home, run, theme, nextCommand, shared, setShared, openOverlay, layout } from "herdr";
+import { spaces, panes, agents, terminals, machines, exec, readTextFile, watchFolder, appHome, home, run, theme, nextCommand, shared, setShared, openOverlay, layout, settings } from "herdr";
 // What needs the person, from every space and machine (lib/inbox.js, shared; the tab
 // bar runs its engine): agents asking or waiting, task problems, failed automations, merges.
 import { items as needs, ASKS, toAgent, reasonOf, reqReason, REASONS, fit } from "./inbox.js";
@@ -632,7 +632,8 @@ export default class Tasks extends View {
   // never measured open at once; a shut group draws no rows once it has folded.
   foldBody(key, shut, rows) {
     this.bodyH ??= new Map();
-    const h = this.bodyH.get(key);
+    // Measured heights come zoomed (settings' zoom); lengths are drawn at the zoom, so it's set unzoomed.
+    const m = this.bodyH.get(key), h = m == null ? null : m / (Number(settings()?.zoom) || 1);
     const closing = shut && Date.now() - (this.foldedAt?.get(key) ?? 0) < FOLD.duration + 50;
     return div().id(`body-${key}`).w_full().overflow_hidden()
       .when(shut, (el) => el.h(0)).when(!shut && h != null, (el) => el.h(h)).when(h != null, (el) => el.transition("height", FOLD))
