@@ -116,6 +116,12 @@ function findModel(menus, name) {
 }
 // About how many lines words take at a width (px), for a row's height before it's measured (letter: a letter's px).
 const wrapLines = (text, width, letter = 7) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * letter) / Math.max(120, width))), 0);
+// The agent's question card (an "ask" row): its line heights and room, drawn and counted alike.
+const ASK = { py: 10, gap: 4, head: 16, line: 19, answer: 17 };
+// Its lines: each question's (Claude's, else the asked text's), and after each the choice picked for it.
+const askLines = (x) => (x.qs?.length ? x.qs : [x.text]).flatMap((q) => [
+  ...String(q ?? "").split("\n").map((text) => ({ text })),
+  ...(x.answers?.[q] ? [{ text: x.answers[q], answer: true }] : [])]);
 const ICONS = { copy: "copy", reply: "reply", rewind: "rewind", fork: "git-fork", react: "smile-plus" };
 // Reaction pills: this wide, this far apart; and the gap before the first and after the last.
 const PILL = 46, PILL_GAP = 4, PILL_EDGE = 6;
@@ -2597,7 +2603,7 @@ export default class Chat extends View {
     const found = q && String(x.text ?? x.code ?? "").toLowerCase().includes(q.toLowerCase()) ? `|f:${q}` : "";
     const open = x.kind === "tools" ? this.toolsOpen(x.id) : x.kind === "brief" && this.opened.has(x.id);
     const shown = open && x.steps ? x.steps.filter((s) => this.results.get(s.id) != null).length : 0;
-    return `${x.id}|${x.kind}${x.closed ? `.${x.closed}` : ""}|${open ? `o${x.steps?.length ?? 1}.${shown}` : ""}|${x.text?.length ?? x.code?.length ?? 0}|${x.from ? 1 : 0}${x.failed ? 1 : 0}${x.late ? 1 : 0}${x.images ? 1 : 0}${x.files?.length ?? 0}|${x.paths?.length ?? 0}${x.paths?.every((p) => this.views[p]) ? "v" : ""}|${(x.pills ?? []).map((p) => p.emoji + (p.you ? 1 : 0) + (p.agent ? 1 : 0)).join("")}|${x.bar ? "b" : ""}${x.kind === "artifact" ? `|a${x.version ?? ""}${x.line ? "l" : ""}${x.pending ? "p" : ""}` : ""}${x.kind === "tasknews" ? `|${x.accept ? "a" : ""}` : ""}${x.kind === "cardstrip" ? `|cs${x.sig}${x.first ? "F" : ""}${x.last ? "L" : ""}` : ""}|${x.clip ? `c${x.clip}` : ""}${x.open ? "o" : ""}${x.kind === "day" ? x.text : ""}|${x.top0 ? "T" : ""}${x.bot0 ? "B" : ""}${x.h ?? ""}${found}`;
+    return `${x.id}|${x.kind}${x.closed ? `.${x.closed}` : ""}|${open ? `o${x.steps?.length ?? 1}.${shown}` : ""}|${x.text?.length ?? x.code?.length ?? 0}|${x.from ? 1 : 0}${x.failed ? 1 : 0}${x.late ? 1 : 0}${x.images ? 1 : 0}${x.files?.length ?? 0}|${x.paths?.length ?? 0}${x.paths?.every((p) => this.views[p]) ? "v" : ""}|${(x.pills ?? []).map((p) => p.emoji + (p.you ? 1 : 0) + (p.agent ? 1 : 0)).join("")}|${x.bar ? "b" : ""}${x.kind === "artifact" ? `|a${x.version ?? ""}${x.line ? "l" : ""}${x.pending ? "p" : ""}` : ""}${x.kind === "tasknews" ? `|${x.accept ? "a" : ""}` : ""}${x.kind === "ask" ? `|q${askLines(x).map((l) => l.text.length).join(".")}` : ""}${x.kind === "cardstrip" ? `|cs${x.sig}${x.first ? "F" : ""}${x.last ? "L" : ""}` : ""}|${x.clip ? `c${x.clip}` : ""}${x.open ? "o" : ""}${x.kind === "day" ? x.text : ""}|${x.top0 ? "T" : ""}${x.bot0 ? "B" : ""}${x.h ?? ""}${found}`;
   }
 
   // A row's height before it is measured: bands and gaps are as tall as spaced() made them.
@@ -2623,6 +2629,12 @@ export default class Chat extends View {
       case "agent": return 14 + (x.clip ?? wrapLines(x.text, this.proseW(), this.rd.letter) * this.rd.line);
       case "tools": return this.toolsOpen(x.id) ? 26 + x.steps.length * 19 : 20;
       case "artifact": return x.pending || x.line ? 20 : 62;
+      case "ask": {
+        // As rowBare() draws it: the card's inside is the column less its padding, border and px.
+        const inner = Math.min(this.width, this.rd.column + 36) - 36 - 26;
+        return 2 * ASK.py + 2 + ASK.head + askLines(x).reduce((n, l) => n + ASK.gap
+          + (l.answer ? wrapLines(l.text, inner - 18, 6.6) * ASK.answer : wrapLines(l.text, inner, 7.2) * ASK.line), 0);
+      }
       case "tasknews": return x.accept ? 26 : 20;
       case "cardstrip": {
         const s = x.s, edge = (x.first ? 10 : s.gap ?? 8) + (x.last ? 10 : 0);
@@ -2824,10 +2836,16 @@ export default class Chat extends View {
       }
       case "ask":
         // Red while its dialog is open; once it's gone (answered, or closed without an answer), calm.
-        return pad(v_flex().w_full().gap(4).px(12).py(10).rounded(10).border_1().border_color(t.border)
-          .child(div().text_size(12).font_medium().text_color(x.closed ? t.dim : t.blocked)
+        // Each question, then the choice picked for it. Plain text at fixed line heights, as guess()
+        // counts it: markdown here measured a line short and the card spilled under the next row.
+        return pad(v_flex().w_full().gap(ASK.gap).px(12).py(ASK.py).rounded(10).border_1().border_color(t.border)
+          .child(div().text_size(12).line_height(`${ASK.head}px`).font_medium().text_color(x.closed ? t.dim : t.blocked)
             .child(x.closed === "answered" ? WORDS.askedAnswered : x.closed ? WORDS.askedClosed : WORDS.asked))
-          .child(div().text_color(x.closed ? t.muted : t.foreground).child(TextView.markdown(`${pre}chat-md-${x.id}`, x.text).selectable(true))));
+          .children(askLines(x).map((l) => (l.answer
+            ? h_flex().w_full().gap(6).items_start().text_size(12).line_height(`${ASK.answer}px`).text_color(t.muted)
+              .child(div().h(ASK.answer).flex_none().flex().items_center().child(svg("mods/chat/check.svg").size(12).text_color(t.dim)))
+              .child(div().flex_1().min_w(0).child(l.text))
+            : div().w_full().min_w(0).text_size(13).line_height(`${ASK.line}px`).text_color(x.closed ? t.muted : t.foreground).child(l.text || " ")))));
       case "error":
         return pad(div().w_full().text_size(12.5).text_color(t.blocked).child(x.text));
       case "tools": {

@@ -359,8 +359,9 @@ function codexStep(name, args) {
 //   { kind: "news", id, at, ref, event, text }  (one line of task news Herdr told an Assistant)
 //   { kind: "tools", id, steps: [{ id, kind, line, out? }] }  (calls in a row, between texts;
 //                                             out: where the call's result line is)
-//   { kind: "ask", id, text, closed? }  (the agent's own question tool; closed once its dialog
-//                                          is gone: "answered" | "dismissed")   { kind: "error", id, text }
+//   { kind: "ask", id, text, qs?, answers?, closed? }  (the agent's own question tool; closed once its dialog
+//                                          is gone: "answered" | "dismissed"; qs: Claude's questions,
+//                                          answers: { question: the choice picked })   { kind: "error", id, text }
 // `doing` is what it does right now (the last call not answered yet), for the status line.
 // `meta` is what the agent runs on, from its newest lines: { model, effort, speed, used, window }
 // (used: tokens in its context window now; window: that window's size when the log says it;
@@ -458,6 +459,8 @@ export class Conversation {
   answers(l, off) {
     const at = time(l.timestamp);
     const said = [];
+    // Choices picked on its card ({ question: answer }): its card shows them. Written ones are the person's message.
+    let picked = null;
     const r = l.toolUseResult;
     if (r && typeof r === "object" && r.answers && typeof r.answers === "object") {
       const qs = Array.isArray(r.questions) ? r.questions : [];
@@ -466,8 +469,9 @@ export class Conversation {
           const l = String(o?.label ?? o).trim();
           return [l, l.replace(/\s*\(recommended\)\s*$/i, "")];
         });
-        const picked = String(a ?? "").split(",").map((x) => x.trim()).filter(Boolean);
-        if (a && !(picked.length && picked.every((x) => labels.includes(x)))) said.push(String(a).trim());
+        const got = String(a ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+        if (a && !(got.length && got.every((x) => labels.includes(x)))) said.push(String(a).trim());
+        else if (a) (picked ??= {})[q] = String(a).trim();
       }
     }
     for (const b of l.message.content) {
@@ -475,6 +479,7 @@ export class Conversation {
       // Its question got an answer: picked, written, or words from the chat (not dismissed).
       const q = this.questions.get(String(b.tool_use_id ?? ""));
       if (q) q.closed = "answered";
+      if (q && picked) q.answers = picked;
       const c = typeof b.content === "string" ? b.content : Array.isArray(b.content) ? b.content.map((x) => x?.text ?? "").join("\n") : "";
       const m = /wrote in the chat instead: ([\s\S]*)$/.exec(c);
       if (m && m[1].trim()) said.push(m[1].trim());
@@ -601,7 +606,7 @@ export class Conversation {
           if (b.name === "AskUserQuestion") {
             const qs = Array.isArray(b.input?.questions) ? b.input.questions : [];
             const text = qs.map((q) => q?.question).filter(Boolean).join("\n\n");
-            if (text) this.asked(String(b.id), { kind: "ask", id: `q${off}`, text });
+            if (text) this.asked(String(b.id), { kind: "ask", id: `q${off}`, text, qs: qs.map((q) => q?.question).filter(Boolean).map(String) });
             this.open.set(b.id, "Asking you something");
             this.doing = "Asking you something";
           } else {

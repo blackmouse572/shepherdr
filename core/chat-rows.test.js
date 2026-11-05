@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { join } from "node:path";
 import { proseMetrics } from "./reading.js";
 
@@ -7,6 +7,10 @@ import { proseMetrics } from "./reading.js";
 // from a virtual list's item renderer"), and the list then draws nothing: the chat goes blank.
 let inRenderer = false;
 const sized = [];
+// The words rows draw (strings handed to child()), and the commands run (exec).
+const drawn = [];
+const ran = [];
+let platform = "macos", runs = () => ({ code: 0, stdout: "", stderr: "" });
 const el = () => {
   const self = new Proxy(function () {}, {
     get: (_t, k) => (k === "then" ? undefined : (...a) => {
@@ -15,6 +19,7 @@ const el = () => {
         if (inRenderer) throw new Error(`\`${k}\` cannot be registered from a virtual list's item renderer`);
         if (k === "on_size_change") sized.push(a[0]);
       }
+      if (k === "child" && typeof a[0] === "string") drawn.push(a[0]);
       return self;
     }),
     apply: () => el(),
@@ -27,7 +32,8 @@ const host = {
   v_flex: el, h_flex: el, TextareaState: { new: el }, Textarea: el(), Scrollbar: el(), VirtualListScrollHandle: { new: el },
   TextView: el(), v_virtual_list: el, InputState: { new: el }, Input: el(),
   focused: none, props: () => ({}), run: none, theme: () => ({}), home: () => "/nohome", hc: async () => ({ stdout: "" }),
-  exec: async () => ({ stdout: "", stderr: "" }), shared: none, setShared: none, watchFolder: async () => {}, window: () => ({}),
+  exec: async (cmd, args) => { ran.push([cmd, ...args]); return runs(cmd, args); }, shared: none, setShared: none, watchFolder: async () => {},
+  window: () => ({ platform }),
   settings: () => ({}), playSound: none, notify: none, appHome: () => "/noapp", readTextFile: async () => "", writeTextFile: async () => {},
   nextCommand: () => new Promise(() => {}), openOverlay: none, knownAgents: list, terminals: list, spaces: list, panes: list,
   agents: list, machines: list, layout: none,
@@ -46,6 +52,11 @@ async function chat(lines) {
   c.rebuild();
   return c;
 }
+const asked = (n, questions) => ({ isSidechain: false, type: "assistant", uuid: `u${n}`, timestamp: "2026-11-01T10:00:00Z",
+  message: { id: `m${n}`, model: "claude", content: [{ type: "tool_use", id: `tu${n}`, name: "AskUserQuestion", input: { questions } }] } });
+const answered = (n, of, questions, answers) => ({ isSidechain: false, type: "user", uuid: `r${n}`, timestamp: "2026-11-01T10:01:00Z",
+  toolUseResult: { questions, answers }, message: { role: "user", content: [{ type: "tool_result", tool_use_id: `tu${of}`, content: "answered" }] } });
+const typed = (n, text) => ({ isSidechain: false, type: "user", uuid: `p${n}`, timestamp: "2026-11-01T10:02:00Z", message: { role: "user", content: text } });
 const said = (n, text) => ({ isSidechain: false, type: "assistant", uuid: `u${n}`, timestamp: "2026-11-01T10:00:00Z",
   message: { id: `m${n}`, model: "claude", content: [{ type: "text", text }] } });
 
@@ -68,4 +79,28 @@ test("a folded long reply draws in the list: its rows register no handlers there
   expect(sized.length).toBe(1);
   sized[0]({ width: 600, height: 480 }, { notify() {} });
   expect(c.natural.get(folded[0].id)).toBe(480);
+});
+
+test("an answered question's card is as tall as what it draws: every question, wrapped, and each choice picked", async () => {
+  const long = "Which of these ways should the importer take when a row's date can't be read, given that the old files mix day-first and month-first dates and some only have a year? ".repeat(3).trim();
+  const questions = [
+    { question: long, header: "Dates", options: [{ label: "Skip the row" }, { label: "Guess day-first and flag every row it guessed so someone can check them later" }] },
+    { question: "Keep the old files?", header: "Files", options: [{ label: "Yes" }, { label: "No" }] },
+  ];
+  const c = await chat([asked(1, questions), answered(2, 1, questions, { [long]: "Guess day-first and flag every row it guessed so someone can check them later", "Keep the old files?": "Yes" }), said(3, "Done.")]);
+  const card = c.rows().find((r) => r.kind === "ask");
+  expect(card.closed).toBe("answered");
+  drawn.length = 0;
+  inRenderer = true;
+  try { c.row(card, {}, "v0-"); } finally { inRenderer = false; }
+  for (const w of ["Asked you · Answered", long, "Keep the old files?", "Guess day-first and flag every row it guessed so someone can check them later", "Yes"]) expect(drawn).toContain(w);
+  // Its height before it's measured: room for the header, both questions (the long one wraps to
+  // several lines at the column) and both answers, each at least a line.
+  const h = c.guess(card);
+  const inner = Math.min(c.width, c.rd.column + 36) - 36 - 26;
+  expect(h).toBeGreaterThan(2 * 10 + 16 + Math.ceil((long.length * 6) / inner) * 19 + 19 + 2 * 17);
+  // Its height is measured again when its answers come (part of its key).
+  const open = { ...card, answers: undefined, closed: undefined };
+  expect(c.key(open)).not.toBe(c.key(card));
+  expect(c.guess(open)).toBeLessThan(h);
 });
