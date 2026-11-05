@@ -290,18 +290,17 @@ export default class Tabs extends View {
     };
     const inner = (shown === "tasks" && find(root, "tasks")?.active === "tasks-thread") || (shown === "artifacts" && find(root, "artifacts")?.active === "artifacts-view");
     this.resizeHead(inner ? SWITCH_H : HEAD_H, cx);
-    // The shown segment's raised pill slides under the segments (the tab indicator): equal segments, so its place
-    // is the well's width split n ways (border 1, padding 2, gap 2).
+    // The shown segment's raised pill slides under the segments (the tab indicator). The segments split the row
+    // evenly, so its place is a share of it: percentages, never a measured width (zoom scales what's measured).
     const list = PANELS.filter(([id]) => enabled.includes(id));
-    const at = list.findIndex(([id]) => id === shown), W = this.wellW ?? 0, n = list.length;
-    const segW = n ? (W - 6 - 2 * (n - 1)) / n : 0;
-    const pill = at >= 0 && segW > 0 && div().id("seg-pill").absolute().top(2).h(WELL_H - 6).left(2 + at * (segW + 2)).w(segW)
-      .transition("left", PILL).transition("width", PILL)
+    const at = list.findIndex(([id]) => id === shown), n = list.length;
+    const pill = at >= 0 && div().id("seg-pill").absolute().top(0).h_full().left(`${(100 * at) / n}%`).w(`${100 / n}%`)
+      .transition("left", PILL)
       .child(raisedLook(div().size_full().rounded(7), 7).when(!isDark(), (el) => el.bg(t.background)));
-    const segs = well(h_flex().relative().w_full().h(WELL_H).flex_none().p(2).gap(2), 10)
-      .on_size_change((size, cx) => { if (size.width !== this.wellW) { this.wellW = size.width; cx.notify(); } })
-      .when(Boolean(pill), (el) => el.child(pill))
-      .children(list.map(seg));
+    const segs = well(div().w_full().h(WELL_H).flex_none().p(2), 10)
+      .child(h_flex().relative().size_full()
+        .when(Boolean(pill), (el) => el.child(pill))
+        .children(list.map(seg)));
     const [title, line, right] = this.headOf(shown, space, t, cx);
     // Doop App 02 .rp: the neutral wool banner, the panel's name in the serif and its line in mono, its control at
     // the right; the switcher under it. Over a drilled-in view the banner folds away (the block's height eases to

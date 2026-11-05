@@ -143,8 +143,8 @@ back as shared "artifacts.all"; Changes says its branch, Files its folder. Over 
 artifact) the block shrinks to the segmented alone (`layout.resize`).
 
 Motion follows Emil Kowalski's rules (github.com/emilkowalski/skills, `animate`): nothing a key does animates (Cmd+L,
-Jump); things done tens of times a day move briefly. The switcher's raised pill slides to the shown segment (`left`,
-`width`, 180 ms ease-in-out); the head's banner folds away over a drilled-in view (the block's height stepped each
+Jump); things done tens of times a day move briefly. The switcher's raised pill slides to the shown segment (`left` as a
+share of the row, 180 ms ease-in-out); the head's banner folds away over a drilled-in view (the block's height stepped each
 frame, 200 ms, `cubic-bezier(0.23, 1, 0.32, 1)`, the banner fading with it); a Tasks group folds as an accordion
 (height and opacity, 200 ms ease-out, its rows kept until folded). Native `transition()` only, never `width`/`height`
 elsewhere. Herdr tells a mod nothing about reduced motion yet.
