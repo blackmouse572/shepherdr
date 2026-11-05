@@ -1,26 +1,30 @@
 // Settings > Accounts (Doop "App 05 · Settings › Accounts"): the Claude accounts on this computer (~/.claude and every
 // ~/.claude-<id>) and the Codex sign-in.
 //   header     the page title, when usage was read, Refresh, and This Mac | <machine> ... when there are machines:
-//              another machine shows read-only, as Settings > Machines reads it (its ~/.claude and Codex).
+//              another machine's own accounts and picks, read and set by running herdr-task there (`accounts list |
+//              set | move`, herdr's exec on that machine): Set as default, Skip, Move up / down, and Move to Default on
+//              a signed-out account with tasks. Its usage meters aren't read from here. When herdr-task there can't
+//              answer, its ~/.claude and Codex show read-only, as Settings > Machines reads them.
 //   Claude     a card: its header with Add account (the name field opens under it), then one compact row per account
 //              in the switch order: its grip, initial avatar, name and folder (mono), plan, a small meter with the
 //              switch tick and "59% 5h · 51% wk", a badge (Default ★ where new work starts, Next, Skipped) and ⋯.
 //              Drag a row by its grip to set the switch order (the line shows where it lands).
 //              ⋯: Rename, Set as default, Sign in again, Open folder, Move up / down (the order without a drag),
 //              Skip when switching, Remove… (hidden from Shepherdr; the folder stays).
-//   Switching  Switch automatically, Switch above (the 5h window), Work already running (Stays | Moves: stored,
-//              running work stays for now), Toast with Undo.
+//   Switching  Switch automatically, Switch above (the 5h window), Work already running (Stays | Moves: running tasks
+//              resume on the new account between turns, herdr_task/moves.py), Toast with Undo.
 //   Codex      signed in and its plan, a meter, Sign in again (codex login in a terminal) and Sign out.
 // What it shows is what the status bar's engine last read (usage-data.js, herdr-usage); Refresh reads again.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
-import { shared, machines, spaces, window as win } from "herdr";
+import { shared, machines, spaces, exec, window as win } from "herdr";
 import { TEXT, RADIUS, H, button, need, red, green, onStatus, toast, plainError, toggleSwitch, segmented, isDark, bannerBg, bannerDots, SERIF } from "./ui.js";
 import { usage, accounts, prefs, setPrefs, loadPrefs, refresh, signIn, addAccount, renameAccount, hideAccount, showAccount,
   setDefault, setSkipped, openFolder, codexSignIn, codexSignOut, logo, meterBar, avatar, MONO, PREFS } from "./usage-data.js";
 import { WORDS, pctText, resetsLine, activeOf, updatedLine, errorLine, hiddenOf, addProblem, accountId, ordered, moved,
-  dropped, dropEdge, staleLine, badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped } from "./core/usage.js";
+  dropped, dropEdge, staleLine, badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped,
+  readRemote, setRemote, moveRemote, pausedLine } from "./core/usage.js";
 import { statsOf, pollNow } from "./machines.js";
 import { SECTIONS, cliRoles, rolesLine } from "./core/settings.js";
 
@@ -276,6 +280,112 @@ function codexCard(t, s, cx, roles = null, readOnly = false) {
   return card(t, "acc-codex", { lead: logo("codex", 16), title: WORDS.codex, sub: WORDS.codexSub }, [body]);
 }
 
+// ---- another machine's accounts (herdr-task there) -----------------------------------------------------------------
+
+// Its accounts and picks, read again at most every 30 s while it shows (or now, `force`).
+export function remoteLoad(s, m, cx, force = false) {
+  s.remote ??= {};
+  const r = (s.remote[m] ??= { data: null, err: "", at: 0, busy: false, note: "" });
+  if (r.busy || (!force && Date.now() - r.at < 30000)) return r;
+  r.busy = true;
+  cx.spawn(async (cx) => {
+    try { r.data = await readRemote(exec, m); r.err = ""; } catch (e) { r.err = plainError(e) || "no answer"; }
+    r.at = Date.now();
+    r.busy = false;
+    cx.notify();
+  });
+  return r;
+}
+
+// A change made there; what it holds after replaces the view.
+function remoteSet(s, m, change, cx) {
+  const r = s.remote?.[m];
+  if (!r || r.busy) return;
+  r.busy = true;
+  cx.spawn(async (cx) => {
+    try { r.data = await setRemote(exec, m, change); r.err = ""; } catch (e) { failed(`Couldn't change ${m}'s accounts`)(e); }
+    r.busy = false;
+    cx.notify();
+  });
+}
+
+// Move to Default: that account's running tasks there move between turns (herdr-task accounts move).
+export function remoteMove(s, m, a, cx, to = { id: "default", name: "Default" }) {
+  s.remote ??= {};
+  const r = (s.remote[m] ??= { data: null, err: "", at: 0, busy: false, note: "" });
+  if (r.busy) return;
+  r.busy = true;
+  cx.spawn(async (cx) => {
+    try {
+      const out = await moveRemote(exec, m, a.id, to.id);
+      r.note = WORDS.moved(out, to.name);
+      toast({ title: WORDS.moveTo(to.name), body: r.note, level: "info" });
+    } catch (e) { failed(`Couldn't move ${a.name}'s tasks on ${m}`)(e); }
+    r.busy = false;
+    r.at = 0;
+    cx.notify();
+  });
+}
+
+function remoteMenu(t, s, m, a, list, pr, active) {
+  const close = () => { s.menu = null; };
+  const ids = ordered(list, pr).map((x) => x.id);
+  const at = ids.indexOf(a.id);
+  const skip = isSkipped(a, pr);
+  const sep = () => div().h(1).mx(6).my(4).flex_none().bg(t.border);
+  return v_flex().id(`acc-rmenu-${a.id}`).w(MENU_W).mt(4).p(5).rounded(11).bg(t.popover).border_1().border_color(t.border).shadow_lg()
+    .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+    .child(menuItem(t, "arm-default", WORDS.setDefault, "star", (cx) => { close(); remoteSet(s, m, { active: a.id }, cx); }, { disabled: active || Boolean(a.error) }))
+    .child(sep())
+    .child(menuItem(t, "arm-up", WORDS.moveUp, "arrow-up", (cx) => remoteSet(s, m, { order: moved(list, pr, a.id, -1) }, cx), { disabled: at <= 0 }))
+    .child(menuItem(t, "arm-down", WORDS.moveDown, "arrow-down", (cx) => remoteSet(s, m, { order: moved(list, pr, a.id, 1) }, cx), { disabled: at < 0 || at >= ids.length - 1 }))
+    .child(menuItem(t, "arm-skip", skip ? WORDS.unskip : WORDS.skip, "skip", (cx) => {
+      close();
+      remoteSet(s, m, { skipped: skip ? pr.skipped.filter((x) => x !== a.id) : [...new Set([...pr.skipped, a.id])] }, cx);
+    }));
+}
+
+function remoteRow(t, s, m, a, i, list, pr) {
+  const active = activeOf(list, pr)?.id === a.id;
+  const dim = isSkipped(a, pr);
+  const open = s.menu === `${m}:${a.id}`;
+  const dots = div().id(`acc-rmore-${a.id}`).size(COL.more).flex_none().flex().items_center().justify_center().rounded(RADIUS.control)
+    .text_color(open ? t.foreground : t.muted).when(open, (el) => el.bg(t.hover))
+    .cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).tooltip("More")
+    .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); s.menu = open ? null : `${m}:${a.id}`; cx.notify(); })
+    .child(svg(I("dots")).size(16));
+  const more = Popup.new(`acc-rpop-${a.id}`, dots).anchor("top_right").when(open, (el) => el.content(remoteMenu(t, s, m, a, list, pr, active)));
+  const out = a.error === "signed-out";
+  const line = out ? (pausedLine(a.tasks) || WORDS.signedOutRow) : dim ? WORDS.skippedLine : a.account ?? "";
+  const row = h_flex().id(`acc-rrow-${a.id}`).w_full().h(ROW_H).flex_none().px(14).gap(12).items_center()
+    .when(i > 0, (el) => el.border_t(1).border_color(t.border)).when(open, (el) => el.bg(t.hover))
+    .child(avatar(a.name, COL.avatar, dim))
+    .child(v_flex().flex_1().min_w(0).gap(2)
+      .child(div().min_w(0).truncate().text_size(TEXT.body).font_medium().text_color(dim ? t.muted : t.foreground).child(a.name))
+      .child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(a.folder)))
+    .child(div().w(COL.usage + COL.plan).flex_none().truncate().text_size(TEXT.label).text_color(out ? need() : t.dim).tooltip(line).child(line))
+    .when(out && a.id !== "default" && a.tasks.length > 0, (el) => el.child(button(`acc-rmove-${a.id}`, WORDS.moveTo("Default"),
+      { kind: "plain", disabled: Boolean(s.remote?.[m]?.busy), onClick: (_e, cx) => remoteMove(s, m, a, cx) })))
+    .child(badge(t, badgeOf(a, list, pr)))
+    .child(more);
+  return row;
+}
+
+function remoteAccounts(t, s, m, cx) {
+  const r = remoteLoad(s, m, cx);
+  const dim = (x) => div().text_size(TEXT.label).line_height("17px").text_color(t.dim).child(x);
+  if (!r.data) return r.err ? v_flex().pt(10).child(dim(WORDS.remoteFailed(m, r.err))).child(remoteView(t, m)) : v_flex().pt(10).child(dim(WORDS.remoteReading(m)));
+  const pr = r.data.prefs, list = r.data.accounts;
+  const rows = ordered(list, pr);
+  return v_flex().gap(10).pt(10)
+    .child(dim(WORDS.remoteNote(m)))
+    .child(card(t, "acc-r-accounts", { lead: logo("claude", 16), title: WORDS.claude, sub: WORDS.claudeSub(list.length).split(" · ")[0],
+      right: button("acc-r-refresh", "Refresh", { kind: "plain", disabled: r.busy, onClick: (_e, cx) => remoteLoad(s, m, cx, true) }) },
+      rows.map((a, i) => remoteRow(t, s, m, a, i, list, pr))))
+    .when(Boolean(r.note), (el) => el.child(dim(r.note)))
+    .child(dim(WORDS.remoteSwitch));
+}
+
 // Another machine, read-only: its ~/.claude and Codex as Settings > Machines reads them (lib/machines.js).
 function remoteView(t, name) {
   const st = statsOf(name);
@@ -316,7 +426,10 @@ export function accountsSection(view, t, cx) {
   const pickMachine = (v, _e, cx) => {
     s.machine = v || null;
     s.menu = null;
-    if (s.machine) cx.spawn(async (cx) => { await pollNow({ limits: true, only: s.machine, limitsOlder: 60000 }).catch(() => {}); cx.notify(); });
+    if (s.machine) {
+      remoteLoad(s, s.machine, cx, true);
+      cx.spawn(async (cx) => { await pollNow({ limits: true, only: s.machine, limitsOlder: 60000 }).catch(() => {}); cx.notify(); });
+    }
   };
   const head = h_flex().w_full().gap(12).items_center()
     .child(div().flex_1().child(view.title(t, SECTIONS.find((x) => x.id === "accounts").title)))
@@ -326,7 +439,7 @@ export function accountsSection(view, t, cx) {
   const root = v_flex().on_mouse_down("left", (_e, cx) => { if (s?.menu) { s.menu = null; cx.notify(); } })
     .child(head)
     .child(dim(WORDS.accountsAbout));
-  if (remote) return root.child(remoteView(t, remote));
+  if (remote) return root.child(s ? remoteAccounts(t, s, remote, cx) : remoteView(t, remote));
   const addBtn = s ? button("acc-add-open", WORDS.addAccount, { kind: "primary", icon: I("plus"), onClick: () => { s.adding = !s.adding; if (s.adding) s.name.focus(); } }) : null;
   const claude = card(t, "acc-claude", { lead: logo("claude", 16), title: WORDS.claude, sub: WORDS.claudeSub(list.length), right: addBtn }, [
     ...(s?.adding ? [addForm(t, s, u)] : []),

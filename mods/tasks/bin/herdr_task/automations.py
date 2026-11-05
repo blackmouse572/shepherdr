@@ -435,6 +435,11 @@ def one_pass(report):
         except Exception as e:  # never stops the scheduler
             print(f"{time.strftime('%H:%M:%S')} news: {e}", flush=True)
         try:
+            from .moves import moves_pass
+            moves_pass(report)
+        except Exception as e:  # never stops the scheduler
+            print(f"{time.strftime('%H:%M:%S')} moves: {e}", flush=True)
+        try:
             end_done_pass(report)
             memory_guard(report)
         except Exception as e:  # never stops the scheduler

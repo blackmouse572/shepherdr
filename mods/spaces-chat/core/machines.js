@@ -134,10 +134,14 @@ export function machineCounts(spaces, machine) {
 // its plan reads, and how it's reached (hc machine ls: target, via).
 export function machineCard({ local = false, layout = "ready", stats = null, core = null, accounts = [], uptime = null, target = null, via = false } = {}) {
   const alerts = [];
-  if (local) {
-    for (const a of accounts ?? []) if (a?.error === "signed-out") alerts.push({ kind: "signed-out", id: a.id, name: a.name });
-  } else {
-    for (const [cli, r] of Object.entries(stats?.limits ?? {})) if (r?.state === "signed-out") alerts.push({ kind: "signed-out", cli, name: READS[cli] ?? cli });
+  // Another machine's Claude accounts once herdr-task there listed them (with the tasks a signed-out one holds), else
+  // its plan reads; its other CLIs from the plan reads.
+  const listed = local || accounts?.length > 0;
+  for (const a of listed ? accounts ?? [] : []) if (a?.error === "signed-out") alerts.push({ kind: "signed-out", id: a.id, name: a.name, ...(local ? {} : { tasks: a.tasks ?? [] }) });
+  if (!local) {
+    for (const [cli, r] of Object.entries(stats?.limits ?? {})) {
+      if (r?.state === "signed-out" && !(listed && cli === "claude")) alerts.push({ kind: "signed-out", cli, name: READS[cli] ?? cli });
+    }
   }
   if (local && core?.ready && !core.managed && core.ready !== core.version) alerts.push({ kind: "core", ready: core.ready, version: core.version });
   const state = !local && layout === "unavailable" ? "offline" : !local && layout === "loading" ? "connecting"

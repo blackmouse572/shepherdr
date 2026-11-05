@@ -3,9 +3,10 @@
 // Claude ask (a plan, a permission) is answered on its card, as the chat's card does (data/chat-asks: end/<id> says
 // how, ans/<id>.json is the hook's decision); everything else opens where it is (inbox.js toAlert, else the Tasks
 // panel's Needs you). Filters: All, then each kind that has something. ↑/↓ pick a card, Enter takes its first
-// action, Esc closes.
-// Not here (no backend): "Always in this space" (no rule store), "Move to Default" (no move between accounts), the
-// phone alert line.
+// action, Esc closes. A permission's "Always in this space" keeps the ask's exact rule for its space (lib/allow.js,
+// core/allow.js) and allows it; later asks matching it are allowed by the sidebar's engine. Its rules are listed (and
+// removed) in Settings > Agents.
+// Not here: "Move to Default" (Settings > Machines has it), the phone alert line.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -13,9 +14,11 @@ import { props, closeOverlay, openOverlay, theme, terminals, agents, spaces, rea
 import { items, reasonOf, toAlert, showInbox, ASKS } from "./inbox.js";
 import { spaceOfTerminal } from "./notify.js";
 import { words, allow, deny, howAnswered } from "./core/asks.js";
+import { ruleOf, ALWAYS } from "./core/allow.js";
+import { alwaysAllow, spaceOfAsk } from "./allow.js";
 import { NEED_FILTERS, needFilter, atMs, waitingLine } from "./core/needs.js";
 import { ago } from "./core/tasks.js";
-import { button, segmented, closeX, link, bannerBg, bannerDots, isDark, need, red, toastWho, openSettings, MONO, SERIF, HEAD, TEXT, RADIUS } from "./ui.js";
+import { button, segmented, closeX, link, bannerBg, bannerDots, isDark, need, red, toast, plainError, toastWho, openSettings, MONO, SERIF, HEAD, TEXT, RADIUS } from "./ui.js";
 
 export const NEEDS_DRAWER = { width: 460, height: 640 };
 const HEADER = 64, FILTERS = 44, FOOT = 40;
@@ -69,6 +72,17 @@ export class NeedsDrawer {
     });
   }
 
+  // "Always in this space": the rule first (so the next ask like it is answered too), then this one allowed.
+  always(it, space, cx) {
+    const a = this.asks.get(it.id);
+    if (!a) return;
+    cx.spawn(async (cx) => {
+      try { await alwaysAllow(space, a.req); } catch (e) { toast({ title: "Couldn't keep the rule", body: plainError(e), level: "error" }); return; }
+      this.reply(it, allow(), cx);
+      cx.notify();
+    });
+  }
+
   // Where it is: an agent's or a task's.
   open(it) {
     this.close();
@@ -100,9 +114,12 @@ export class NeedsDrawer {
     if (a && filter === "plan")
       actions = [{ id: "approve", label: "Approve plan", kind: "primary", fn: (cx) => this.reply(it, allow(), cx) },
         { id: "changes", label: "Ask for changes", kind: "secondary", fn: (cx) => this.reply(it, deny("The person didn't approve this plan yet. Ask them what to change."), cx) }, go];
-    else if (a && filter === "permission")
+    else if (a && filter === "permission") {
+      const space = spaceOfAsk(it);
       actions = [{ id: "allow", label: "Allow once", kind: "wool", fn: (cx) => this.reply(it, allow(), cx) },
+        ...(space && ruleOf(a.req) ? [{ id: "always", label: ALWAYS, kind: "secondary", fn: (cx) => this.always(it, space, cx) }] : []),
         { id: "deny", label: "Deny", kind: "plain", fn: (cx) => this.reply(it, deny(), cx) }, go];
+    }
     else if (filter === "signin")
       actions = [{ id: "signin", label: "Sign in again", kind: "primary", fn: () => { this.close(); openSettings({ section: "accounts" }); } }, go];
     else if (it.kind === "ask") actions = [{ id: "answer", label: "Answer", kind: "primary", fn: () => this.open(it) }];

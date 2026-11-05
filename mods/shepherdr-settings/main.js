@@ -37,6 +37,7 @@ import { SECTIONS, ROLES, NOTES, MERGE, MUST_FIX, ROUNDS, ARCHIVE, ABOUT, BACKUP
   EVERYWHERE, CHANGED_HERE, RESET, EDIT_INSTRUCTIONS, USE_OTHER_CLI, LOADING_AGENTS, SAVED, sameAs as sameAsWords,
   spacesOwn, onlyFor, otherCliWords, backupProblem, notifyMachineAbout, machineLabel, TASK_ROWS, BASE, MACHINES, WEB } from "./core/settings.js";
 import { WORDS as ACC } from "./core/usage.js";
+import { rulesIn, allRules, ruleWords, withoutRule, ALWAYS } from "./core/allow.js";
 import { ROWS as AP_ROWS } from "./core/autopilot.js";
 
 const I = (name) => `mods/shepherdr-settings/${name}.svg`;
@@ -50,13 +51,16 @@ const HEAD_PAD = 18;
 // The header's search: each page's title and its rows' titles, so a word finds its page (the nav keeps the pages that
 // match); when the word isn't the shown page's own title, the page shows only the rows it names (row()).
 const ROW_WORDS = {
-  agents: () => [...ROLES.map((r) => r.title), BACKUP.title],
+  agents: () => [...ROLES.map((r) => r.title), BACKUP.title, ALWAYS],
   tasks: () => [...TASK_ROWS.map((r) => r[2]), BASE.title, ...NOTES.map((n) => n.title)],
   autopilot: () => Object.values(AP_ROWS).map((r) => r.label),
   machines: () => [...MACHINES.limits.map((l) => l.title), MACHINES.low.title, MACHINES.cap.title, MACHINES.home.title],
   accounts: () => [ACC.claude, ACC.codex, ACC.addAccount, ACC.switching, ACC.auto, ACC.switchAbove, ACC.running, ACC.undoToast, "Default", "Sign in"],
   web: () => [WEB.title, WEB.link, WEB.phone, "Serve from"],
 };
+// Settings > Agents' list of "Always in this space" rules.
+const ALLOW_WORDS = { heading: ALWAYS, about: "Allowed without asking", remove: "Remove",
+  none: "Nothing yet. A permission's Always in this space, in Needs you, adds what it asked for here." };
 const pageWords = (s) => [s.title, ...(ROW_WORDS[s.id]?.() ?? [])].join(" ").toLowerCase();
 const TEMPLATES = () => `${home()}/.config/herdr-core/templates`;
 const CLI_CHECK = () => `${home()}/.herdr/cli-check.json`;
@@ -487,7 +491,20 @@ export default class ShepherdrSettings extends View {
     return v_flex()
       .child(this.title(t, page("agents")))
       .children(ROLES.map((r) => this.roleRow(t, r, cx)))
-      .child(this.backupRow(t));
+      .child(this.backupRow(t))
+      .children(this.allowRows(t));
+  }
+
+  // "Always in this space" (Needs you's permission card, core/allow.js): what this space's agents do without asking,
+  // each with Remove. Everywhere lists every space's.
+  allowRows(t) {
+    const list = this.scope ? rulesIn(this.cfg, this.scope).map((rule) => ({ space: this.scope, rule })) : allRules(this.cfg);
+    const out = [this.heading(t, ALLOW_WORDS.heading)];
+    if (!list.length) return [...out, div().py(8).text_size(TEXT.label).line_height("17px").text_color(t.dim).child(ALLOW_WORDS.none)];
+    return [...out, ...list.map(({ space, rule }, i) => this.row(t, ruleWords(rule),
+      this.scope ? ALLOW_WORDS.about : `${spaceById(space)?.name ?? this.cfg.spaces?.[space]?.name ?? space} · ${ALLOW_WORDS.about}`,
+      button(`allow-rm-${i}`, ALLOW_WORDS.remove, { kind: "plain",
+        onClick: (_e, cx) => this.change((next) => { next.spaces = withoutRule(next, space, rule).spaces; }, cx) })))];
   }
 
   // A role: its model button and, on Everywhere, "Edit instructions" (the same for every space).
@@ -598,7 +615,7 @@ export default class ShepherdrSettings extends View {
   render(cx) {
     const t = theme();
     // Machines gets the lantern dot while one needs the person (Doop App 09).
-    const dotted = { machines: machinesNeedYou() };
+    const dotted = { machines: machinesNeedYou(this.acc) };
     const navRow = (id, title, icon, on, onClick) => h_flex().id(`sh-s-${id}`).h(30).gap(10).px(10).flex_none()
       .items_center().rounded(RADIUS.card).bg(on ? t.raised : "#00000000")
       .when(!on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))

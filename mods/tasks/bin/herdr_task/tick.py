@@ -1,5 +1,5 @@
 """Tick: one pass over the tasks (start queued ones, finish merged ones, retry cut turns, hand a
-task whose CLI can't go on to its backup)."""
+task whose CLI can't go on to its backup, move idle agents to the account the switch rule moved to)."""
 
 import fcntl
 import json
@@ -25,6 +25,7 @@ from .news import news_pass, typing
 from .takeover import cant_go_on, takeover
 from .ghnews import main_pass, pr_deliver, pr_news
 from .scheduler import SCHEDULER
+from .moves import moves_pass
 
 
 def facts(s, t, report):
@@ -383,6 +384,11 @@ def cmd_tick(args):
         news_pass(report, args.folder)
     except Exception as e:  # never stops the queue
         report["news_error"] = str(e)
+    if not args.folder:
+        try:
+            moves_pass(report)
+        except Exception as e:  # never stops the queue
+            report["moves_error"] = str(e)
     try:
         end_done_pass(report, args.folder)
         memory_guard(report)
