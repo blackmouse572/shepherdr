@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readingPrefs, withChoice, stepSize, proseMetrics, readingSig, codeLines, READING_DEFAULTS } from "./reading.js";
+import { readingPrefs, withChoice, stepSize, proseMetrics, readingSig, codeLines, fontOptions, fontFamily, READING_DEFAULTS } from "./reading.js";
 
 test("stored reading choices come back whole and valid", () => {
   expect(readingPrefs(null)).toEqual(READING_DEFAULTS);
@@ -39,4 +39,14 @@ test("code lines in soft colour runs", () => {
   expect(codeLines("+ added\n- gone", "diff")).toEqual([[[null, "+ added"]], [[null, "- gone"]]]);
   expect(codeLines("", "js")).toEqual([[[null, ""]]]);
   expect(codeLines('"open', "js")).toEqual([[["s", '"open']]]);
+});
+
+test("any font on this computer can be the chat's", () => {
+  expect(readingPrefs({ font: "Iowan Old Style" }).font).toBe("Iowan Old Style");
+  expect(readingPrefs({ font: "" }).font).toBe("sans");
+  expect(readingPrefs({ font: 3 }).font).toBe("sans");
+  const all = fontOptions(["Menlo", "Avenir", "Geist", "Avenir"]);
+  expect(all.map((o) => o[0])).toEqual(["sans", "serif", "Avenir", "Menlo"]);
+  expect(fontOptions(["Menlo", "Avenir"], "men").map((o) => o[1])).toEqual(["Menlo"]);
+  expect([fontFamily("sans", "S"), fontFamily("serif", "S"), fontFamily("Menlo", "S")]).toEqual([null, "S", "Menlo"]);
 });

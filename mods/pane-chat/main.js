@@ -16,11 +16,11 @@
 // this device reads (core/reading.js, shared "chat.reading").
 
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex, v_flex, Popup } from "gpui-base";
-import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay } from "herdr";
+import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
+import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay, fonts } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
 import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF, dialogTitle, toggleSwitch, menuRow, fieldFrame } from "./ui.js";
-import { READING_KEY, READING_WORDS, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice } from "./core/reading.js";
+import { READING_KEY, READING_WORDS, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice, fontOptions, fontFamily } from "./core/reading.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
 import { endAgent } from "./core/menus.js";
@@ -80,7 +80,13 @@ export default class Pane extends View {
   init(_props, cx) {
     this.hovered = false;
     // The reading popover is only a view: no Autopilot, no toggle.
-    if (props()?.view === "reading") return;
+    if (props()?.view === "reading") {
+      // The Font select's filter, and this computer's families (read once a popover).
+      this.fontQ = InputState.new({ placeholder: "Filter fonts" });
+      this.fontQ.on("change", (_e, cx) => cx.notify());
+      this.families = (() => { try { return fonts() ?? []; } catch { return []; } })();
+      return;
+    }
     // An Assistant's header: its Autopilot, looked at again now and then (the scheduler changes it).
     cx.timer.every(4000, (cx) => apPoll(this, cx));
     this.opening = false;
@@ -204,18 +210,26 @@ export default class Pane extends View {
       (v, _e, cx) => (v === "chat" ? onChat(cx) : onTerminal(cx)));
   }
 
-  // The Font row: a select, each choice in its own face; a pick closes it.
+  // The Font row: a select of Geist, Geist Serif and every family on this computer, each in its own face, with a
+  // filter on top; a pick closes it.
   fontSelect(t, p, pick) {
-    const face = (k, el) => (k === "serif" ? el.font_family(SERIF) : el);
+    const face = (k, el) => { const f = fontFamily(k, SERIF); return f ? el.font_family(f) : el; };
     const name = (o) => face(o[0], div().truncate()).child(o[1]);
-    const cur = FONTS.find((o) => o[0] === p.font) ?? FONTS[0];
+    const cur = p.font === "sans" || p.font === "serif" ? FONTS.find((o) => o[0] === p.font) : [p.font, p.font];
     const trigger = fieldFrame(h_flex().id("rd-font").w_full().h(30).pl(10).pr(8).gap(8).items_center().cursor_pointer()
-      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.fontOpen = !this.fontOpen; cx.notify(); }), { focused: this.fontOpen })
+      .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); this.fontOpen = !this.fontOpen; if (this.fontOpen) this.fontQ?.focus?.(); cx.notify(); }), { focused: this.fontOpen })
       .child(div().flex_1().min_w(0).text_size(13).text_color(t.foreground).child(name(cur)))
       .child(svg("mods/pane-chat/chevron-down.svg").size(12).flex_none().text_color(t.muted));
-    const list = v_flex().w(220).p(4).rounded(RADIUS.card).bg(t.popover).border_1().border_color(t.border).shadow_lg()
-      .children(FONTS.map((o) => menuRow(`rd-font-${o[0]}`, name(o), { check: o[0] === p.font,
-        onClick: () => { this.fontOpen = false; pick(o[0]); } })));
+    const opts = fontOptions(this.families, this.fontQ?.value?.() ?? "");
+    const list = v_flex().w(260).p(4).gap(4).rounded(RADIUS.card).bg(t.popover).border_1().border_color(t.border).shadow_lg()
+      .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+      .when(Boolean(this.fontQ), (el) => el.child(fieldFrame(h_flex().h(28).px(8).items_center())
+        .child(Input.new(this.fontQ).flex_1().min_w(0).text_size(12.5).text_color(t.foreground))))
+      .child(div().id("rd-font-list").max_h(220).overflow_y_scroll()
+        .child(v_flex().w_full()
+          .children(opts.map((o) => menuRow(`rd-font-${o[0]}`, name(o), { check: o[0] === p.font,
+            onClick: () => { this.fontOpen = false; pick(o[0]); } })))
+          .when(!opts.length, (el) => el.child(div().px(10).py(8).text_size(12.5).text_color(t.dim).child("No font matches")))));
     return Popup.new("rd-font-pop", trigger).anchor("top_left").when(Boolean(this.fontOpen), (el) => el.content(list));
   }
 

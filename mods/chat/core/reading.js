@@ -9,6 +9,18 @@ export const SIZES = [[13, "13"], [14, "14"], [15, "15"]];
 export const LEADINGS = [["snug", "Snug", 1.45], ["comfy", "Comfy", 1.6], ["airy", "Airy", 1.75]];
 export const WIDTHS = [["narrow", "Narrow", 480], ["comfy", "Comfy", 540], ["wide", "Wide", 680]];
 export const FONTS = [["sans", "Geist"], ["serif", "Geist Serif"]];
+// A font: one of FONTS' keys, or any family on this computer by its name (Herdr's fonts()).
+export const fontChoice = (f) => (typeof f === "string" && f.trim() && f.length <= 120 ? f.trim() : null);
+// The select's list: Geist and Geist Serif first, then this computer's families A to Z, filtered by `q`.
+export function fontOptions(families, q = "") {
+  const own = new Set(FONTS.map((o) => o[1]));
+  const rest = [...new Set((families ?? []).filter((n) => typeof n === "string" && n.trim() && !own.has(n)))]
+    .sort((a, b) => a.localeCompare(b)).map((n) => [n, n]);
+  const want = q.trim().toLowerCase();
+  return [...FONTS, ...rest].filter((o) => !want || o[1].toLowerCase().includes(want));
+}
+// A font key's family to draw with: null for Geist (the UI's own), the serif's face, or the family itself.
+export const fontFamily = (f, serif) => (f === "sans" ? null : f === "serif" ? serif : f);
 export const READING_DEFAULTS = { size: 14, leading: "comfy", width: "comfy", font: "sans", fold: true };
 
 export const READING_WORDS = {
@@ -34,7 +46,7 @@ export function readingPrefs(raw) {
     size: has(SIZES, r.size) ? r.size : d.size,
     leading: has(LEADINGS, r.leading) ? r.leading : d.leading,
     width: has(WIDTHS, r.width) ? r.width : d.width,
-    font: has(FONTS, r.font) ? r.font : d.font,
+    font: fontChoice(r.font) ?? d.font,
     fold: typeof r.fold === "boolean" ? r.fold : d.fold,
   };
 }

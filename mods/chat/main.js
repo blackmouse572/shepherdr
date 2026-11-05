@@ -36,7 +36,7 @@ import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, me
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
 import { button, red, green, need, working, H, RADIUS, TEXT, toast, toastWho, plainError, readingInk, SERIF } from "./ui.js";
-import { READING_KEY, readingSig, proseMetrics, stepSize, codeLines } from "./core/reading.js";
+import { READING_KEY, readingSig, proseMetrics, stepSize, codeLines, fontFamily } from "./core/reading.js";
 import { openViewer, noteChatArea } from "./artview.js";
 import { SecretCards } from "./secret-card.js";
 import * as secrets from "./secrets.js";
@@ -2669,7 +2669,7 @@ export default class Chat extends View {
     // plain prose at the measure. Both in the reading size, leading, font and prose colour.
     const most = Math.max(240, Math.floor(Math.min(this.width, this.rd.column) * 0.8));
     const rd = this.rd, ink = readingInk();
-    const prose = (el) => el.text_size(rd.size).line_height(`${rd.line}px`).text_color(ink.prose).when(rd.font === "serif", (el) => el.font_family(SERIF));
+    const prose = (el) => el.text_size(rd.size).line_height(`${rd.line}px`).text_color(ink.prose).when(Boolean(fontFamily(rd.font, SERIF)), (el) => el.font_family(fontFamily(rd.font, SERIF)));
     const bubble = (text, faded) => h_flex().w_full().justify_end().child(
       prose(div().max_w(most).px(14).py(9).rounded(14).rounded_br(4).bg(ink.bubble))
         .when(Boolean(ink.bubbleBorder), (el) => el.border_1().border_color(ink.bubbleBorder))
