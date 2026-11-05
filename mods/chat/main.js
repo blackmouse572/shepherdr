@@ -405,9 +405,11 @@ export default class Chat extends View {
     if (this.slot && !this.thread) cx.timer.every(2000, (cx) => this.adoptSlot(cx));
     // The list drew nothing while it has rows (scrolled past its end, a height gone wrong):
     // forget the heights and go to the newest again. Checked rarely; redraws only then.
+    // Blank: the last render built a list with rows, and its frame drew none (the list doesn't
+    // call back past its end, or calls with an empty range).
     cx.timer.every(1500, (cx) => {
-      if (!this.blank) return;
-      this.blank = false;
+      if (!this.listFrame || this.listFrame !== this.frame || this.drew === this.frame || !(this.listH > 40)) return;
+      this.listFrame = 0;
       this.heights.clear(); this.measuredAt.clear(); this.measureGen++;
       this.anchor = null; this.pinned = true; this.stick = true;
       cx.notify();
@@ -1052,7 +1054,9 @@ export default class Chat extends View {
     this.end = Number(head[3]);
     if (!recs.length) return;
     this.records.push(...recs);
-    if (this.records.length > KEEP && !this.loadingEarlier) {
+    // Only while following the newest: trimmed under someone reading back, the rows on screen
+    // go and the list is left scrolled past its end (blank).
+    if (this.records.length > KEEP && this.pinned && !this.loadingEarlier) {
       // Down to three quarters, so the rebuild is now and then, not on every message.
       this.records = this.records.slice(-Math.floor(KEEP * 0.75));
       this.start = this.records[0].off;
@@ -3667,6 +3671,8 @@ export default class Chat extends View {
     this.follow_bottom(rows);
     // Following the newest, the list sits at its end: the scroll position is exactly that.
     if (this.pinned && this.listH) this.scrollTop = Math.max(0, sizes.reduce((a, b) => a + b, 0) - (this.listH - 8));
+    const frame = this.frame = (this.frame ?? 0) + 1;
+    this.listFrame = rows.length ? frame : 0;
     const body = rows.length === 0
       ? this.notice(t, "No messages", "Write to the agent below.")
       : v_flex().relative().flex_1().min_h(0).pt(8)
@@ -3695,7 +3701,7 @@ export default class Chat extends View {
         })
         .child(v_virtual_list("chat-rows", rows.length, sizes, (i) => rows[i].id, (range) => {
           this.range = range;
-          if (rows.length && !(range.end > range.start)) this.blank = true;
+          this.drew = range.end > range.start ? frame : -1;
           // The first row on screen bounds the scroll position: keep the estimate inside it.
           const top = sizes.slice(0, range.start).reduce((a, b) => a + b, 0);
           if ((this.scrollTop ?? 0) < top || (this.scrollTop ?? 0) >= top + (sizes[range.start] ?? 0)) this.scrollTop = top;
