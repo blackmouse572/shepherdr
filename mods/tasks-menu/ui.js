@@ -291,6 +291,35 @@ export function segmented(id, options, value, onPick, { size = "sm", disabled = 
     }));
 }
 
+// Tabs on a well whose raised pill slides to the chosen one (Doop App 02's .seg, the side panel switcher's look).
+// Each tab is as wide as its words, measured into `sizes` (a Map the caller keeps across renders); the pill is placed
+// by them in px, so the native transition eases it (left and width, 180 ms ease-in-out). Options as segmented()'s.
+const PILL_MOTION = { duration: 180, easing: "ease-in-out" };
+export function pillTabs(id, options, value, onPick, sizes) {
+  const t = theme();
+  const at = options.findIndex(([v]) => v === value);
+  const known = at >= 0 && options.every(([v]) => sizes.has(v));
+  const left = known ? options.slice(0, at).reduce((a, [v]) => a + sizes.get(v) + 2, 0) : 0;
+  const pill = known && div().id(`${id}-pill`).absolute().top(0).h_full().left(left).w(sizes.get(value))
+    .transition("left", PILL_MOTION).transition("width", PILL_MOTION)
+    .child(raisedLook(div().size_full().rounded(RADIUS.control - 2), RADIUS.control - 2).when(!dark(), (el) => el.bg(t.background)));
+  return well(div().id(`${id}-well`).h(H.sm).flex_none().p(2), RADIUS.control)
+    .child(h_flex().relative().h_full().gap(2)
+      .when(Boolean(pill), (el) => el.child(pill))
+      .children(options.map(([v, label, o]) => {
+        const on = v === value, off = Boolean(o?.disabled);
+        return h_flex().id(`${id}-${v}`).h_full().flex_none().px(10).justify_center().items_center().rounded(RADIUS.control - 2)
+          .whitespace_nowrap().text_size(TEXT.label)
+          .on_size_change((size, cx) => { if (Math.abs((sizes.get(v) ?? -1) - size.width) > 0.5) { sizes.set(v, size.width); cx.notify(); } })
+          .when(Boolean(o?.tip), (el) => el.tooltip(o.tip))
+          .when(on, (el) => el.text_color(t.foreground).font_medium().when(!pill, (el) => el.bg(t.background)))
+          .when(!on && off, (el) => el.text_color(t.dim).opacity(0.6))
+          .when(!on && !off, (el) => el.text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+            .on_click((e, cx) => { cx.stop_propagation(); onPick(v, e, cx); cx.notify(); }))
+          .child(label);
+      })));
+}
+
 // Menu row -------------------------------------------------------------------
 // A popup menu's row, 32 tall (Shepherdr's MenuItem): a 16 icon (or its empty slot, so labels
 // line up), the label, a dim hint, and a check at the right when `check` is true (a choice

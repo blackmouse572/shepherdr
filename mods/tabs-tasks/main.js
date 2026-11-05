@@ -39,18 +39,6 @@ const openPanel = (id) => { run("layout.select", { stack: "panel-body", child: i
 // alone over a drilled-in view (a task's thread, an artifact), which has its own header. The block is resized to it.
 // The switcher's well inside the head's card: the block is its bottom gap (8), the card's border (2), padding (8), the well.
 const BANNER_H = 60, WELL_H = 32, SWITCH_H = 8 + 2 + 8 + WELL_H, HEAD_H = SWITCH_H + BANNER_H + 1;
-// Motion (Emil Kowalski's): the strong ease-out for the head's height, as a function of time 0..1.
-const bezier = (x1, y1, x2, y2) => (t) => {
-  let u = t;
-  for (let i = 0; i < 8; i++) {
-    const x = 3 * (1 - u) ** 2 * u * x1 + 3 * (1 - u) * u * u * x2 + u ** 3 - t;
-    const dx = 3 * (1 - u) ** 2 * x1 + 6 * (1 - u) * u * (x2 - x1) + 3 * u * u * (1 - x2);
-    if (Math.abs(x) < 1e-4 || !dx) break;
-    u = Math.min(1, Math.max(0, u - x / dx));
-  }
-  return 3 * (1 - u) ** 2 * u * y1 + 3 * (1 - u) * u * u * y2 + u ** 3;
-};
-const EASE_OUT = bezier(0.23, 1, 0.32, 1);
 const HEAD_MS = 200, PILL = { duration: 180, easing: "ease-in-out" };
 
 export default class Tabs extends View {
@@ -290,21 +278,23 @@ export default class Tabs extends View {
     };
     const inner = (shown === "tasks" && find(root, "tasks")?.active === "tasks-thread") || (shown === "artifacts" && find(root, "artifacts")?.active === "artifacts-view");
     this.resizeHead(inner ? SWITCH_H : HEAD_H, cx);
-    // The shown segment's raised pill slides under the segments (the tab indicator). The segments split the row
-    // evenly, so its place is a share of it: percentages, never a measured width (zoom scales what's measured).
+    // The shown segment's raised pill slides under the segments (the tab indicator): the row splits evenly, so its
+    // place is the row's measured width (an element with an id: one without loses its size) split n ways, in px so
+    // the native transition can ease it.
     const list = PANELS.filter(([id]) => enabled.includes(id));
-    const at = list.findIndex(([id]) => id === shown), n = list.length;
-    const pill = at >= 0 && div().id("seg-pill").absolute().top(0).h_full().left(`${(100 * at) / n}%`).w(`${100 / n}%`)
+    const at = list.findIndex(([id]) => id === shown), n = list.length, segW = n && this.rowW ? this.rowW / n : 0;
+    const pill = at >= 0 && segW > 0 && div().id("seg-pill").absolute().top(0).h_full().left(at * segW).w(segW)
       .transition("left", PILL)
       .child(raisedLook(div().size_full().rounded(7), 7).when(!isDark(), (el) => el.bg(t.background)));
-    const segs = well(div().w_full().h(WELL_H).flex_none().p(2), 10)
-      .child(h_flex().relative().size_full()
+    const segs = well(div().id("seg-well").w_full().h(WELL_H).flex_none().p(2), 10)
+      .child(h_flex().id("seg-row").relative().size_full()
+        .on_size_change((size, cx) => { if (Math.abs((this.rowW ?? 0) - size.width) > 0.5) { this.rowW = size.width; cx.notify(); } })
         .when(Boolean(pill), (el) => el.child(pill))
         .children(list.map(seg)));
     const [title, line, right] = this.headOf(shown, space, t, cx);
     // Doop App 02 .rp: the neutral wool banner, the panel's name in the serif and its line in mono, its control at
-    // the right; the switcher under it. Over a drilled-in view the banner folds away (the block's height eases to
-    // the switcher's, the banner clipped and faded with it).
+    // the right; the switcher under it. Over a drilled-in view the block is the switcher's height and the banner
+    // gone; back over a list it fades in.
     return div().id("panel-switch").size_full().pb(8)
       .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(v_flex().size_full().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
@@ -319,24 +309,13 @@ export default class Tabs extends View {
         .child(div().w_full().flex_none().p(4).child(segs)));
   }
 
-  // The block has no transition of its own: its height steps to px a frame at a time (HEAD_MS, the strong
-  // ease-out); a newer target takes over from where it is. The first one is set at once.
+  // The block's height, set at once: a layout resize every frame lags the window, so the banner only fades.
   resizeHead(px, cx) {
     if (this.headTo === px) return;
     this.headTo = px;
-    const from = this.headAt, token = (this.headToken = (this.headToken ?? 0) + 1);
-    cx.spawn(async (cx) => {
-      const start = Date.now();
-      for (;;) {
-        if (this.headToken !== token) return;
-        const k = from == null ? 1 : Math.min(1, (Date.now() - start) / HEAD_MS);
-        this.headAt = Math.round(from == null ? px : from + (px - from) * EASE_OUT(k));
-        run("layout.resize", { id: "panel-switch", px: this.headAt });
-        if (k >= 1) return;
-        await cx.sleep(16);
-      }
-    });
+    cx.spawn(async () => run("layout.resize", { id: "panel-switch", px }));
   }
+
 
   // The head's banner for a panel: [its name, its line, its control at the right or null].
   headOf(id, space, t, cx) {

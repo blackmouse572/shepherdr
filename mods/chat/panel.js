@@ -17,7 +17,7 @@
 // and Pull request (mods task-files, task-changes, task-pr), and its Browser (mods/task-browser: a
 // live viewer in a terminal block of its own), picked in the header's second row, as Shepherdr's
 // task side panel. All are one switcher (only one shows at a time), the main chat's header switch
-// (ui.js segmented); Pull request only once the task has one. They show the task the header
+// (ui.js pillTabs); Pull request only once the task has one. They show the task the header
 // publishes (shared "tasks.thread.where", from its record: lib/taskwhere.js).
 
 import { div, svg } from "gpui-kit";
@@ -26,7 +26,7 @@ import { shared, setShared, run, theme, exec, appHome, home, readTextFile, write
 import { terminals, agents } from "./live.js";
 import { taskDot, ownProgress, estimated } from "./dot.js";
 import { busyAgain } from "./core/tasks.js";
-import { button, segmented, TEXT, RADIUS, toast, plainError } from "./ui.js";
+import { button, pillTabs, TEXT, RADIUS, toast, plainError } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 
 // The task header's shared left edge, and task ids in the Tasks list's monospace (mods/tasks).
@@ -258,10 +258,11 @@ export class PanelHost {
   }
 
   // Chat | Terminal | Files | Changes | Pull request | Browser: the main chat's header switch
-  // (ui.js segmented, as mods/pane-chat). segs: { key, label, on, dead (can't open now), tip, fn }.
+  // (ui.js pillTabs: its pill slides to the shown one). segs: { key, label, on, dead (can't open now), tip, fn }.
   switcher(t, segs) {
-    return segmented("thread-mode", segs.map((x) => [x.key, x.label, { disabled: x.dead, tip: x.tip }]),
-      segs.find((x) => x.on)?.key ?? null, (v, _e, cx) => segs.find((x) => x.key === v)?.fn(cx));
+    this.tabSizes ??= new Map();
+    return pillTabs("thread-mode", segs.map((x) => [x.key, x.label, { disabled: x.dead, tip: x.tip }]),
+      segs.find((x) => x.on)?.key ?? null, (v, _e, cx) => segs.find((x) => x.key === v)?.fn(cx), this.tabSizes);
   }
 
   render(cx) {
