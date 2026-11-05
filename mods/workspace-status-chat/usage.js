@@ -19,7 +19,7 @@
 
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { theme, props, openOverlay, closeOverlay, window } from "herdr";
+import { theme, props, openOverlay, closeOverlay, window, settings } from "herdr";
 import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need, toast, plainError } from "./ui.js";
 import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, avatar, MONO } from "./usage-data.js";
 import { WORDS, POP, pctText, resetsLine, resetsWhen, activeOf, switchLine, accountSub, weekBars, spaceSplit,
@@ -84,10 +84,13 @@ export function usageRest() {
 export function openUsage({ at = null, detail = null, tab = "claude" } = {}) {
   const u = usage();
   const winH = at ? at.y + at.height : window()?.height ?? null;
-  const popH = popoverHeight(accounts(), tab);
-  const H = capHeight(Math.max(popH, detail ? DETAIL_H : 0), winH);
+  // Codex signed out: one line, not a card.
+  const popH = tab === "codex" && !u?.codex?.signed_in ? POP.head + POP.seg + 12 + 44 + POP.foot : popoverHeight(accounts(), tab);
+  // Note: overlay sizes are drawn at the person's zoom (Settings, e.g. 0.8), the pill's spot is in window points.
+  const z = Number(settings()?.zoom) || 1;
+  const H = capHeight(Math.max(popH, detail ? DETAIL_H : 0), winH ? winH / z : winH);
   const W = POP.width + (detail ? POP.gap + POP.detail : 0);
-  const where = at ? { x: Math.max(8, at.x), y: Math.max(8, at.y - H - 6) } : "pointer";
+  const where = at ? { x: Math.max(8, at.x), y: Math.max(8, at.y - (H + 6) * z) } : "pointer";
   openOverlay({ mod: "workspace-status-chat", kind: "popup", frame: "none", width: W, height: H, at: where,
     props: { view: "usage", at, detail, tab, height: H } });
 }
@@ -214,7 +217,7 @@ export class UsagePopover {
       : !u ? [div().p(12).text_size(TEXT.label).text_color(t.dim).child(WORDS.loading)]
       : !list.length ? [div().p(12).text_size(TEXT.label).text_color(t.dim).child(WORDS.noAccounts)]
       : [...list.map((a) => this.card(a, "claude", a.id === active?.id)), this.rule(list, pr)];
-    return v_flex().id("usage-pop").w(POP.width).max_h(H).flex_none().rounded(12).overflow_hidden().bg(t.popover)
+    return v_flex().id("usage-pop").w(POP.width).h(H).flex_none().rounded(12).overflow_hidden().bg(t.popover)
       .border_1().border_color(t.border).shadow_lg()
       .on_click((_e, cx) => cx.stop_propagation())
       .child(this.header("usage-head", {
@@ -289,9 +292,7 @@ export class UsagePopover {
 
   render() {
     const H = this.p.height ?? 600;
-    // Note: the root is the overlay's height (size_full only reaches the tallest child), so the popover sits on its
-    // bottom edge, just over the pill, however far the height estimate is off.
-    return h_flex().id("usage-root").w_full().h(H).items_end().gap(POP.gap).track_focus(this.handle)
+    return h_flex().id("usage-root").size_full().items_end().gap(POP.gap).track_focus(this.handle)
       .on_key_down((e) => { if (e.key === "escape") this.close(); })
       .on_click(() => this.close())
       .child(this.popover(H))
