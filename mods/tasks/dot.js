@@ -43,6 +43,23 @@ export function taskDot(s, { pct = null, halo = false } = {}) {
   return ring(t.dim);
 }
 
+// An agent's status mark (Doop App 02 .dot), the sidebar's rows and the tab bar's tabs: needs you (amber, pulsing),
+// working (blue, an arc going round it; a task's pie once it reports its %), ready (taskDot's tick), done (green),
+// idle (hollow). 14 square, so nothing moves when it changes.
+export function statusDot(kind, pct = null) {
+  const t = theme();
+  const box = () => div().relative().size(14).flex_none().flex().items_center().justify_center();
+  if (kind === "working" && Number.isFinite(pct)) return taskDot("working", { pct });
+  if (kind === "ready") return taskDot("ready");
+  if (kind === "needs") return box()
+    .child(div().absolute().top(1).left(1).size(12).rounded(6).bg(needColor()).loop("opacity", { from: 0.1, to: 0.45, period: 2000 }))
+    .child(div().size(8).rounded(4).bg(needColor()));
+  if (kind === "working") return box().child(div().size(6).rounded(3).bg(working()))
+    .child(div().absolute().inset_0().child(svg("mods/workspace-chrome/spinner.svg").size(14).text_color(working()).spin(1200)));
+  if (kind === "done") return box().child(div().size(8).rounded(4).bg(readyColor()));
+  return box().child(div().size(8).rounded(4).border(1.5).border_color(t.dim));
+}
+
 // The % done an agent reports itself (OSC 7501 progress: its terminal's `report`), the first of
 // these terminals that does, else null; with its message.
 export function ownProgress(addresses) {

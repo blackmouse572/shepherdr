@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex } from "gpui-base";
-import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec } from "herdr";
+import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec, props, terminals } from "herdr";
 import { spacesWithChats as spaces, sweep } from "./parked.js";
 import { agentIn, isCoordinatorTab, closeTab, watchNewSpaces, newSpace, openCoordinator, renameTab, renameSpace } from "./coordinator.js";
 import { startTick, tickOnChange } from "./tick.js";
@@ -8,7 +8,10 @@ import { startInbox, count as inboxCount, countsByTab, readyCount, readyByTab, s
 import { serveRemote } from "./secrets.js";
 import { watchService } from "./service.js";
 import { startBridge } from "./bridge.js";
-import { countBadge, H, TEXT, RADIUS, MONO, working, openSettings } from "./ui.js";
+import { countBadge, H, TEXT, RADIUS, MONO, working, openSettings, raisedLook, well, isDark } from "./ui.js";
+import { statusDot } from "./dot.js";
+import { READ_LISTS, taskLists } from "./core/tasklists.js";
+import { autoPrefix } from "./core/tasks.js";
 // The branch chip's git and its menu's size (Doop App 02b; the menu is spaces-chat's branch-menu.js).
 import { BRANCH_STATE, BRANCH_MENU, branchState, branchMenuHeight, BRANCH_EXTRAS, EDITOR_KEY, PR_KEEP, PR_WAIT, branchExtras,
   editorTries, canUpdate, branchActions } from "./core/worktree.js";
@@ -28,8 +31,16 @@ function find(node, id) {
   return null;
 }
 
+// The side panels, in the design's order (Doop App 02 .rp .seg.fill): [stack child, label, icon].
+const PANELS = [["tasks", "Tasks", "mods/tasks/tasks.svg"], ["changes", "Changes", "mods/changes/changes.svg"],
+  ["files", "Files", "mods/files/file.svg"], ["artifacts", "Artifacts", "mods/artifacts/artifacts.svg"]];
+const openPanel = (id) => { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); };
+
 export default class Tabs extends View {
   init(_props, cx) {
+    // The panel switcher (the layout's "panel-switch" block, props.view "panels") only draws: the bar's copy does
+    // the background work and takes the commands.
+    if (props()?.view === "panels") return;
     // Agents parked behind a chat whose tab or space closed end, as their pane would have (the
     // Agents list did this; the layout has none now).
     cx.timer.every(5000, () => sweep());
@@ -102,7 +113,7 @@ export default class Tabs extends View {
   // Where the shown tab's code lives: its focused pane's folder and branch (else its first pane with a branch, else the
   // space's), read
   // with git when it changes and every 15 s (BRANCH_STATE: base, ahead, changes, the other checkouts).
-  branchOf(space, cx) {
+  branchOf(space, cx, extras = true) {
     const tab = space?.tabs.find((c) => c.active)?.id;
     const tabs = new Set((space?.tabs ?? []).map((c) => c.id));
     const ps = panes().filter((p) => p.tab === tab && p.cwd && p.branch);
@@ -119,9 +130,10 @@ export default class Tabs extends View {
         if (this.branchKey !== key) return;
         this.branch = r?.code === 0 ? branchState(r.stdout) : null;
         cx.notify();
-        if (this.branch) await this.readExtras(p.cwd, p.branch, machine, cx);
+        if (this.branch && extras) await this.readExtras(p.cwd, p.branch, machine, cx);
       });
     }
+    if (!extras) return { name: p.branch, machine, state: this.branch };
     if (this.branch && this.extras?.key !== this.extrasKey(p.branch, machine)) cx.spawn((cx) => this.readExtras(p.cwd, p.branch, machine, cx));
     const x = this.extras?.key === this.extrasKey(p.branch, machine) ? this.extras : null;
     return { name: p.branch, machine, state: this.branch, editor: x?.editor ?? null, pr: x?.pr ?? null };
@@ -144,7 +156,7 @@ export default class Tabs extends View {
   // The chip: the branch and how far ahead of the repo's own branch; a click opens its menu under it.
   branchChip(b, t, roomy, files) {
     const s = b.state;
-    return h_flex().id("branch-chip").h(H.sm).px(7).gap(6).flex_none().items_center().rounded(RADIUS.control)
+    return h_flex().id("branch-chip").h(22).pl(6).pr(8).gap(6).flex_none().items_center().rounded(RADIUS.control)
       .border(1).border_color(t.border).bg(t.raised).font_family(MONO).text_size(TEXT.label).text_color(t.foreground)
       .when(Boolean(s), (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))
       .tooltip(s ? (s.linked ? `Worktree of ${s.repo}` : s.repo) : b.name)
@@ -195,7 +207,72 @@ export default class Tabs extends View {
     localStorage.setItem("panels", JSON.stringify(this.panels));
   }
 
+  // The layout's side panel and which of its panels are offered: Tasks and Artifacts (Artifacts unless its add-on is
+  // off), beside whichever of Files and Changes are on.
+  panelState() {
+    const root = layout();
+    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "tasks", ...(addonOn("artifacts") ? ["artifacts"] : [])];
+    return { root, panel: find(root, "panel"), body: find(root, "panel-body"), enabled };
+  }
+
+  // A tab's task: its terminal's herdr.task label, looked up in its machine's task lists (read at most every 20 s,
+  // as the sidebar reads them). { ref, title, pct } or null.
+  taskOf(space, ps, byAddress, cx) {
+    const m = space?.machine ?? null;
+    for (const p of ps) {
+      const key = p.terminal ? byAddress.get(p.terminal)?.labels?.["herdr.task"] : null;
+      if (!key) continue;
+      this.readTaskLists(m, cx);
+      return this.tasks?.get(`${m ?? ""}|${key}`) ?? null;
+    }
+    return null;
+  }
+
+  readTaskLists(m, cx) {
+    this.tasksAt ??= {};
+    if (Date.now() - (this.tasksAt[m ?? ""] ?? 0) < 20000) return;
+    this.tasksAt[m ?? ""] = Date.now();
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", READ_LISTS], m ? { on: m } : {}).catch(() => null);
+      if (!r) return;
+      this.tasks ??= new Map();
+      for (const list of taskLists(r.stdout)) for (const task of Array.isArray(list.tasks) ? list.tasks : [])
+        this.tasks.set(`${m ?? ""}|${list.slug}#${task.id}`, { ref: `${list.prefix || autoPrefix(list.folder)}-${task.id}`, title: task.title ?? null, pct: task.progress?.done ?? null });
+      cx.notify();
+    });
+  }
+
+  // The panel switcher (Doop App 02 .rp .seg.fill): over the side panel, a full-width segmented of its panels, each
+  // with its icon and a count where one is known (Tasks: needs you and Ready; Changes: files not committed). The
+  // shown one is raised; words on every segment where roomy, else on the shown one only.
+  panelSwitch(cx) {
+    const t = theme();
+    const { body, enabled } = this.panelState();
+    const space = spaces().find((s) => s.active);
+    const counts = shared("counts.red") !== false, greens = shared("counts.green") !== false;
+    const dirty = enabled.includes("changes") ? this.branchOf(space, cx, false)?.state?.dirty ?? 0 : 0;
+    const roomy = (this.width ?? 0) >= 400;
+    const seg = ([id, label, icon]) => {
+      const on = body?.active === id;
+      const [need, ready] = id === "tasks" ? [counts ? inboxCount() : 0, greens ? readyCount() : 0] : [0, 0];
+      const n = id === "changes" ? dirty : 0;
+      return h_flex().id(`seg-${id}`).flex_1().min_w(0).h_full().px(6).gap(6).justify_center().items_center().rounded(7)
+        .text_size(TEXT.label).font_medium().whitespace_nowrap()
+        .when(on, (el) => raisedLook(el, 7).text_color(t.foreground).when(!isDark(), (el) => el.bg(t.background)))
+        .when(!on, (el) => el.text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground)).on_click(() => openPanel(id)))
+        .when(!roomy && !on, (el) => el.tooltip(label))
+        .child(svg(icon).size(13).flex_none().when(on, (el) => el.text_color(t.accent)))
+        .when(roomy || on, (el) => el.child(label))
+        .when(need + ready > 0, (el) => el.child(countBadge(need, ready, on ? t.raised : t.background)))
+        .when(n > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).font_medium().text_color(t.dim).child(n > 99 ? "99+" : String(n))));
+    };
+    return div().id("panel-switch").size_full().pb(8)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
+      .child(well(h_flex().w_full().h_full().p(2).gap(2), 10).children(PANELS.filter(([id]) => enabled.includes(id)).map(seg)));
+  }
+
   render(cx) {
+    if (props()?.view === "panels") return this.panelSwitch(cx);
     // Another machine's agent using a secret: answered from here (secrets.js, bin/herdr-secret serve).
     serveRemote();
     tickOnChange(cx);
@@ -204,81 +281,100 @@ export default class Tabs extends View {
     const space = spaces().find(p => p.active);
     // A coordinator's tab is pinned first.
     const shown = [...(space?.tabs ?? [])].sort((a, b) => isCoordinatorTab(b.id) - isCoordinatorTab(a.id));
+    // Settled tabs (tab.settle) stay out of the bar, behind "N settled", which shows them dimmed (a click on one
+    // brings it back). The shown tab is never hidden.
+    const settled = shown.filter((c) => c.settled && !c.active);
+    if (!settled.length) this.showSettled = false;
+    const listed = shown.filter((c) => !c.settled || c.active || this.showSettled);
     // The tab menu's height: Rename, Close, and the rows the tab gets (menu-tasks): a coordinator
     // tab's Edit instructions, an agent's Switch agent and Restart.
     const menuHeight = (id) => 19 + 32 * (2 + (isCoordinatorTab(id) ? 1 : 0) + (agentIn(id) && !agentIn(id).address.includes("/") ? 2 : 0));
     const stop = (_e, cx) => cx.stop_propagation();
-    const button = (id, label, action) => div().id(id).size(H.sm).flex_none().flex().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.dim).hover(s => s.bg(t.hover).text_color(t.foreground))
+    const button = (id, label, action, size = H.sm) => div().id(id).size(size).flex_none().flex().items_center().justify_center().rounded(RADIUS.control + 1).cursor_pointer().text_color(t.muted).hover(s => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", stop).on_click(action).child(label);
-    // What needs the person, per tab (the Inbox's items), and Tasks' Ready: a red and a green
-    // count on the tab. Shepherdr settings' "Red counts" off (shared "counts.red" false): none
-    // here, nor on Tasks.
+    // What needs the person, per tab (the Inbox's items), and Tasks' Ready: the tab's dot (with how many past one).
+    // Shepherdr settings' "Red counts" off (shared "counts.red" false): none here, nor on Tasks.
     const counts = shared("counts.red") !== false, greens = shared("counts.green") !== false;
     const needs = counts ? countsByTab() : new Map(), readies = greens ? readyByTab() : new Map();
-    // Its "Tab bar" off (shared "tabbar.tabs" false): the bar keeps +, the panels and the window's
+    // Its "Tab bar" off (shared "tabbar.tabs" false): the bar keeps +, the panel toggle and the window's
     // buttons (and its background work), without the tabs.
     const tabsShown = shared("tabbar.tabs") !== false;
+    const byAddress = new Map(terminals().map((k) => [k.address, k]));
+    // A tab (Doop App 02 .tab): a 28 tall pill, its icon (the Assistant's compass, an agent's or program's logo, else
+    // a terminal), a task's id, its name, its status and ×. The shown tab is raised, the others plain.
     const item = (c, i) => {
-      const program = panes().find(p => p.tab === c.id && p.program?.agent)?.program ?? panes().find(p => p.tab === c.id)?.program;
-      const name = tabName(c.name, program?.name);
-      return h_flex().id(`tab-${c.id}`).h(H.sm).px(8).gap(6).rounded(RADIUS.control).items_center().flex_none().text_size(TEXT.body)
-        .border(1).border_color(c.active ? t.border : t.chrome).bg(c.active ? t.raised : t.chrome).text_color(c.active ? t.foreground : t.muted)
-        .cursor_pointer().hover(s => s.bg(t.hover))
+      const ps = panes().filter((p) => p.tab === c.id);
+      const program = ps.find(p => p.program?.agent)?.program ?? ps[0]?.program;
+      const coord = isCoordinatorTab(c.id);
+      const task = coord ? null : this.taskOf(space, ps, byAddress, cx);
+      const name = task?.title && !c.named ? task.title : tabName(c.name, program?.name);
+      const tint = c.active ? t.accent : t.dim;
+      const icon = coord ? svg("mods/spaces-chat/compass.svg").size(14).flex_none().text_color(tint)
+        : program?.icon && !program.shell ? (program.tint ? svg(program.icon).size(14).flex_none().text_color(tint) : image(program.icon).size(14).flex_none())
+        : svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(tint);
+      const need = needs.get(c.id) ?? 0, ready = readies.get(c.id) ?? 0;
+      const kind = need > 0 || c.status === "blocked" ? "needs" : c.status === "working" ? "working" : ready > 0 ? "ready" : c.status === "done" ? "done" : null;
+      const n = kind === "needs" ? need : kind === "ready" ? ready : 0;
+      return h_flex().id(`tab-${c.id}`).h(28).pl(10).pr(8).gap(7).rounded(RADIUS.card).items_center().flex_none().text_size(TEXT.body - 0.5).whitespace_nowrap()
+        .when(c.active, (el) => raisedLook(el, RADIUS.card).text_color(t.foreground))
+        .when(!c.active, (el) => el.text_color(t.muted).hover(s => s.bg(t.hover)))
+        .when(c.settled && !c.active, (el) => el.opacity(0.6))
+        .cursor_pointer()
         .on_mouse_down("left", (e, cx) => { cx.stop_propagation(); this.pressed = i; if (e.click_count === 2) renameTab(c); })
         .on_mouse_up("left", () => {
           const from = this.pressed; this.pressed = null;
-          if (from !== null && from !== i) run("tab.move", { id: shown[from].id, index: space.tabs.findIndex(x => x.id === c.id) + 1 });
+          if (from !== null && from !== i && listed[from]) run("tab.move", { id: listed[from].id, index: space.tabs.findIndex(x => x.id === c.id) + 1 });
           else run("tab.select", { id: c.id });
         })
         .on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); openOverlay({ mod: "menu-tasks", kind: "popup", width: 236, height: menuHeight(c.id), props: { tab: "tab", target: { id: c.id, space: space.id }, right: this.right } }); })
-        .when(Boolean(program?.icon), el => el.child(program.tint ? svg(program.icon).size(14).text_color(t.muted) : image(program.icon).size(14)))
+        .child(icon)
+        .when(Boolean(task?.ref), (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).font_medium().text_color(t.dim).child(task.ref)))
         .child(div().max_w(170).truncate().child(c.zoomed ? `${name} Z` : name))
-        .when(c.status === "working", el => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .when(needs.get(c.id) > 0 || readies.get(c.id) > 0, el => el.child(countBadge(needs.get(c.id), readies.get(c.id), c.active ? t.raised : t.chrome)))
-        .when(!(needs.get(c.id) > 0 || readies.get(c.id) > 0) && (c.status === "blocked" || c.status === "done"), el => el.child(div().size(6).rounded(3).bg(t[c.status])))
-        .when(c.active, el => el.child(div().id(`close-${c.id}`).cursor_pointer().text_color(t.dim).on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); closeTab(c.id); }).child(svg("mods/pane/close.svg").size(12))));
+        .when(Boolean(kind), (el) => el.child(statusDot(kind, kind === "working" ? task?.pct ?? null : null)))
+        .when(n > 1, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).font_medium().text_color(t.dim).child(n > 9 ? "9+" : String(n))))
+        .when(!coord || c.active, (el) => el.child(div().id(`close-${c.id}`).flex_none().ml(2).rounded(4).cursor_pointer().text_color(t.dim).hover((s) => s.text_color(t.foreground))
+          .on_mouse_down("left", stop).on_click((_e, cx) => { cx.stop_propagation(); closeTab(c.id); }).child(svg("mods/pane/close.svg").size(12))));
     };
-    const root = layout(), sidebar = find(root, "sidebar"), w = window();
+    const { root, panel, body, enabled } = this.panelState();
+    const sidebar = find(root, "sidebar"), w = window();
     // Old saved rails and a dragged-narrow sidebar can be smaller than the window buttons.
     const lightsPadding = w?.platform === "macos" && w.titlebar === "none" && !w.fullscreen && root?.traffic_lights
       ? Math.max(10, (root.traffic_lights[0] + 64) / settings().zoom - (sidebar?.hidden ? 0 : sidebar?.size?.px ?? 0))
       : 10;
-    const panel = find(root, "panel"), body = find(root, "panel-body");
-    // Tasks and Artifacts are offered (Artifacts unless its add-on is off), beside whichever of
-    // Files and Changes are on.
-    const enabled = [...(shared("workspace.panels") ?? ["files", "changes"]), "tasks", ...(addonOn("artifacts") ? ["artifacts"] : [])];
     this.syncPanel(space, panel, body, enabled);
-    // The side panels' buttons, one style for all: icon first; the label when the bar has room
-    // (the open one keeps its label); a count after the icon (Tasks': what needs the person, red,
-    // and what's Ready, green: [need, ready]).
     const roomy = (this.width ?? 0) >= 1100;
     const branch = this.branchOf(space, cx);
-    const panelButton = (id, label, icon, [need, ready] = [0, 0]) => {
-      const badge = need + ready;
-      const on = panel && !panel.hidden && body?.active === id;
-      return h_flex().id(`panel-${id}`).h(H.sm).pl(5).pr(roomy || on || badge ? 8 : 5).gap(5).flex_none().items_center().rounded(RADIUS.control)
-        .text_size(TEXT.label).bg(on ? t.selected : t.chrome).text_color(on ? t.foreground : t.muted)
-        .cursor_pointer().hover(s => s.bg(on ? t.selected : t.hover).text_color(t.foreground)).on_mouse_down("left", stop)
-        .on_click(() => {
-          if (on) run("layout.hide", { id: "panel" });
-          else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
-        }).child(svg(icon).size(14).flex_none())
-        .when(roomy || on, el => el.child(label))
-        .when(badge > 0, el => el.child(countBadge(need, ready, on ? t.selected : t.chrome)));
-    };
-    return h_flex().id("tabs-bar").size_full().min_w(0).px(10).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
+    // The side panel's toggle (the design's titlebar right toggle): its panels switch inside it (panelSwitch). Shut,
+    // it carries Tasks' counts, so what needs the person still shows.
+    const open = Boolean(panel && !panel.hidden);
+    const [need, ready] = [counts ? inboxCount() : 0, greens ? readyCount() : 0];
+    const toggle = h_flex().id("panel-toggle").h(28).px(6).gap(5).flex_none().items_center().rounded(RADIUS.control + 1).cursor_pointer()
+      .bg(open ? t.selected : t.chrome).text_color(open ? t.foreground : t.muted).hover((s) => s.bg(open ? t.selected : t.hover).text_color(t.foreground))
+      .tooltip("Side panel").on_mouse_down("left", stop)
+      .on_click(() => {
+        if (open) run("layout.hide", { id: "panel" });
+        else if (enabled.includes(body?.active)) run("layout.show", { id: "panel" });
+        else openPanel("tasks");
+      })
+      .child(svg("mods/workspace-chrome-shepherdr/panel-right.svg").size(15).flex_none())
+      .when(!open && need + ready > 0, (el) => el.child(countBadge(need, ready, t.chrome)));
+    return h_flex().id("tabs-bar").size_full().min_w(0).px(10).pl(lightsPadding).gap(4).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_size_change((size, cx) => { this.width = size.width; cx.notify(); })
       .on_mouse_up("left", () => { this.pressed = null; })
       // The bar runs to the window's right edge: menus opened from it place their submenus by it.
       .on_mouse_move((e) => { this.right = e.position.x - e.local_position.x + e.bounds.width; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
       .when(Boolean(branch), (el) => el.child(this.branchChip(branch, t, roomy, enabled.includes("files"))).child(div().w(6).flex_none()))
-      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().children(tabsShown ? shown.map(item) : []))
-      .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu-tasks", kind: "popup", width: 250, height: 543, props: { right: this.right } })))
-      .when(enabled.includes("files"), el => el.child(panelButton("files", "Files", "mods/files/file.svg")))
-      .when(enabled.includes("changes"), el => el.child(panelButton("changes", "Changes", "mods/changes/changes.svg")))
-      .child(panelButton("tasks", "Tasks", "mods/tasks/tasks.svg", [counts ? inboxCount() : 0, greens ? readyCount() : 0]))
-      .when(enabled.includes("artifacts"), el => el.child(panelButton("artifacts", "Artifacts", "mods/artifacts/artifacts.svg")))
+      .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(4).overflow_x_scrollbar()
+        .children(tabsShown ? listed.map(item) : [])
+        .child(button("tab-new", svg("mods/workspace-chrome-shepherdr/plus.svg").size(15), () => openOverlay({ mod: "new-menu-tasks", kind: "popup", width: 250, height: 543, props: { right: this.right } }), 28)))
+      .when(tabsShown && settled.length > 0, (el) => el.child(h_flex().id("tabs-settled").h(28).px(10).gap(7).flex_none().items_center().rounded(RADIUS.card)
+        .text_size(TEXT.body - 0.5).whitespace_nowrap().cursor_pointer()
+        .bg(this.showSettled ? t.selected : t.chrome).text_color(this.showSettled ? t.foreground : t.muted).hover((s) => s.bg(this.showSettled ? t.selected : t.hover).text_color(t.foreground))
+        .on_mouse_down("left", stop).on_click((_e, cx) => { this.showSettled = !this.showSettled; cx.notify(); })
+        .child(svg("mods/tabs-tasks/eye-off.svg").size(14).flex_none().text_color(t.dim))
+        .child(`${settled.length} settled`)))
+      .child(toggle)
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/tabs-tasks/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/tabs-tasks/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
         .child(button("close-window", w.platform === "windows" ? svg("mods/tabs-tasks/win-close.svg").size(16) : svg("mods/pane/close.svg").size(13), () => run("window.close"))));

@@ -76,7 +76,7 @@
             "mod": "tabs-tasks"
           },
           "size": {
-            "px": 42
+            "px": 40
           },
           "window_drag": true
         },
@@ -117,6 +117,19 @@
               "id": "panel",
               "type": "column",
               "children": [
+                {
+                  "id": "panel-switch",
+                  "type": "block",
+                  "content": {
+                    "mod": "tabs-tasks",
+                    "props": {
+                      "view": "panels"
+                    }
+                  },
+                  "size": {
+                    "px": 40
+                  }
+                },
                 {
                   "id": "panel-body",
                   "type": "stack",

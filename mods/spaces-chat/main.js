@@ -39,7 +39,7 @@ import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS }
 import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees, assistantOf, machineOf } from "./core/spaces.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { autoPrefix } from "./core/tasks.js";
-import { taskDot } from "./dot.js";
+import { statusDot } from "./dot.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer, branch: BranchMenu };
 
@@ -815,18 +815,9 @@ export default class Spaces extends View {
     run("terminal.peek", { terminal: a.address });
   }
 
-  // The design's status dot (Doop App 02 .dot): needs you (amber, pulsing), working (blue, an arc going round it; a
-  // task's pie once it reports its %), done (green), idle (hollow). 14 square, so nothing moves when it changes.
-  statusDot(kind, t, pct = null) {
-    const box = () => div().relative().size(14).flex_none().flex().items_center().justify_center();
-    if (kind === "working" && Number.isFinite(pct)) return taskDot("working", { pct });
-    if (kind === "needs") return box()
-      .child(div().absolute().top(1).left(1).size(12).rounded(6).bg(need()).loop("opacity", { from: 0.1, to: 0.45, period: 2000 }))
-      .child(div().size(8).rounded(4).bg(need()));
-    if (kind === "working") return box().child(div().size(6).rounded(3).bg(working()))
-      .child(div().absolute().inset_0().child(svg("mods/workspace-chrome/spinner.svg").size(14).text_color(working()).spin(1200)));
-    if (kind === "done") return box().child(div().size(8).rounded(4).bg(green()));
-    return box().child(div().size(8).rounded(4).border(1.5).border_color(t.dim));
+  // The design's status dot (lib/dot.js statusDot, shared with the tab bar).
+  statusDot(kind, _t, pct = null) {
+    return statusDot(kind, pct);
   }
 
   // A row's right side (App 02 .roll): its most urgent status as a dot and how many are so (needs you: the Inbox's
