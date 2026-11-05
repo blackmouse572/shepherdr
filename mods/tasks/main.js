@@ -365,10 +365,18 @@ export default class Tasks extends View {
       if (q && !body.length && this.ready) body.push(note(`No tasks match “${q}”.`));
     }
 
+    // The side panel's head (tabs-tasks' "panels" view, shared "panel.head") draws this banner over the switcher: its
+    // line and Group by's machines go to it as shared "panel.tasks".
+    const head = shared("panel.head") === true;
+    if (head) {
+      const info = { ...this.headInfo(), multi };
+      const key = JSON.stringify(info);
+      if (key !== this.headKey) { this.headKey = key; cx.spawn(async () => setShared("panel.tasks", info)); }
+    }
     return v_flex().id("tasks").size_full().min_h(0).on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } }).rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       // The header (Doop App 02): the neutral wool banner, always (the rows carry the states), the title in the
       // serif and a line under it: the shown space's open tasks and those done this week.
-      .child(banner("tasks-head", "neutral", 60).border_b(1).border_color(t.border)
+      .when(!head, (el) => el.child(banner("tasks-head", "neutral", 60).border_b(1).border_color(t.border)
         .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
         .child(v_flex().flex_1().min_w(0).gap(4)
           .child(div().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child("Tasks"))
@@ -377,7 +385,7 @@ export default class Tasks extends View {
           .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
           // Its menu (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
           .on_click(() => openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 200, height: 8 + 28 + (multi ? 4 : 2) * 32, props: { menu: "group", machines: multi } }))
-          .child(svg("mods/tasks/more.svg").size(14).flex_none()))))
+          .child(svg("mods/tasks/more.svg").size(14).flex_none())))))
       .child(this.searchField(t))
       .when(!this.archivedOpen && filters, (el) => el.child(this.filterRow(chips, count, filter, t)))
       // A press in the list gives it the keyboard: F then goes to the search field.
@@ -468,17 +476,23 @@ export default class Tasks extends View {
   // it, and it's back (herdr-task's next tick makes that stick).
   // The header's line: "<space> · N open · N done this week" for the shown space's list, else "N open · N done this
   // week" for every list's. The counts never cut: a long space name truncates first.
-  headLine(t) {
+  // The header's line: the shown space's open tasks and those done this week ({ space, open, done }; space null when
+  // the space has no list of its own).
+  headInfo() {
     const s = spaces().find((x) => x.active);
     const mine = s ? this.lists.filter((l) => (l.machine ?? null) === (s.machine ?? null) && l.folder === s.folder) : [];
     const ls = mine.length ? mine : this.lists;
     const tasks = ls.flatMap((l) => l.tasks);
     const week = Date.now() - 7 * 86400000;
-    const open = tasks.filter((x) => x.state !== "done").length;
-    const done = tasks.filter((x) => x.state === "done" && (x.done_at ?? 0) >= week).length;
+    return { space: mine.length ? s?.name ?? null : null, open: tasks.filter((x) => x.state !== "done").length,
+      done: tasks.filter((x) => x.state === "done" && (x.done_at ?? 0) >= week).length };
+  }
+
+  headLine(t) {
+    const h = this.headInfo();
     return h_flex().min_w(0).font_family(MONO).text_size(TEXT.id).text_color(t.muted).whitespace_nowrap()
-      .when(mine.length > 0, (el) => el.child(div().min_w(0).truncate().child(s?.name ?? "")).child(div().flex_none().child("\u00a0·\u00a0")))
-      .child(div().flex_none().child(`${open} open · ${done} done this week`));
+      .when(Boolean(h.space), (el) => el.child(div().min_w(0).truncate().child(h.space)).child(div().flex_none().child("\u00a0·\u00a0")))
+      .child(div().flex_none().child(`${h.open} open · ${h.done} done this week`));
   }
 
   shelved(p) {

@@ -136,5 +136,9 @@ while shut); Linux and Windows' window buttons.
 The side panel's Tasks / Changes / Files / Artifacts sit over the panel as a full-width segmented (`.rp .seg.fill`):
 the same mod with `props.view: "panels"` in the layout's `panel-switch` block (top of the `panel` column, over the
 `panel-body` stack), each segment with its icon and a count where known (Tasks: needs you and Ready; Changes: files not
-committed). Only the bar's copy does the background work and remembers the panel per space.
+committed). Only the bar's copy does the background work and remembers the panel per space. Over the segmented, the
+same block draws the shown panel's banner (Doop App 02: its name, a line, its control): Tasks and Artifacts leave theirs
+to it (shared "panel.head"), sending their line as shared "panel.tasks" / "panel.artifacts" and taking Artifacts' All
+back as shared "artifacts.all"; Changes says its branch, Files its folder. Over a drilled-in view (a task's thread, an
+artifact) the block shrinks to the segmented alone (`layout.resize`).
 

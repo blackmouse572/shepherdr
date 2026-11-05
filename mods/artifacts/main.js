@@ -168,15 +168,20 @@ export default class Artifacts extends View {
     const shown = q ? this.items.filter((a) => this.found(a, q)) : this.items;
     // Doop App 10's header: the wool banner, the title in the serif, "shepherdr · 4 from 3 tasks" in mono.
     const d = isDark();
+    // The side panel's head (tabs-tasks' "panels" view, shared "panel.head") draws this banner: its line goes to it
+    // as shared "panel.artifacts", and its All comes back as shared "artifacts.all".
+    const head = shared("panel.head") === true;
+    if (head && Boolean(shared("artifacts.all")) !== this.all) { this.all = !this.all; this.loaded = null; cx.spawn(async (cx) => this.load(cx)); }
     const line = listLine(this.all ? "All folders" : this.store?.name ?? "", this.items);
+    if (head && line !== this.headLine) { this.headLine = line; cx.spawn(async () => setShared("panel.artifacts", { line })); }
     return v_flex().id("artifacts").size_full().min_h(0).rounded(RADIUS.card).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(TEXT.body)
-      .child(div().relative().w_full().h(54).flex_none().overflow_hidden().border_b(1).border_color(t.border)
+      .when(!head, (el) => el.child(div().relative().w_full().h(54).flex_none().overflow_hidden().border_b(1).border_color(t.border)
         .when(d, (el) => el.bg(bannerBg("neutral")).child(bannerDots("neutral", RADIUS.card)))
         .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(8).items_center()
           .child(v_flex().flex_1().min_w(0).gap(3)
             .child(div().truncate().when(d, (el) => el.font_family(SERIF).text_size(17)).when(!d, (el) => el.font_semibold()).child("Artifacts"))
             .when(Boolean(line), (el) => el.child(div().truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(line))))
-          .child(this.toggle("art-all", "All", this.all, t, (cx) => { this.all = !this.all; this.loaded = null; cx.spawn(async (cx) => this.load(cx)); }))))
+          .child(this.toggle("art-all", "All", this.all, t, (cx) => { this.all = !this.all; this.loaded = null; cx.spawn(async (cx) => this.load(cx)); })))))
       .when(Boolean(this.store), (el) => el.child(this.searchField(t)))
       // A press in the list gives it the keyboard: F then goes to the search field.
       .child(v_flex().id("art-list").flex_1().min_h(0).overflow_y_scrollbar().p(6).gap(2)

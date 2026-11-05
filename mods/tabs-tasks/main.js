@@ -1,5 +1,5 @@
 import { View, div, svg, image } from "gpui-kit";
-import { h_flex } from "gpui-base";
+import { h_flex, v_flex } from "gpui-base";
 import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec, props, terminals } from "herdr";
 import { spacesWithChats as spaces, sweep } from "./parked.js";
 import { agentIn, isCoordinatorTab, closeTab, watchNewSpaces, newSpace, openCoordinator, renameTab, renameSpace } from "./coordinator.js";
@@ -8,7 +8,7 @@ import { startInbox, count as inboxCount, countsByTab, readyCount, readyByTab, s
 import { serveRemote } from "./secrets.js";
 import { watchService } from "./service.js";
 import { startBridge } from "./bridge.js";
-import { countBadge, H, TEXT, RADIUS, MONO, working, openSettings, raisedLook, well, isDark } from "./ui.js";
+import { countBadge, H, TEXT, RADIUS, MONO, SERIF, HEAD, working, openSettings, raisedLook, well, isDark, banner } from "./ui.js";
 import { statusDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { autoPrefix } from "./core/tasks.js";
@@ -35,12 +35,19 @@ function find(node, id) {
 const PANELS = [["tasks", "Tasks", "mods/tasks/tasks.svg"], ["changes", "Changes", "mods/changes/changes.svg"],
   ["files", "Files", "mods/files/file.svg"], ["artifacts", "Artifacts", "mods/artifacts/artifacts.svg"]];
 const openPanel = (id) => { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); };
+// The panel's head (the layout's "panel-switch" block): the shown panel's banner over the switcher, or the switcher
+// alone over a drilled-in view (a task's thread, an artifact), which has its own header. The block is resized to it.
+const BANNER_H = 60, SWITCH_H = 40, HEAD_H = BANNER_H + SWITCH_H + 8;
 
 export default class Tabs extends View {
   init(_props, cx) {
     // The panel switcher (the layout's "panel-switch" block, props.view "panels") only draws: the bar's copy does
     // the background work and takes the commands.
-    if (props()?.view === "panels") return;
+    if (props()?.view === "panels") {
+      // Tasks and Artifacts leave their banners to this head (shared "panel.tasks" / "panel.artifacts" fill it).
+      setShared("panel.head", true);
+      return;
+    }
     // Agents parked behind a chat whose tab or space closed end, as their pane would have (the
     // Agents list did this; the layout has none now).
     cx.timer.every(5000, () => sweep());
@@ -247,7 +254,7 @@ export default class Tabs extends View {
   // shown one is raised; words on every segment where roomy, else on the shown one only.
   panelSwitch(cx) {
     const t = theme();
-    const { body, enabled } = this.panelState();
+    const { root, body, enabled } = this.panelState();
     const space = spaces().find((s) => s.active);
     const counts = shared("counts.red") !== false, greens = shared("counts.green") !== false;
     const dirty = enabled.includes("changes") ? this.branchOf(space, cx, false)?.state?.dirty ?? 0 : 0;
@@ -266,9 +273,54 @@ export default class Tabs extends View {
         .when(need + ready > 0, (el) => el.child(countBadge(need, ready, on ? t.raised : t.background)))
         .when(n > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id - 0.5).font_medium().text_color(t.dim).child(n > 99 ? "99+" : String(n))));
     };
-    return div().id("panel-switch").size_full().pb(8)
-      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
-      .child(well(h_flex().w_full().h_full().p(2).gap(2), 10).children(PANELS.filter(([id]) => enabled.includes(id)).map(seg)));
+    const shown = body?.active;
+    const inner = (shown === "tasks" && find(root, "tasks")?.active === "tasks-thread") || (shown === "artifacts" && find(root, "artifacts")?.active === "artifacts-view");
+    const px = inner ? SWITCH_H : HEAD_H;
+    if (this.headPx !== px) { this.headPx = px; cx.spawn(async () => run("layout.resize", { id: "panel-switch", px })); }
+    const segs = well(h_flex().w_full().h_full().p(2).gap(2), 10).children(PANELS.filter(([id]) => enabled.includes(id)).map(seg));
+    const box = div().id("panel-switch").size_full().pb(8)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } });
+    if (inner) return box.child(segs);
+    const [title, line, right] = this.headOf(shown, space, t, cx);
+    // Doop App 02 .rp: the neutral wool banner, the panel's name in the serif and its line in mono, its control at
+    // the right; the switcher under it.
+    return box.child(v_flex().size_full().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border)
+      .child(banner("panel-banner", "neutral", BANNER_H).border_b(1).border_color(t.border)
+        .child(h_flex().absolute().inset_0().pl(14).pr(8).gap(6).items_center()
+          .child(v_flex().flex_1().min_w(0).gap(4)
+            .child(div().truncate().when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.small)).when(!isDark(), (el) => el.font_semibold()).child(title))
+            .when(Boolean(line), (el) => el.child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.muted).child(line))))
+          .when(Boolean(right), (el) => el.child(right))))
+      .child(div().w_full().flex_1().min_h(0).p(4).child(segs)));
+  }
+
+  // The head's banner for a panel: [its name, its line, its control at the right or null].
+  headOf(id, space, t, cx) {
+    if (id === "tasks") {
+      const d = shared("panel.tasks") ?? {};
+      const line = typeof d.open === "number" ? `${d.space ? `${d.space} · ` : ""}${d.open} open · ${d.done} done this week` : "";
+      // Group by (mods/tasks-menu): a 28 heading, then 32 rows (ui.js menuRow).
+      const more = h_flex().id("panel-more").size(H.sm).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer().text_color(t.muted)
+        .hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Group by")
+        .on_click(() => openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 200, height: 8 + 28 + (d.multi ? 4 : 2) * 32, props: { menu: "group", machines: Boolean(d.multi) } }))
+        .child(svg("mods/tasks/more.svg").size(14).flex_none());
+      return ["Tasks", line, more];
+    }
+    if (id === "artifacts") {
+      const on = Boolean(shared("artifacts.all"));
+      const all = h_flex().id("panel-art-all").h(24).px(8).flex_none().items_center().rounded(RADIUS.control).cursor_pointer().text_size(TEXT.label).font_medium()
+        .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted)
+        .hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
+        .on_click(() => setShared("artifacts.all", !on))
+        .child("All");
+      return ["Artifacts", shared("panel.artifacts")?.line ?? "", all];
+    }
+    if (id === "changes") {
+      const b = this.branchOf(space, cx, false), n = b?.state?.dirty ?? 0;
+      return ["Changes", b ? `${b.name} · ${n ? `${n} not committed` : "nothing to commit"}` : "", null];
+    }
+    const f = space?.folder ?? "", h = home();
+    return ["Files", !space?.machine && h && (f === h || f.startsWith(`${h}/`)) ? `~${f.slice(h.length)}` : f, null];
   }
 
   render(cx) {
