@@ -57,7 +57,8 @@ export class BranchMenu {
       .font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(div().flex_1().child(label.toUpperCase()))
       .when(n !== null, (el) => el.child(String(n)));
     const sub = [s.linked ? `Worktree of ${s.repo}` : `Checkout of ${s.repo}`, p.machine ?? "This computer"].join(" · ");
-    return v_flex().id("branch-menu").track_focus(this.handle).size_full().min_h(0).bg(dark ? t.chrome : t.popover).text_size(TEXT.body)
+    // Note: a popup is as tall as its content, so the menu sets its own size (props.height from tabs-tasks).
+    return v_flex().id("branch-menu").track_focus(this.handle).w(M.width).h(p.height ?? 420).min_h(0).bg(dark ? t.chrome : t.popover).text_size(TEXT.body)
       .on_key_down((e, cx) => {
         if (e.key === "escape") this.close();
         else if (e.key === "down") this.at = (this.at + 1) % rows.length;

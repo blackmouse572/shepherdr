@@ -158,7 +158,8 @@ export default class Tabs extends View {
         const update = canUpdate(s, b.name);
         openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, at,
           height: branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr)),
-          props: { view: "branch", state: s, branch: b.name, machine: b.machine, files, editor: b.editor, update, pr: b.pr } });
+          props: { view: "branch", state: s, branch: b.name, machine: b.machine, files, editor: b.editor, update, pr: b.pr,
+            height: branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr)) } });
       })
       .child(svg("mods/workspace-chrome-shepherdr/git-branch.svg").size(13).flex_none().text_color(working()))
       .child(div().max_w(roomy ? 240 : 140).truncate().child(b.name))
