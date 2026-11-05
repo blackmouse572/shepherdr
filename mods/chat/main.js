@@ -225,49 +225,22 @@ export default class Chat extends View {
     this.box.on("submit", (e, cx) => { if (!e?.shift) this.enter(cx, Boolean(e?.secondary)); });
     this.box.on("focus", (_e, cx) => { this.focused = true; noteChatArea(this.areaKey(), { focus: true, at: Date.now() }); cx.notify(); });
     this.box.on("blur", (_e, cx) => { this.focused = false; noteChatArea(this.areaKey(), { focus: false, at: Date.now() }); cx.notify(); });
-    this.box.on("change", (_e, cx) => {
-      // A big paste (over 8 KB or 200 lines) becomes a text file to send, not text in the box.
-      const was = this.lastValue ?? "", now = this.box.value();
-      this.lastValue = now;
-      if (now.length - was.length > 8192 || now.split("\n").length - was.split("\n").length > 200) {
-        let a = 0;
-        while (a < was.length && was[a] === now[a]) a++;
-        let b = 0;
-        while (b < was.length - a && was[was.length - 1 - b] === now[now.length - 1 - b]) b++;
-        const pasted = now.slice(a, now.length - b);
-        const rest = was.slice(0, a) + was.slice(was.length - b);
-        this.box.set_value(rest);
-        this.lastValue = rest;
-        cx.spawn(async (cx) => { const f = await attach.textFile(pasted); if (f) { this.addFiles([f]); this.saveSoon(cx); cx.notify(); } });
-        return;
-      }
-      // Copied files pasted as text (file:// lines) become attachments.
-      const v = this.box.value();
-      if (/^file:\/\/\S/m.test(v)) {
-        const found = v.split("\n").filter((l) => /^file:\/\/\S+$/.test(l.trim())).map((l) => decodeURIComponent(l.trim().slice(7)));
-        this.addFiles(attach.paths(found));
-        this.box.set_value(v.split("\n").filter((l) => !/^file:\/\/\S+$/.test(l.trim())).join("\n"));
-      }
-      this.slashSel = 0;
-      // Editing a recalled message makes it a new one: arrows move in it again.
-      if (this.recall >= 0 && this.box.value() !== this.recalled) this.recall = -1;
-      this.sizeBox();
-      this.saveSoon(cx);
-      cx.notify();
-    });
+    this.box.on("change", (_e, cx) => this.changed(cx));
     // A paste with no text: the clipboard's image or copied files become attachments.
     this.box.on("paste_other", (_e, cx) => cx.spawn(async (cx) => {
-      const got = await attach.fromClipboard().catch(() => []);
+      const got = await attach.fromClipboard(window()?.platform).catch(() => []);
       if (got.length) { this.addFiles(got); this.saveSoon(cx); cx.notify(); }
     }));
     this.wasFocused = false;
     // Up/Down/Tab/Escape reach the textarea first, which keeps them. While the "/" list shows
     // (chat_slash) or the box is empty or showing a recalled message (chat_recall), these
     // bindings turn them into this chat's own actions instead (on_action in composer()).
+    // Cmd+V in the box is this chat's paste (paste()): the textarea's own knows only text.
     if (!bound) {
       bound = true;
       const keys = [];
       for (const ctx of ["Input", "TextArea", "Textarea"]) {
+        for (const box of ["chat_slash", "chat_recall", "chat_composer"]) keys.push({ keystroke: "cmd-v", action: "chat_paste", context: `${box} > ${ctx}` });
         keys.push({ keystroke: "up", action: "chat_slash_up", context: `chat_slash > ${ctx}` },
           { keystroke: "down", action: "chat_slash_down", context: `chat_slash > ${ctx}` },
           { keystroke: "tab", action: "chat_slash_take", context: `chat_slash > ${ctx}` },
@@ -3221,6 +3194,65 @@ export default class Chat extends View {
       .catch(() => toast({ title: "Couldn't open the file", body: p, level: "error" }));
   }
 
+  // The box's words changed (typed, pasted). A big paste (over 8 KB or 200 lines) becomes a text
+  // file to send, not text in the box.
+  changed(cx) {
+    const was = this.lastValue ?? "", now = this.box.value();
+    this.lastValue = now;
+    if (now.length - was.length > 8192 || now.split("\n").length - was.split("\n").length > 200) {
+      let a = 0;
+      while (a < was.length && was[a] === now[a]) a++;
+      let b = 0;
+      while (b < was.length - a && was[was.length - 1 - b] === now[now.length - 1 - b]) b++;
+      const pasted = now.slice(a, now.length - b);
+      const rest = was.slice(0, a) + was.slice(was.length - b);
+      this.box.set_value(rest);
+      this.lastValue = rest;
+      cx.spawn(async (cx) => { const f = await attach.textFile(pasted); if (f) { this.addFiles([f]); this.saveSoon(cx); cx.notify(); } });
+      return;
+    }
+    // Copied files pasted as text (file:// lines) become attachments.
+    const v = this.box.value();
+    if (/^file:\/\/\S/m.test(v)) {
+      const found = v.split("\n").filter((l) => /^file:\/\/\S+$/.test(l.trim())).map((l) => decodeURIComponent(l.trim().slice(7)));
+      this.addFiles(attach.paths(found));
+      this.box.set_value(v.split("\n").filter((l) => !/^file:\/\/\S+$/.test(l.trim())).join("\n"));
+    }
+    this.slashSel = 0;
+    // Editing a recalled message makes it a new one: arrows move in it again.
+    if (this.recall >= 0 && this.box.value() !== this.recalled) this.recall = -1;
+    this.sizeBox();
+    this.saveSoon(cx);
+    cx.notify();
+  }
+
+  // Cmd+V in the box: copied files (Finder's) and an image go with the message, the rest pastes as
+  // text. The textarea's own paste knows only text, and a Finder copy is its files' names as text.
+  paste(cx) {
+    const was = this.box.value();
+    const text = cx.read_from_clipboard() ?? "";
+    if (text) { this.box.replace(text); if (this.box.value() !== (this.lastValue ?? "")) this.changed(cx); }
+    // Finder's names, one a line, or no text: worth a look for files. A link or words aren't.
+    const lines = text.split(/\r\n|\r|\n/);
+    if (text && !lines.every((l) => l.trim() && !l.includes("/") && l.length < 256)) return;
+    const after = this.box.value();
+    cx.spawn(async (cx) => {
+      const got = await attach.fromClipboard(window()?.platform).catch(() => []);
+      if (!got.length) return;
+      if (text) {
+        // Text with an image (rich text, say): the text it is.
+        if (got.some((f) => f.temp)) { got.forEach(attach.drop); return; }
+        // The files' names typed in: they go, the files come.
+        if (!lines.every((l) => got.some((f) => f.name === l.trim()))) return;
+        if (this.box.value() === after) { this.box.set_value(was); this.lastValue = was; }
+      }
+      this.addFiles(got);
+      this.sizeBox();
+      this.saveSoon(cx);
+      cx.notify();
+    });
+  }
+
   // A pasted text file in the viewer (mods/chat-image), over this chat pane.
   openText(f) {
     const a = this.paneArea();
@@ -3412,6 +3444,7 @@ export default class Chat extends View {
       .on_action("chat_slash_close", take(() => { this.slashOff = this.box.value().replace(/\n+$/, ""); }))
       .on_action("chat_recall_up", take(() => this.recallStep(1)))
       .on_action("chat_recall_down", take(() => this.recallStep(-1)))
+      .on_action("chat_paste", take((cx) => this.paste(cx)))
       .on_key_down((e, cx) => {
         const k = e.key, m = e.modifiers ?? {};
         // The "/" list: Up and Down choose, Tab or Enter takes one, Escape closes it.

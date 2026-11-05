@@ -10,8 +10,9 @@ const IMAGE = /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i;
 const base = (p) => String(p).split("/").filter(Boolean).pop() ?? p;
 export const isImage = (p) => IMAGE.test(p);
 
-// The clipboard's files or image, here (Wayland). [{ path, name, image, temp }] or [].
-export async function fromClipboard() {
+// The clipboard's files or image, here (macOS, else Wayland). [{ path, name, image, temp }] or [].
+export async function fromClipboard(os = null) {
+  if (os === "macos") return fromMac();
   const types = (await exec("sh", ["-c", "wl-paste --list-types 2>/dev/null"]).catch(() => null))?.stdout?.split("\n") ?? [];
   if (types.includes("text/uri-list")) {
     const r = await exec("sh", ["-c", "wl-paste -n -t text/uri-list 2>/dev/null"]);
@@ -23,6 +24,42 @@ export async function fromClipboard() {
   const name = `pasted-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "")}.${type.split("/")[1].replace("jpeg", "jpg")}`;
   const r = await exec("sh", ["-c", 'mkdir -p "$1" && wl-paste -n -t "$2" > "$1/$3" && [ -s "$1/$3" ] && echo ok', "x", dir, type, name]);
   return r.stdout.trim() === "ok" ? [{ path: `${dir}/${name}`, name, image: true, temp: true }] : [];
+}
+
+// macOS: copied files (Finder's), else an image (PNG, or TIFF made PNG), read with AppKit (JXA). argv: where an
+// image goes, and the pasteboard (the general one by default; tests use their own). Prints "F\t<path>" lines or
+// "I\t<path>".
+export const MAC_CLIPBOARD = `
+ObjC.import("AppKit");
+function run(argv) {
+  const ok = (o) => o !== undefined && o !== null && !(typeof o.isNil === "function" && o.isNil());
+  const pb = argv[1] ? $.NSPasteboard.pasteboardWithName(argv[1]) : $.NSPasteboard.generalPasteboard;
+  const urls = pb.readObjectsForClassesOptions($([$.NSURL]), $({ NSPasteboardURLReadingFileURLsOnlyKey: true }));
+  if (ok(urls) && urls.count > 0) {
+    const out = [];
+    for (let i = 0; i < urls.count; i++) out.push("F\\t" + urls.objectAtIndex(i).path.js);
+    return out.join("\\n");
+  }
+  let data = pb.dataForType("public.png");
+  if (!ok(data)) {
+    const tiff = pb.dataForType("public.tiff");
+    const rep = ok(tiff) ? $.NSBitmapImageRep.imageRepWithData(tiff) : null;
+    data = ok(rep) ? rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({})) : null;
+  }
+  if (ok(data) && data.length > 0 && data.writeToFileAtomically(argv[0], true)) return "I\\t" + argv[0];
+  return "";
+}`;
+
+export async function fromMac(board = "") {
+  const dir = `${appHome()}/data/chat-attach`;
+  const name = `pasted-${new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "")}.png`;
+  await exec("mkdir", ["-p", dir]).catch(() => null);
+  const r = await exec("osascript", ["-l", "JavaScript", "-e", MAC_CLIPBOARD, `${dir}/${name}`, board]).catch(() => null);
+  const lines = (r?.stdout ?? "").split("\n").filter(Boolean);
+  const files = lines.filter((l) => l.startsWith("F\t")).map((l) => l.slice(2));
+  if (files.length) return paths(files);
+  const img = lines.find((l) => l.startsWith("I\t"));
+  return img ? [{ path: img.slice(2), name, image: true, temp: true }] : [];
 }
 
 // Dropped or pasted file paths as attachments.

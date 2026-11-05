@@ -120,3 +120,44 @@ test("a file sent with a message is a line of its own under it, and a press on i
   expect(ran[0]).toContain("/srv/files/Documents/Q3 report.pdf");
   expect(ran[0].join(" ")).toContain('open "$1"');
 });
+
+describe("pasting in the box (Cmd+V)", () => {
+  const box = (v = "") => ({ v, value() { return this.v; }, replace(t) { this.v += t; }, set_value(t) { this.v = t; }, set_rows() {}, focus() {} });
+  const cx = (clip) => {
+    const jobs = [];
+    return { read_from_clipboard: () => clip, notify() {}, timer: { after() {} }, spawn: (fn) => jobs.push(fn(cx(clip))), jobs };
+  };
+  const ready = async (x) => { await Promise.all(x.jobs); };
+
+  test("a link goes in as text, with no look for files", async () => {
+    const c = await chat([said(1, "Hi.")]);
+    c.box = box("see ");
+    ran.length = 0;
+    const k = cx("https://example.com/a?b=1");
+    c.paste(k);
+    await ready(k);
+    expect(c.box.value()).toBe("see https://example.com/a?b=1");
+    expect(ran).toEqual([]);
+  });
+
+  test("Finder's copy (its files' names as text) attaches the files instead", async () => {
+    const c = await chat([said(1, "Hi.")]);
+    c.box = box("");
+    runs = (cmd) => (cmd === "osascript" ? { code: 0, stdout: "F\t/srv/files/Desktop/a.png\nF\t/srv/files/Desktop/b.txt\n" } : { code: 0, stdout: "" });
+    const k = cx("a.png\rb.txt");
+    try { c.paste(k); await ready(k); } finally { runs = () => ({ code: 0, stdout: "", stderr: "" }); }
+    expect(c.box.value()).toBe("");
+    expect(c.files.map((f) => [f.name, f.image])).toEqual([["a.png", true], ["b.txt", false]]);
+  });
+
+  test("an image alone (a screenshot) is attached", async () => {
+    const c = await chat([said(1, "Hi.")]);
+    c.box = box("");
+    runs = (cmd, args) => (cmd === "osascript" ? { code: 0, stdout: `I\t${args[4]}\n` } : { code: 0, stdout: "" });
+    const k = cx(undefined);
+    try { c.paste(k); await ready(k); } finally { runs = () => ({ code: 0, stdout: "", stderr: "" }); }
+    expect(c.files.length).toBe(1);
+    expect(c.files[0]).toMatchObject({ image: true, temp: true });
+    expect(c.files[0].path).toMatch(/\/data\/chat-attach\/pasted-.*\.png$/);
+  });
+});
