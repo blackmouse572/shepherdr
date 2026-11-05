@@ -48,6 +48,10 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
   (words only). `size` `"xs"` 20 (a row's second line only) / `"sm"` 24 / `"lg"` 30, radius 8, 12.5 words. `keys`:
   small keycaps inside, after the words (only for a key the view handles). Always as wide as its words; never
   truncated. Disabled: half opacity, no pointer, no hover.
+- `raisedLook(el, radius)`: the secondary button's raised look on something that isn't a button (outline, lit top and
+  shaded bottom hairlines, small shadow, its fill; light: bordered on `raised`), for the design's slate gradient. On: the
+  shown tab, the panel switcher's picked segment. Call it before adding children.
+- `well(el, radius)`: a sunken track (the design's `.seg`): the field's dark well with the quiet border; light, `raised`.
 - `link(id, label, onClick)`: a quiet text link (card headers, "Show all").
 - `toggleSwitch(id, on, onToggle(next), { disabled })`: the on/off switch, 34 × 20 (Doop `.tg`): on, the accent
   track with a dark ring and a light knob; off, a sunken well with the strong border's ring and a gray knob.
@@ -107,7 +111,7 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
 - Tooltips are short or absent: at most a few words naming the thing or its shortcut ("Autopilot", "Stop · Esc"),
   never sentences that explain how it works. None where the name already shows, nor on a control that's off.
 
-Already on these parts: the count badges (`tabs-tasks`, `spaces-chat`), the task dots
+Already on these parts: the count badges (`tabs-tasks`' panel toggle and switcher, `spaces-chat`), the task dots
 (`dot.js`), the dialog footer and header (New space, Rename, Add machine, Settings, confirm, prompt), the switch.
 Everything else moves area by area. The theme has no key for the design's accent-shade (#EA9C27), so it has none.
 
@@ -119,3 +123,18 @@ The status bar's usage pill and popover and Settings > Accounts share these, not
 - `meterBar(id, pct, { width, height, switchAt })`: a fixed-width meter, green, amber within 40 below the switch point,
   red past it, with a tick at the switch point. Its percent and reset sit in fixed mono columns beside it, never cut.
 - `activeBadge()`: the filled amber ACTIVE badge on the account new work starts on (that card also gets an amber edge).
+
+## Tab bar and panel switcher (mods/tabs-tasks)
+
+Doop App 02's `.tabs`: a 40 tall bar (layout block `tabs`). The branch chip (App 02b) first, then the tabs as 28 tall
+pills, radius 8: icon (the Assistant's compass, an agent's or program's logo, else a terminal), a task's id in `MONO`,
+the name (a task's title unless someone named the tab), `dot.js` `statusDot` (needs you, working or a task's pie, ready,
+done; a count past one), ×. The shown tab is `raisedLook`, the others plain. "+" after the tabs; at the right "N settled"
+(eye-off) when tabs are settled (`tab.settle`), which shows them dimmed; the side panel's toggle (Tasks' counts on it
+while shut); Linux and Windows' window buttons.
+
+The side panel's Tasks / Changes / Files / Artifacts sit over the panel as a full-width segmented (`.rp .seg.fill`):
+the same mod with `props.view: "panels"` in the layout's `panel-switch` block (top of the `panel` column, over the
+`panel-body` stack), each segment with its icon and a count where known (Tasks: needs you and Ready; Changes: files not
+committed). Only the bar's copy does the background work and remembers the panel per space.
+

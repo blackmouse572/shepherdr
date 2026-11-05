@@ -16,7 +16,8 @@ side keeps its own copy.
 
 **The web form.** Desktop and tablet: the tab bar sits over the middle column (A:522 Middle), as the window's sits over
 its panes: the shown space's tabs, its +, and the side panels' buttons; the side panel's own header then just names it
-(A:375). Phone: no room for a bar, so the header's ⋯ holds the space's tabs, Chat or Terminal, the shown tab's menu and
+(A:375). The window has moved those buttons into the side panel (a segmented over it, Doop App 02) and keeps one panel
+toggle in the bar. Phone: no room for a bar, so the header's ⋯ holds the space's tabs, Chat or Terminal, the shown tab's menu and
 the + menu's items (◇ phone navigation); the phone's bottom bar (Chat, Tasks, Artifacts) is its side panels.
 
 State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
@@ -28,15 +29,16 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Where | TB:191 a bar over the panes, right of the sidebar | A:522 over the middle column; C:388 TabBar | ✓ |
 | Tabs, Assistant's first | TB:127 the coordinator tab pinned first | C:263 barTabs: `assistantTab` then `tabs` (service: the doc's tabs) | ✓ |
 | Tab name | TB:146 `tabName(name, program)`: given name, else (Herdr's "tb3") the program, else "Terminal" | service `tabName` (core) | ✓ |
-| Program icon | TB:157 the program table's icon | C:288 ModelIcon for an agent, TermIcon for a shell, none on an Assistant still waiting for its first message | ◇ the web's icon set (2.1's), no brand logos |
+| Program icon | TB the Assistant's compass, else the program table's icon (not a shell's), else a terminal | C:288 ModelIcon for an agent, TermIcon for a shell, none on an Assistant still waiting for its first message | ◇ the web's icon set (2.1's), no brand logos |
 | Name truncates at 170 px | TB:158 | C:288 `max-w-[170px] truncate` | ✓ |
 | " Z" on a zoomed tab | TB:158 | none | ◇ one pane per tab on the web: Herdr's own pane layout (splits, zoom) isn't drawn, so nothing zooms |
-| Spinner while working | TB:159 | C:89 Spin, C:288 | ✓ |
-| Red / green counts | TB:160 countBadge(need, ready): items in that tab, Tasks' Ready | C:273 countsOf: the Assistant's tab its space's needs and Ready tasks, another tab its own waiting agent; AttentionBadge | ✓ |
+| Status while working | TB dot.js `statusDot`: the working arc, a task's pie | C:89 Spin, C:288 | ✓ |
+| Task id on a task's tab | TB the task's ref in mono, its title unless the tab is named (task lists, every 20 s) | none | ◇ 2.1's bar on the web (the window follows Doop App 02): the web's bar shows the tab's name only |
+| Red / green counts | TB the needs-you / ready dot, the count beside it past one: items in that tab, Tasks' Ready | C:273 countsOf: the Assistant's tab its space's needs and Ready tasks, another tab its own waiting agent; AttentionBadge | ◇ 2.1's bar on the web (the window follows Doop App 02): the web keeps the badge |
 | Dot when no counts | TB:161 blocked / done | C:288 Dot need / done | ✓ |
 | Red / Green counts off | TB:137 shared counts.red / counts.green | C:288 `snap.look.red/green` | ✓ |
-| × on the shown tab | TB:162 closeTab | C:288 × "Close tab" → C:540 closeTab | ✓ |
-| Shown tab look | TB:146 raised, bordered | C:288 2.1's picked segment | ✓ |
+| × on a tab | TB every tab's, the Assistant's only while shown; closeTab | C:288 × "Close tab" on the shown tab → C:540 closeTab | ◇ 2.1's bar on the web (the window follows Doop App 02): the web's only on the shown tab |
+| Shown tab look | TB 28 tall pill, ui.js `raisedLook` (the design's slate) | C:288 2.1's picked segment | ✓ |
 | Click shows it | TB:155 tab.select | C:278 showTab: the Assistant's chat (as it was, chat or terminal), another's terminal | ✓ |
 | Double-click renames | TB:150 renameTab | C:288 onDoubleClick → TabRename | ✓ |
 | F2 renames | keys.json F2 → rename-tab (TB:58) | C:288 F2 on the focused tab | ✓ |
@@ -44,18 +46,19 @@ State: ✓ matches, ◇ web-only form (why), ✗ still differs (why).
 | Touch: tab menu | (right-click only) | C:288 ⋯ on the shown tab, coarse pointers only | ◇ touch has no right-click |
 | Drag a tab onto another | TB:150-155 tab.move | C:288 pointer down on one, up on another → `tab-move` | ✓ (mouse; a finger scrolls the bar) |
 | Wheel goes to the next tab | TB:196 | C:388 wheel | ✓ |
-| Settings › Window › Show tabs off | TB:143 the bar keeps +, panels | C:388 `look.tabs` | ✓ |
-| + | TB:198 a 24 px "+" | C:231 PlusButton | ✓ |
-| Files, Changes buttons | TB:199-200 Herdr's Files and Changes panels, as shared "workspace.panels" has them (unset: both) | C:394 PanelButton files / changes (FolderIcon, DiffIcon), `snap.panels` (service: the same shared key) | ✓ |
+| Settings › Window › Show tabs off | TB the bar keeps +, the panel toggle | C:388 `look.tabs` | ✓ |
+| + | TB a 28 px + right after the tabs | C:231 PlusButton | ✓ |
+| N settled | TB eye-off "N settled" at the right when tabs are settled (`tab.settle`); a click shows them dimmed, a click on one brings it back | none | ◇ 2.1's bar on the web (the window follows Doop App 02): the web lists settled tabs as others |
+| Files, Changes buttons | TB panelSwitch: segments over the side panel (layout block `panel-switch`), Herdr's Files and Changes panels as shared "workspace.panels" has them (unset: both); Changes counts files not committed | C:394 PanelButton files / changes (FolderIcon, DiffIcon), `snap.panels` (service: the same shared key) | ✓ |
 | Files panel | Herdr's mods/files: the focused pane's folder, one folder at a time (.git left out, 500 per folder, 5,000 in all), each changed file's letter, a file's preview in place of the list (←), "Loading files…", "No files", "No folder" | A:379 SideList → C:563 SpacePanel → the task view's FilesView (web/plugins/worktree) asked of the space's folder (`/api/worktree?space=`, service/main.ts; errors in Herdr's words) | ✓ (the space's folder, where Herdr's follows the focused pane's: the same folder unless a terminal `cd`'d elsewhere) |
 | Changes panel | Herdr's mods/changes: uncommitted changes against HEAD in the folder's repo, "N files", +added −removed, the first file's diff under the list, "No uncommitted changes", "Not a git repository", "Select a file to view its changes", "Showing the first 1,000 changed files" | C:563 the task view's DiffView on the space's folder (core/worktree.js `against`: no base, so HEAD) | ✓ (its bar also says "Uncommitted", the task view's line) |
 | Changes' commit box | Herdr's mods/changes: "Commit message", Commit / "Committing…" (git add -A, commit), "Commit failed: …" | C:575 Commit → `space-commit` (service/actions.ts) | ✓ |
 | Files, Changes on a phone | (the window has no phone) | none: the phone's bottom bar holds Chat, Tasks and Artifacts | ◇ phone navigation: no room for two more tabs in its bar |
 | App menu | MT:151 (no tab under the pointer) `appMenu`: New space, Keybinds, Theme: Graphite / Ink / Moss / Atom One Dark | C:539 right-click on the bar's empty part: New space (openAddSpace), Keybinds (openKeybinds, the keyboard plugin's dialog) | ✓ (themes ◇: Herdr's own look; the web follows the device's light or dark) |
-| Tasks button with counts | TB:201 icon, "Tasks", red (everything that needs you) and green (every Ready task) | C:348 PanelButton, C:380 TasksCount | ✓ |
-| Artifacts button (add-on on) | TB:202 | C:348, when the artifacts plugin is on | ✓ |
-| Words only where roomy (≥ 1100 px), the open one keeps its word | TB:177-188 | C:388 roomy = bar to window edge ≥ 1100; C:348 | ✓ |
-| Open one pressed again hides the panel | TB:183 layout.hide | C:348 `sideShut`; A:720 the right column goes (Frame without it) | ✓ |
+| Tasks button with counts | TB panelSwitch's Tasks segment: icon, "Tasks", red (everything that needs you) and green (every Ready task); the bar's panel toggle carries them while the panel is shut | C:348 PanelButton, C:380 TasksCount | ◇ 2.1's bar on the web (the window follows Doop App 02): the web keeps its buttons in the bar |
+| Artifacts button (add-on on) | TB panelSwitch's Artifacts segment | C:348, when the artifacts plugin is on | ✓ |
+| Words only where roomy, the open one keeps its word | TB panelSwitch: every segment's word from 400 px of panel, else the shown one's | C:388 roomy = bar to window edge ≥ 1100; C:348 | ✓ |
+| Hiding the panel | TB the bar's panel toggle (layout.hide / show; shut with no panel picked: Tasks) | C:348 `sideShut`; A:720 the right column goes (Frame without it) | ✓ |
 | Panel remembered per space | TB:92 syncPanel | C:388 `shepherdr.panels` per space, this device | ✓ |
 | Opening a task shows the panel | inbox.js showInbox | A:720 a task opened while shut opens Tasks | ✓ |
 | Minimize, maximize, close | TB:203 | none | ◇ no window chrome on the web |

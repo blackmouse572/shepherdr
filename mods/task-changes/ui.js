@@ -210,6 +210,25 @@ export function button(id, label, { kind = "secondary", size = "sm", icon = null
       .children(keys.map((k) => kbd(k, solid ? ink : null)))));
 }
 
+// The secondary button's raised look on something that isn't a button (the shown tab, a segmented's picked
+// segment; the design's slate gradient, flat here): dark, the outline, lit top and shaded bottom hairlines, a small
+// shadow and its fill; light, bordered on the raised surface. Call it before adding `el`'s children.
+export function raisedLook(el, radius) {
+  const t = theme();
+  if (!dark()) return el.border_1().border_color(t.border).bg(t.raised);
+  const R = RAISED.secondary;
+  const edge = (top, color) => div().absolute().left(radius).right(radius).h(1).bg(color)
+    .when(top, (e) => e.top(0)).when(!top, (e) => e.bottom(0));
+  return el.relative().overflow_hidden().border_1().border_color(R.border).shadow_sm().bg(R.bg)
+    .child(edge(true, R.lit)).child(edge(false, R.shade));
+}
+
+// A sunken well (the design's .seg track): dark, the field's well with the quiet border; light, the raised surface.
+export function well(el, radius) {
+  const t = theme();
+  return el.rounded(radius).border_1().border_color(dark() ? t.border : t.raised).bg(dark() ? WELL : t.raised);
+}
+
 // A small keycap (the design's .kbd, 18 tall, mono 10): a dialog footer's Esc, a key inside a button. `on`: the
 // text colour of the solid button it sits in (its cap is then a faint tint of it, no border).
 function kbd(label, on = null) {
