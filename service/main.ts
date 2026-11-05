@@ -151,6 +151,8 @@ artifacts.on(() => model.rebuild());
 artifacts.start();
 const asks = new Asks();
 compat.asks = asks;
+// a terminal's space (core/notify.js), where its "Always in this space" rule is kept
+asks.spaceOf = (addr) => { const id = (NF as any).spaceOfTerminal(hub.terminals.get(addr)); return id ? { id } : null; };
 asks.on(() => { model.rebuild(); live.chats?.refreshAll(); });
 asks.start();
 // start screens and lost sessions of the agents whose chats pages have open, and of an open Assistant chat's workers

@@ -6,8 +6,11 @@ import { watch, readdirSync, readFileSync, writeFileSync, renameSync, existsSync
 import { join } from "node:path";
 import { DATA, HOME } from "./paths.ts";
 import * as A from "../core/asks.js";
+import * as R from "../core/allow.js";
+import { readSettings, writeSettings } from "./settings.ts";
 
 const { words, allow, deny, answers, howAnswered, release, chatAbout } = A as any;
+const { ruleOf, withRule } = R as any;
 const DIR = join(process.env.HERDR_APP_HOME || join(HOME, ".config", "herdr-app"), "data", "chat-asks");
 const ID = /^[\w.-]+$/;
 
@@ -72,6 +75,18 @@ export class Asks {
     if (changed) for (const fn of this.listeners) fn();
   }
 
+  /** An agent's space, for "Always in this space" (set by main): its rule is kept there. */
+  spaceOf: (terminal: string) => { id: string; name?: string } | null = () => null;
+
+  /** Keeps a space's rule in ~/.herdr/shepherdr.json (a test swaps it for its own). */
+  keep = (sp: { id: string; name?: string }, rule: any) => writeSettings(withRule(readSettings(), sp.id, rule, { name: sp.name }));
+
+  /** "Always in this space" (core/allow.js): only a permission shown whole whose agent has a space. */
+  canAlways(ask: Ask) {
+    const w = ask.words;
+    return w?.kind === "permission" && !w.unread && !w.cut && !!ruleOf(ask.req) && !!this.spaceOf(ask.terminal);
+  }
+
   of(terminal: string) { return [...this.open.values()].filter((a) => a.terminal === terminal); }
 
   /** Answers it as the window's card would: a permission or plan allowed or declined, a question's pick. */
@@ -97,6 +112,12 @@ export class Asks {
     } else if (a.choice === 0) {
       // never allowed unseen: a request too long for the card is answered where it shows whole, the terminal
       if (w.cut) throw new Error("Too long to show here in full: answer it in the terminal.");
+      out = allow();
+    } else if (a.choice === 2) {
+      // "Always in this space": the rule first (the window's engine answers the next ask like it), then this one
+      const sp = this.canAlways(ask) ? this.spaceOf(ask.terminal) : null;
+      if (!sp) throw new Error("This ask can't have a rule.");
+      this.keep(sp, ruleOf(ask.req));
       out = allow();
     }
     else out = deny(a.note?.trim() || (w.kind === "plan" ? "The person didn't approve this plan yet. Ask them what to change." : undefined));

@@ -12,6 +12,7 @@ import * as CV from "../core/chat-view.js";
 const { summary, names } = CL as any;
 const { senderName, briefLabel, newsTimeline, resolveArtifacts, unsigned } = CV as any;
 import { mentionedIn } from "../core/send.js";
+import { ALWAYS } from "../core/allow.js";
 import * as SCc from "../core/screens.js";
 const { SCREEN } = SCc as any;
 import { readFileSync } from "node:fs";
@@ -202,7 +203,7 @@ export class Compat {
   artifacts: { say(id: string, v: number, text: string, spot?: string): Promise<unknown> } | null = null;
 
   /** Open hook asks (service/asks.ts), set by main: they show as cards in their chat and in Needs you. */
-  asks: { of(terminal: string): any[]; open: Map<string, any> } | null = null;
+  asks: { of(terminal: string): any[]; open: Map<string, any>; canAlways?(a: any): boolean } | null = null;
 
   /** A hook ask as 2.1's question card (core/asks.js words: a permission, a plan, or a question). */
   question(a: any, key: string): Question {
@@ -224,7 +225,9 @@ export class Compat {
     const detail = w.detail ? `${fence}text\n${w.detail}\n${fence}${w.cut ? cut : ""}` : undefined;
     return w.kind === "plan"
       ? { id: a.id, title: w.title, kind: "Plan", to: key, plan: `${w.detail ?? ""}${w.cut ? cut : ""}`, choices: [{ label: "Approve" }, { label: "Keep planning" }], noteRequiredFor: 1 }
-      : { id: a.id, title: w.title, kind: "Question", to: key, ...(detail ? { plan: detail } : {}), choices: [{ label: "Allow" }, { label: "Deny" }] };
+      : { id: a.id, title: w.title, kind: "Question", to: key, ...(detail ? { plan: detail } : {}),
+        // "Always in this space" last: a card drawn before it was offered still means Deny by 1 (service/asks.ts)
+        choices: [{ label: "Allow" }, { label: "Deny" }, ...(this.asks?.canAlways?.(a) ? [{ label: ALWAYS }] : [])] };
   }
   last: Snapshot | null = null;
   /** chat key -> the files its messages show (a chat's images): the only ones /api/file serves for it */

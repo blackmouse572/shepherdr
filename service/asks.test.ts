@@ -56,3 +56,24 @@ test("several questions: one card with a part for each, answered all at once in 
   const out = JSON.parse(readFileSync(join(dir, "ans", "t9.100.1.json"), "utf8")).hookSpecificOutput.decision;
   expect(out.updatedInput.answers).toEqual({ "Which color?": "Red", "Which sizes?": "S, M" });
 });
+
+test("Always in this space keeps the ask's rule for its agent's space, then allows it; Deny stays choice 1", () => {
+  put("t21.100.1", { tool_name: "Bash", tool_input: { command: "npm test" }, cwd: "/x" });
+  put("t22.100.1", { tool_name: "Bash", tool_input: { command: "npm test" }, cwd: "/x" });
+  const asks = new Asks();
+  asks.spaceOf = (t) => (t === "t21" ? { id: "sp1" } : null);
+  // never ~/.herdr/shepherdr.json
+  const kept: any[] = [];
+  asks.keep = (sp, rule) => { kept.push({ space: sp.id, rule }); };
+  asks.start();
+  const c = new Compat();
+  c.asks = asks;
+  expect(c.question(asks.of("t21")[0], "p:sp1").choices.map((x: any) => x.label)).toEqual(["Allow", "Deny", "Always in this space"]);
+  // no space: no rule to keep, and no way to ask for one
+  expect(c.question(asks.of("t22")[0], "x").choices.map((x: any) => x.label)).toEqual(["Allow", "Deny"]);
+  expect(() => asks.answer("t22.100.1", { choice: 2 })).toThrow();
+  asks.answer("t21.100.1", { choice: 2 });
+  expect(JSON.parse(readFileSync(join(dir, "ans", "t21.100.1.json"), "utf8")).hookSpecificOutput.decision.behavior).toBe("allow");
+  expect(kept).toHaveLength(1);
+  expect(kept[0]).toMatchObject({ space: "sp1", rule: { tool: "Bash" } });
+});
