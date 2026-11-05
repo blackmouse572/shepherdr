@@ -364,6 +364,7 @@ def main():
     c.add_argument("account", nargs="?", help="prepare: the account's name (its folder is ~/.claude-<name>); set: the picks as JSON")
     c.add_argument("--from", dest="frm", help="move: the account its tasks leave")
     c.add_argument("--to", help="move: the account they go to (default: default)")
+    c.add_argument("--usage", action="store_true", help="list: each account's plan limits too (slow)")
     c.add_argument("--json", action="store_true")
     c.set_defaults(fn=cmd_accounts)
     c = sub.add_parser("_allow")  # Codex's PermissionRequest hook (own_argv)

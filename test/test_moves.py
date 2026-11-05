@@ -139,6 +139,23 @@ class Moves(unittest.TestCase):
             with self.assertRaises(self.acc.Fail):
                 self.acc.set_picks(bad)
 
+    def test_list_usage_reads_each_accounts_limits(self):
+        import herdr_task.machine as machine
+        asked = []
+
+        def claude(config=None):
+            asked.append(config)
+            if config:
+                raise RuntimeError("no")
+            return {"state": "ok", "plan": "max", "windows": [{"name": "5-hour", "used": 41}]}
+        with mock.patch.object(machine, "claude", claude):
+            d = self.acc.listing(usage=True)
+        self.assertEqual(set(asked), {None, os.path.join(self.home, ".claude-work")})
+        by = {a["id"]: a["limits"] for a in d["accounts"]}
+        self.assertEqual(by["default"]["state"], "ok")
+        self.assertEqual(by["work"], {"state": "unknown"})
+        self.assertNotIn("limits", self.acc.listing()["accounts"][0])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -233,3 +233,25 @@ test("another machine's accounts go through herdr-task there (a fake exec)", asy
   const old = async () => ({ code: 2, stdout: "", stderr: "usage: herdr-task ...\ninvalid choice: 'list'" });
   await expect(readRemote(old, "build-box")).rejects.toThrow("invalid choice");
 });
+
+test("another machine's meters: --usage reads each account's limits; a later plain read keeps them", async () => {
+  const { readRemote, readRemoteUsage, keepMeters } = await import("./usage.js");
+  const win = [{ name: "5-hour", used: 41, resets_at: 1767225600000 }, { name: "Weekly", used: 12 }];
+  const listed = (usage) => ({ accounts: [
+    { id: "default", name: "Default", folder: "~/.claude", signed_in: true, tasks: [], ...(usage ? { limits: { state: "ok", plan: "max", windows: win } } : {}) },
+    { id: "work", name: "Work", folder: "~/.claude-work", signed_in: true, tasks: [], ...(usage ? { limits: { state: "unknown", why: "Couldn't run it" } } : {}) }],
+    active: "default", order: [], skipped: [] });
+  const args = [];
+  const exec = async (_c, a) => { args.push(a); return { code: 0, stdout: JSON.stringify(listed(a.includes("--usage"))), stderr: "" }; };
+  const u = await readRemoteUsage(exec, "build-box");
+  expect(args[0].slice(3)).toEqual(["accounts", "list", "--usage", "--json"]);
+  expect(u.accounts[0]).toMatchObject({ plan: "Max", read: true, error: null });
+  expect(u.accounts[0].meters.map((m) => [m.id, m.pct])).toEqual([["session", 41], ["weekly", 12]]);
+  expect(u.accounts[1]).toMatchObject({ meters: [], error: "error", why: "Couldn't run it" });
+  const plain = await readRemote(exec, "build-box");
+  expect(plain.accounts[0]).toMatchObject({ read: false, meters: [] });
+  const kept = keepMeters(u, plain);
+  expect(kept.accounts[0]).toMatchObject({ plan: "Max", read: true });
+  expect(kept.accounts[0].meters).toHaveLength(2);
+  expect(keepMeters(null, plain)).toBe(plain);
+});

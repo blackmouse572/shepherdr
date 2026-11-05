@@ -3,7 +3,7 @@
 //   header     the page title, when usage was read, Refresh, and This Mac | <machine> ... when there are machines:
 //              another machine's own accounts and picks, read and set by running herdr-task there (`accounts list |
 //              set | move`, herdr's exec on that machine): Set as default, Skip, Move up / down, and Move to Default on
-//              a signed-out account with tasks. Its usage meters aren't read from here. When herdr-task there can't
+//              a signed-out account with tasks. Its meters come after (`accounts list --usage`, slow). When herdr-task there can't
 //              answer, its ~/.claude and Codex show read-only, as Settings > Machines reads them.
 //   Claude     a card: its header with Add account (the name field opens under it), then one compact row per account
 //              in the switch order: its grip, initial avatar, name and folder (mono), plan, a small meter with the
@@ -24,7 +24,7 @@ import { usage, accounts, prefs, setPrefs, loadPrefs, refresh, signIn, addAccoun
   setDefault, setSkipped, openFolder, codexSignIn, codexSignOut, logo, meterBar, avatar, MONO, PREFS } from "./usage-data.js";
 import { WORDS, pctText, resetsLine, activeOf, updatedLine, errorLine, hiddenOf, addProblem, accountId, ordered, moved,
   dropped, dropEdge, staleLine, badgeOf, usageShort, session, weekly, metersOf, clampSwitch, skipped as isSkipped,
-  readRemote, setRemote, moveRemote, pausedLine } from "./core/usage.js";
+  readRemote, readRemoteUsage, keepMeters, setRemote, moveRemote, pausedLine } from "./core/usage.js";
 import { statsOf, pollNow } from "./machines.js";
 import { SECTIONS, cliRoles, rolesLine } from "./core/settings.js";
 
@@ -289,12 +289,26 @@ export function remoteLoad(s, m, cx, force = false) {
   if (r.busy || (!force && Date.now() - r.at < 30000)) return r;
   r.busy = true;
   cx.spawn(async (cx) => {
-    try { r.data = await readRemote(exec, m); r.err = ""; } catch (e) { r.err = plainError(e) || "no answer"; }
+    try { r.data = keepMeters(r.data, await readRemote(exec, m)); r.err = ""; } catch (e) { r.err = plainError(e) || "no answer"; }
     r.at = Date.now();
     r.busy = false;
     cx.notify();
+    if (!r.err) remoteUsage(r, m, cx, force);
   });
   return r;
+}
+
+// Its meters, after the list (slow: Claude Code's /usage per account there), at most every 5 minutes. A herdr-task
+// there from before --usage answers nothing: the rows keep their lines.
+function remoteUsage(r, m, cx, force) {
+  if (r.reading || (!force && Date.now() - (r.usageAt ?? 0) < 5 * 60000)) return;
+  r.reading = true;
+  cx.spawn(async (cx) => {
+    try { r.data = await readRemoteUsage(exec, m); } catch {}
+    r.usageAt = Date.now();
+    r.reading = false;
+    cx.notify();
+  });
 }
 
 // A change made there; what it holds after replaces the view.
@@ -303,7 +317,7 @@ function remoteSet(s, m, change, cx) {
   if (!r || r.busy) return;
   r.busy = true;
   cx.spawn(async (cx) => {
-    try { r.data = await setRemote(exec, m, change); r.err = ""; } catch (e) { failed(`Couldn't change ${m}'s accounts`)(e); }
+    try { r.data = keepMeters(r.data, await setRemote(exec, m, change)); r.err = ""; } catch (e) { failed(`Couldn't change ${m}'s accounts`)(e); }
     r.busy = false;
     cx.notify();
   });
@@ -363,7 +377,10 @@ function remoteRow(t, s, m, a, i, list, pr) {
     .child(v_flex().flex_1().min_w(0).gap(2)
       .child(div().min_w(0).truncate().text_size(TEXT.body).font_medium().text_color(dim ? t.muted : t.foreground).child(a.name))
       .child(div().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(a.folder)))
-    .child(div().w(COL.usage + COL.plan).flex_none().truncate().text_size(TEXT.label).text_color(out ? need() : t.dim).tooltip(line).child(line))
+    .when(!out && a.read, (el) => el
+      .child(div().w(COL.plan).flex_none().truncate().text_size(TEXT.body).text_color(dim ? t.dim : t.muted).child(a.plan ?? ""))
+      .child(usageCell(t, a, pr)))
+    .when(out || !a.read, (el) => el.child(div().w(COL.usage + COL.plan).flex_none().truncate().text_size(TEXT.label).text_color(out ? need() : t.dim).tooltip(line).child(line)))
     .when(out && a.id !== "default" && a.tasks.length > 0, (el) => el.child(button(`acc-rmove-${a.id}`, WORDS.moveTo("Default"),
       { kind: "plain", disabled: Boolean(s.remote?.[m]?.busy), onClick: (_e, cx) => remoteMove(s, m, a, cx) })))
     .child(badge(t, badgeOf(a, list, pr)))

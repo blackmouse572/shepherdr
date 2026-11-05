@@ -162,14 +162,38 @@ def tasks_on():
     return out
 
 
-def listing():
-    """This machine's accounts and picks, for another machine's Settings > Accounts (`accounts list --json`)."""
+def limits_of(accounts):
+    """Each account's plan limits, side by side, as herdr-usage reads them (machine.py's sealed /usage)."""
+    import threading
+    from . import machine
+    got = {}
+
+    def one(a):
+        try:
+            got[a] = machine.claude(None if a == DEFAULT else folder(a))
+        except Exception:
+            got[a] = {"state": "unknown"}
+    jobs = [threading.Thread(target=one, args=(a,)) for a in accounts]
+    for j in jobs:
+        j.start()
+    for j in jobs:
+        j.join()
+    return got
+
+
+def listing(usage=False):
+    """This machine's accounts and picks, for another machine's Settings > Accounts (`accounts list --json`).
+    `usage`: each account's plan limits too ("limits", slow: Claude Code's /usage per account)."""
     d, rule = picks(), switching()
     names = {k: v for k, v in (d.get("names") or {}).items() if isinstance(v, str)} if isinstance(d.get("names"), dict) else {}
     hidden = [x for x in d.get("hidden") or [] if isinstance(x, str)] if isinstance(d.get("hidden"), list) else []
     on = tasks_on()
     rows = [{"id": a, "name": names.get(a) or ("Default" if a == DEFAULT else a), "folder": folder(a).replace(HOME, "~", 1),
              "account": signed_in(a), "signed_in": bool(signed_in(a)), "tasks": on.get(a, [])} for a in ids()]
+    if usage:
+        got = limits_of([r["id"] for r in rows])
+        for r in rows:
+            r["limits"] = got.get(r["id"])
     return {"accounts": rows, "active": active(), "names": names, "hidden": hidden,
             "undo": d["undo"] if isinstance(d.get("undo"), bool) else True, **rule}
 
@@ -217,7 +241,7 @@ def cmd_accounts(args):
         say(args, {"account": args.account, "folder": path, "made": made, "hooks": hooks},
             f"{path} {'made' if made else 'is there'}" + (f"; hooks added: {', '.join(hooks)}." if hooks else "."))
     elif args.action == "list":
-        d = listing()
+        d = listing(getattr(args, "usage", False))
         say(args, d, "\n".join(f"{'*' if a['id'] == d['active'] else ' '} {a['name']} ({a['folder']})"
                                f"{'' if a['signed_in'] else ' signed out'}" for a in d["accounts"]))
     elif args.action == "set":

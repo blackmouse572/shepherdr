@@ -75,7 +75,7 @@ export const WORDS = {
   signOut: "Sign out",
   signOutAbout: "Codex stops working on this computer until you sign in again.",
   codexAbout: "Codex has one sign-in, so it can't switch accounts: it pauses at its limit.",
-  remoteNote: (m) => `${m}'s own accounts, read with herdr-task there. Changes here are made on ${m}; its usage meters show on ${m} itself.`,
+  remoteNote: (m) => `${m}'s own accounts, read with herdr-task there. Changes here are made on ${m}; its meters are read there too, a moment after.`,
   remoteNone: (m) => `Nothing read from ${m} yet. Its plan usage shows here once Settings > Machines has read it.`,
   remoteReading: (m) => `Reading ${m}'s accounts…`,
   remoteFailed: (m, why) => `Couldn't read ${m}'s accounts${why ? `: ${why}` : ""}. Its ~/.claude and Codex, as Settings > Machines reads them:`,
@@ -431,15 +431,33 @@ export async function remoteTask(exec, machine, argv) {
   }
   return out;
 }
-// What `accounts list` printed, as the local view's accounts and prefs: a signed-out account carries its tasks.
+// What `accounts list` printed, as the local view's accounts and prefs: a signed-out account carries its tasks. With
+// --usage each has its plan limits (`limits`, machine.py's, as herdr-usage reads them): its meters, `read` true.
 export function remoteView(d) {
-  const list = (Array.isArray(d?.accounts) ? d.accounts : []).filter((a) => typeof a?.id === "string").map((a) => ({
-    id: a.id, name: String(a.name ?? a.id), folder: String(a.folder ?? ""), plan: null, meters: [], account: a.account ?? null,
-    error: a.signed_in ? null : "signed-out", tasks: (Array.isArray(a.tasks) ? a.tasks : []).filter((t) => typeof t?.ref === "string"),
-  }));
+  const list = (Array.isArray(d?.accounts) ? d.accounts : []).filter((a) => typeof a?.id === "string").map((a) => {
+    const lim = a.limits && typeof a.limits === "object" ? a.limits : null, ok = lim?.state === "ok";
+    const error = !a.signed_in || lim?.state === "signed-out" ? "signed-out" : lim && !ok ? (lim.state === "no-plan" ? "no-plan" : "error") : null;
+    return {
+      id: a.id, name: String(a.name ?? a.id), folder: String(a.folder ?? ""), account: a.account ?? null,
+      plan: lim?.plan ? String(lim.plan)[0].toUpperCase() + String(lim.plan).slice(1) : null, meters: ok ? metersOf(lim.windows) : [], read: Boolean(lim),
+      error, ...(error === "error" && lim?.why ? { why: String(lim.why).slice(0, 120) } : {}),
+      tasks: (Array.isArray(a.tasks) ? a.tasks : []).filter((t) => typeof t?.ref === "string"),
+    };
+  });
   return { accounts: list, prefs: normPrefs(d) };
 }
+// A read without --usage (a change made there) keeps what the last --usage read gave.
+export function keepMeters(prev, next) {
+  if (!prev?.accounts || !next?.accounts) return next;
+  const was = new Map(prev.accounts.map((a) => [a.id, a]));
+  return { ...next, accounts: next.accounts.map((a) => {
+    const o = was.get(a.id);
+    return a.read || !o?.read || a.error ? a : { ...a, plan: o.plan, meters: o.meters, read: true, error: o.error === "signed-out" ? null : o.error, why: o.why };
+  }) };
+}
 export const readRemote = async (exec, machine) => remoteView(await remoteTask(exec, machine, ["accounts", "list"]));
+// With each account's meters: slow (Claude Code's /usage per account there).
+export const readRemoteUsage = async (exec, machine) => remoteView(await remoteTask(exec, machine, ["accounts", "list", "--usage"]));
 // One change to that machine's picks (Set as default, Skip, the order, ...): what it holds after.
 export const setRemote = async (exec, machine, change) => remoteView(await remoteTask(exec, machine, ["accounts", "set", JSON.stringify(change)]));
 // Its running tasks on `from` move to `to` there (idle ones now, stopped ones resume there, working ones are listed).
