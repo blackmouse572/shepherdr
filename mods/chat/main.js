@@ -45,6 +45,8 @@ import * as attach from "./attach.js";
 import * as slash from "./slash.js";
 import * as agent from "./agent.js";
 import * as choices from "./settings.js";
+// The person's zoom (Settings): overlay sizes draw at it, anchors are in window points.
+const ZOOM = () => Number(settings()?.zoom) || 1;
 import { Dictation } from "./dictate.js";
 import { PanelHost, inner, openTaskThread, backToTasks, requestWorkerTerminal, THREAD } from "./panel.js";
 import { markRead, onScreen, unread } from "./unread.js";
@@ -2172,7 +2174,8 @@ export default class Chat extends View {
         const rows = Object.values(menus).reduce((n, m) => n + m.models.length, 0);
         const W = 300, H = 2 + 10 + 26 + 31 * rows + 9 + 26 + 34 + 31 + 31 + 33;
         openOverlay({ mod: "chat-models", kind: "popup", frame: "none", width: W, height: H,
-          at: at ? { x: Math.max(8, at.x - W + 90), y: Math.max(8, at.y - H - 10) } : "pointer",
+          // Note: overlay sizes draw at the person's zoom; the anchor is in window points.
+          at: at ? { x: Math.max(8, at.x - (W - 90) * ZOOM()), y: Math.max(8, at.y - (H + 10) * ZOOM()) } : "pointer",
           props: { pane: this.pickKey(), remote, height: H, select: name ? findModel(menus, name) : null,
             current: { agent: c.agent, model: currentRow, effort: c.effort ?? null, fast: c.fast, perm: c.perm ?? null },
             menus, icons, permDefault: { claude: dflts.claude?.mode ?? "manual", codex: "auto" } } });
