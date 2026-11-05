@@ -13,8 +13,14 @@ Shepherdr can use more than one Claude account on a machine. Each account is a C
 - **Settings > Accounts** lists the accounts in their switch order, one compact row each; drag a row by its grip to
   reorder. A row's ⋯ renames it, sets it as default (new work starts there), signs in again, opens its folder, moves it
   up or down in the order, skips it when switching, or removes it. **Add account** sits in the Claude card's header. The Switching card holds the rule,
-  the Codex card signs Codex in and out (`codex login` / `codex logout`). With connected machines, a machine's own
-  ~/.claude and Codex show read-only, as Settings > Machines reads them.
+  the Codex card signs Codex in and out (`codex login` / `codex logout`). With connected machines, the machine switch
+  (This Mac | build-box) shows that machine's own accounts and picks: Settings runs herdr-task there (`herdr-task
+  accounts list --json`, herdr's exec on that machine) and Set as default, Skip and Move up / down change them there
+  (`accounts set '<json>'`). A signed-out account there with tasks gets **Move to Default** (`accounts move`). Its usage
+  meters aren't read from here, and switching by usage runs only where a window reads usage. A machine whose
+  herdr-task can't answer yet shows its ~/.claude and Codex read-only, as Settings > Machines reads them.
+- **Settings > Machines** lists another machine's accounts the same way; a signed-out one says which tasks it holds
+  ("EVL-3 and EVL-4 in eval-runner are paused until it signs in") and offers Move to Default.
 - **Tasks** show the account their Claude agent runs on: an initial in the task list, its name in the task's header.
 
 ## What "active" does
@@ -26,8 +32,22 @@ its session started on, because the session lives in that account's folder. Assi
 With **Switch automatically** on, past **Switch above** (95% by default, of the 5-hour session window only) the status
 bar makes the next account in the switch order active: the first that isn't skipped, works, and has room in its own
 5-hour window. A toast says so and names the next queued task; with **Toast with Undo** on, Undo (10 seconds) puts
-the old account back and leaves it until its window resets. Running tasks keep their account: **Work already
-running: Moves** is stored, but a running session can't move yet (it lives in its account's folder), so it stays.
+the old account back and leaves it until its window resets.
+
+**Work already running** decides what happens to tasks already at work when the rule switches:
+
+- **Stays** (the default): they keep the account they started on.
+- **Moves**: the switch also writes `moving` (`{from, to, at}`) to `accounts.json`, and herdr-task's scheduler moves
+  each running task's Claude worker on an old account to the new one, a few per round (`herdr_task/moves.py`). An
+  agent moves only between turns: Herdr shows it idle, it stays idle on the same turn for 2 seconds, nobody is typing
+  to it and no message is held for it. Then its session transcript (and the session's folder) is copied into the same
+  project folder of the new account, a new agent starts there with `--resume <session>`, and the old terminal ends
+  after one last look that it's still idle on the same turn; if it took up work meanwhile, the new agent goes and the
+  old one finishes. A working turn, a permission ask or a question is never interrupted: those agents move once their
+  turn ends. Nothing moves during the Undo window; Undo, a manual pick of another account or Stays stops it. The task's
+  record keeps both agents: the new one has `account` and `moved: {from, at}`, the old one `moved_to`.
+- `herdr-task accounts move --from <id> [--to <id>]` does one round by hand: idle workers move, a stopped task's
+  session is copied so `resume` starts it on the new account, and working ones are listed to try again.
 
 ## Adding, renaming, removing
 
@@ -39,7 +59,8 @@ running: Moves** is stored, but a running session can't move yet (it lives in it
   default and the active account can't be removed.
 
 The picks live in `~/.herdr/accounts.json` (`active`, `auto`, `switch_at`, `running`, `undo`, `names`, `hidden`,
-`order`, `skipped`), one file per machine; `herdr-task accounts` prints them. A machine without one uses Default. A
+`order`, `skipped`, `moving`), one file per machine; `herdr-task accounts` prints them, `accounts list --json` lists
+the accounts with them, `accounts set '<json>'` changes them (checked: only those keys, real accounts). A machine without one uses Default. A
 `switch_at` of 100 from before `auto` reads as switching off.
 
 ## Where the numbers come from

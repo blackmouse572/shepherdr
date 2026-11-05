@@ -65,7 +65,7 @@ export const WORDS = {
   stays: "Stays",
   moves: "Moves",
   runningStays: "Keeps the account it started on",
-  runningMoves: "Running sessions can't move yet: they finish on their account",
+  runningMoves: "Between turns, running tasks resume on the new account; a working turn finishes first",
   undoToast: "Toast with Undo",
   undoAbout: "Undo stays open for 10 seconds",
   undo: "Undo",
@@ -75,8 +75,15 @@ export const WORDS = {
   signOut: "Sign out",
   signOutAbout: "Codex stops working on this computer until you sign in again.",
   codexAbout: "Codex has one sign-in, so it can't switch accounts: it pauses at its limit.",
-  remoteNote: (m) => `Read-only: ${m}'s own ~/.claude and Codex, as Settings > Machines reads them. Its accounts are set on ${m}.`,
+  remoteNote: (m) => `${m}'s own accounts, read with herdr-task there. Changes here are made on ${m}; its usage meters show on ${m} itself.`,
   remoteNone: (m) => `Nothing read from ${m} yet. Its plan usage shows here once Settings > Machines has read it.`,
+  remoteReading: (m) => `Reading ${m}'s accounts…`,
+  remoteFailed: (m, why) => `Couldn't read ${m}'s accounts${why ? `: ${why}` : ""}. Its ~/.claude and Codex, as Settings > Machines reads them:`,
+  remoteSwitch: "On another machine, new work starts on its default; switching by usage runs where a window reads it.",
+  signedOutRow: "signed out",
+  moveTo: (name) => `Move to ${name}`,
+  moved: (r, to) => [r.moved?.length ? `Moved ${r.moved.join(", ")} to ${to}.` : "", r.repointed?.length ? `${r.repointed.join(", ")} resume on ${to}.` : "",
+    r.waiting?.length ? `${r.waiting.join(", ")} still working: they move once they finish (Move again).` : ""].filter(Boolean).join(" ") || "Nothing ran on that account.",
 };
 
 // ---- names, hidden accounts, new accounts ------------------------------------------------------------------------
@@ -182,7 +189,21 @@ export function normPrefs(p) {
     running: d.running === "moves" ? "moves" : "stays",
     undo: typeof d.undo === "boolean" ? d.undo : true,
     names, hidden: strs(d.hidden), order: strs(d.order), skipped: strs(d.skipped),
+    moving: movingOf(d.moving),
   };
+}
+
+// The move the switch rule asked herdr-task for (running "moves"): { from: [ids], to, at }, else null.
+function movingOf(m) {
+  if (!m || typeof m !== "object" || typeof m.to !== "string" || n(m.at) === null) return null;
+  const from = strs(m.from).filter((x) => x !== m.to);
+  return from.length ? { from, to: m.to, at: m.at } : null;
+}
+// After an automatic switch with running "moves": tasks leave the old account, and the accounts an earlier move was
+// still emptying when this one switches on from where that move went.
+export function movingAfter(prev, d, at = Date.now()) {
+  const before = prev && prev.to === d.from.id ? prev.from : [];
+  return movingOf({ from: [...new Set([...before, d.from.id])], to: d.to.id, at });
 }
 
 const meter = (a, id) => (a?.meters ?? []).find((m) => m.id === id) ?? null;
@@ -277,9 +298,10 @@ export function badgeOf(a, accounts, prefs) {
 }
 
 // The switch toast (Doop App 04): who passed the point, and what starts where now. `ref`: the next queued task.
-export function switchToast(d, ref = null) {
+export function switchToast(d, ref = null, running = "stays") {
   const first = ref ? `${ref} will start on ${d.to.name}.` : `New tasks start on ${d.to.name}.`;
-  return { title: `New work now goes to ${d.to.name}`, sub: d.why, body: `${first} Running tasks stay on ${d.from.name}.` };
+  const rest = running === "moves" ? `Running tasks move to ${d.to.name} between turns.` : `Running tasks stay on ${d.from.name}.`;
+  return { title: `New work now goes to ${d.to.name}`, sub: d.why, body: `${first} ${rest}` };
 }
 
 // The next task to start: the earliest queued one in these task lists (~/.herdr/tasks/*.json), as "SHE-15".
@@ -392,4 +414,42 @@ export function keepGood(prev, next) {
     : { ...a, meters: old.meters, plan: a.plan ?? old.plan, error: null, why: null, stale: old.stale ?? prev.at ?? null });
   const was = new Map((prev.claude ?? []).map((a) => [a.id, a]));
   return { ...next, claude: (next.claude ?? []).map((a) => hold(a, was.get(a.id))), codex: hold(next.codex, prev.codex) };
+}
+
+// ---- another machine's accounts ----------------------------------------------------------------------------------
+// Settings > Accounts' machine switch and Settings > Machines' cards read and change another machine's accounts by
+// running herdr-task there (`accounts list | set | move`, herdr_task/accounts.py) with herdr's exec on that machine.
+// exec(cmd, args, { on }) -> { code, stdout, stderr }: herdr's exec, or a fake in tests.
+const ON_MACHINE = 'exec "$HOME/.local/bin/herdr-task" "$@"';
+export async function remoteTask(exec, machine, argv) {
+  const r = await exec("sh", ["-c", ON_MACHINE, "herdr-task", ...argv, "--json"], { on: machine });
+  const line = String(r?.stdout ?? "").split("\n").filter((l) => l.startsWith("{")).pop();
+  let out = null;
+  try { out = line ? JSON.parse(line) : null; } catch { out = null; }
+  if (r?.code !== 0 || !out || out.error) {
+    throw new Error(out?.error || String(r?.stderr ?? "").trim().split("\n").pop() || "herdr-task didn't answer there");
+  }
+  return out;
+}
+// What `accounts list` printed, as the local view's accounts and prefs: a signed-out account carries its tasks.
+export function remoteView(d) {
+  const list = (Array.isArray(d?.accounts) ? d.accounts : []).filter((a) => typeof a?.id === "string").map((a) => ({
+    id: a.id, name: String(a.name ?? a.id), folder: String(a.folder ?? ""), plan: null, meters: [], account: a.account ?? null,
+    error: a.signed_in ? null : "signed-out", tasks: (Array.isArray(a.tasks) ? a.tasks : []).filter((t) => typeof t?.ref === "string"),
+  }));
+  return { accounts: list, prefs: normPrefs(d) };
+}
+export const readRemote = async (exec, machine) => remoteView(await remoteTask(exec, machine, ["accounts", "list"]));
+// One change to that machine's picks (Set as default, Skip, the order, ...): what it holds after.
+export const setRemote = async (exec, machine, change) => remoteView(await remoteTask(exec, machine, ["accounts", "set", JSON.stringify(change)]));
+// Its running tasks on `from` move to `to` there (idle ones now, stopped ones resume there, working ones are listed).
+export const moveRemote = (exec, machine, from, to = "default") => remoteTask(exec, machine, ["accounts", "move", "--from", from, "--to", to]);
+
+// A signed-out account's line: "EVL-3 and EVL-4 in eval-runner are paused until it signs in".
+export function pausedLine(tasks) {
+  const list = (tasks ?? []).map((t) => t.ref);
+  if (!list.length) return "";
+  const names = list.length === 1 ? list[0] : `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+  const where = [...new Set((tasks ?? []).map((t) => t.folder).filter(Boolean))];
+  return `${names}${where.length === 1 ? ` in ${where[0]}` : ""} ${list.length === 1 ? "is" : "are"} paused until it signs in`;
 }

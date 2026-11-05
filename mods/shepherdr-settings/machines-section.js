@@ -13,6 +13,8 @@
 // Doop App 09: the page is a card per machine (its banner, Connected / Needs you, its spaces, terminals, agents and
 // accounts, and what needs the person there: a signed-out account, a waiting core), then the limits for every machine.
 // Note: the design drops the health, plan usage, Home Assistant and limit rows; they stay, inside each card.
+// Another machine's accounts come from herdr-task there (accounts-section.js remoteLoad); a signed-out one with tasks
+// offers Move to Default (herdr-task accounts move there).
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -23,7 +25,8 @@ import { TEXT, button, link, toggleSwitch, need, green, working, toast, plainErr
 import { accounts, prefs, signIn, logo, MONO } from "./usage-data.js";
 import { skipped as isSkipped } from "./core/usage.js";
 import { machineCard, machineCounts, cardNeedsYou } from "./core/machines.js";
-import { card } from "./accounts-section.js";
+import { card, remoteLoad, remoteMove } from "./accounts-section.js";
+import { WORDS as ACC, pausedLine } from "./core/usage.js";
 // The rows' words, a machine block's and Home Assistant's lines: core/settings.js, shared with the web app.
 import { MACHINES, OLD_NAMES, SECTIONS, CHANGED_HERE, RESET, SAME_AS_ALL_MACHINES, machinesOwn, homeAbout, machineLabel } from "./core/settings.js";
 
@@ -169,7 +172,8 @@ function machineBlock(view, t, k) {
     if (!Object.keys(l).length) delete next.machines[k];
   }, cx);
   const m = toMachine(k), local = k === LOCAL_MACHINE;
-  const info = cardOf(k);
+  if (!local && view.acc && machines().find((x) => x.name === m)?.layout !== "unavailable") remoteLoad(view.acc, m, view._cx);
+  const info = cardOf(k, view.acc);
   const attention = cardNeedsYou(info);
   const rows = v_flex().w_full().px(14)
     .child(homeRow(view, t, k))
@@ -184,24 +188,25 @@ function machineBlock(view, t, k) {
   }, [
     ...(info.state === "offline" || info.state === "connecting"
       ? [alertRow(t, `${k}-wait`, null, info.state === "offline" ? MACHINES.offline : MACHINES.connecting, null, null, true)] : []),
-    ...info.alerts.map((a, i) => alertFor(t, k, a, i)),
-    statsRow(t, k, m, local),
+    ...info.alerts.map((a, i) => alertFor(view, t, k, a, i)),
+    statsRow(t, k, m, local, view.acc?.remote?.[m]?.data),
     div().w_full().px(14).py(12).border_t(1).border_color(t.border).child(machineDetails(t, m)),
     rows,
   ]);
 }
 
-// What a machine's card says now (core/machines.js machineCard).
-function cardOf(k) {
+// What a machine's card says now (core/machines.js machineCard). Another machine's accounts: what herdr-task there
+// last said (Settings > Accounts' read of it, view.acc.remote), else its plan reads.
+function cardOf(k, acc = null) {
   const local = k === LOCAL_MACHINE, m = toMachine(k);
   const link = local ? null : reach.machines[m];
   return machineCard({ local, layout: machines().find((x) => x.name === m)?.layout ?? "ready", stats: statsOf(m),
-    core: local ? updates()?.core : null, accounts: local ? accounts() : [],
+    core: local ? updates()?.core : null, accounts: local ? accounts() : acc?.remote?.[m]?.data?.accounts ?? [],
     uptime: local && reach.uptime != null ? reach.uptime + Date.now() - reach.upAt : null, target: link?.target ?? null, via: Boolean(link?.via) });
 }
 
 // Some machine needs the person (a signed-out account, out of reach): the nav's Machines gets a dot.
-export const machinesNeedYou = () => keysNow().some((k) => cardNeedsYou(cardOf(k)));
+export const machinesNeedYou = (acc = null) => keysNow().some((k) => cardNeedsYou(cardOf(k, acc)));
 
 // The header's badge: a dot and its state's word (a ring spinning while it connects).
 function stateBadge(t, k, info) {
@@ -226,7 +231,7 @@ function alertRow(t, id, icon, title, about, control, quiet = false) {
     .when(Boolean(control), (el) => el.child(div().flex_none().child(control)));
 }
 
-function alertFor(t, k, a, i) {
+function alertFor(view, t, k, a, i) {
   const local = k === LOCAL_MACHINE;
   if (a.kind === "core") {
     const busy = Boolean(updates()?.core?.updating);
@@ -237,7 +242,15 @@ function alertFor(t, k, a, i) {
     ? button(`mach-signin-${k}-${a.id}`, MACHINES.signIn, { icon: I("login"),
       onClick: () => signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })) })
     : null;
-  return alertRow(t, `${k}-${i}`, "login", MACHINES.signedOut(a.name, local ? null : label(k)), MACHINES.signedOutAbout(local), fix);
+  // Another machine's signed-out account with tasks on it: they can move to its Default (herdr-task accounts move there).
+  const move = !local && a.id && a.id !== "default" && a.tasks?.length
+    ? button(`mach-move-${k}-${a.id}`, ACC.moveTo("Default"), { kind: "plain", disabled: Boolean(view.acc?.remote?.[k]?.busy),
+      onClick: (_e, cx) => remoteMove(view.acc, k, a, cx) })
+    : null;
+  const about = (!local && pausedLine(a.tasks)) || MACHINES.signedOutAbout(local);
+  const note = !local ? view.acc?.remote?.[k]?.note : null;
+  return alertRow(t, `${k}-${i}`, "login", MACHINES.signedOut(a.name, local ? null : label(k)), note || about,
+    move || fix ? h_flex().gap(8).items_center().when(Boolean(move), (el) => el.child(move)).when(Boolean(fix), (el) => el.child(fix)) : null);
 }
 
 // A small rounded word: an agent (with its logo) or an account; `off` in the lantern colours (signed out).
@@ -249,16 +262,18 @@ function pill(t, id, words, { lead = null, off = false, dim = false } = {}) {
 }
 
 // Its spaces, terminals, the agents installed there and the accounts it uses.
-function statsRow(t, k, m, local) {
+function statsRow(t, k, m, local, there = null) {
   const W = MACHINES.stats;
   const n = machineCounts(spaces(), m);
   const st = statsOf(m);
   const agents = (st?.agents ?? []).map((a) => pill(t, `mach-ag-${k}-${a.key}`, a.name,
     { lead: a.key === "claude" || a.key === "codex" ? logo(a.key, 13) : null }));
   const pr = prefs();
-  const accs = local
-    ? accounts().map((a) => pill(t, `mach-acc-${k}-${a.id}`, a.error === "signed-out" ? `${a.name} · signed out` : isSkipped(a, pr) ? `${a.name} · skipped` : a.name,
-      { off: a.error === "signed-out", dim: isSkipped(a, pr) }))
+  const own = local ? { accounts: accounts(), prefs: pr } : there;
+  const accs = own
+    ? own.accounts.filter((a) => !(own.prefs.hidden ?? []).includes(a.id)).map((a) => pill(t, `mach-acc-${k}-${a.id}`,
+      a.error === "signed-out" ? `${a.name} · signed out` : isSkipped(a, own.prefs) ? `${a.name} · skipped` : a.name,
+      { off: a.error === "signed-out", dim: isSkipped(a, own.prefs) }))
     : Object.entries(st?.limits ?? {}).map(([cli, r]) => {
       const name = cli === "claude" ? "Default" : cli === "codex" ? "Codex" : cli;
       return pill(t, `mach-acc-${k}-${cli}`, r.state === "signed-out" ? `${name} · signed out` : name, { off: r.state === "signed-out" });
@@ -280,6 +295,7 @@ function statsRow(t, k, m, local) {
 }
 
 export function machinesSection(view, t, cx) {
+  view._cx = cx;
   readHome(view, cx);
   readReach(cx);
   askOnce(view, cx);

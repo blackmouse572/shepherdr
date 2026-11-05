@@ -66,6 +66,11 @@ test("a machine's card: signed out needs you, a waiting core is offered, offline
   const remote = machineCard({ layout: "ready", stats: { limits: { codex: { state: "signed-out" }, claude: { state: "ok" } } } });
   expect(remote.alerts).toEqual([{ kind: "signed-out", cli: "codex", name: "Codex" }]);
   expect(remote.sub).toBe("ssh");
+  // Its accounts as herdr-task there lists them: a signed-out one carries its tasks (Move to Default), Codex stays.
+  const listed = machineCard({ stats: { limits: { claude: { state: "signed-out" }, codex: { state: "signed-out" } } },
+    accounts: [{ id: "default", name: "Default", error: null }, { id: "personal", name: "Personal", error: "signed-out", tasks: [{ ref: "EVL-3" }] }] });
+  expect(listed.alerts).toEqual([{ kind: "signed-out", id: "personal", name: "Personal", tasks: [{ ref: "EVL-3" }] }, { kind: "signed-out", cli: "codex", name: "Codex" }]);
+  expect(listed.state).toBe("needs");
   // How it's reached and how long its core is up, when hc says.
   expect(machineCard({ stats: { health }, target: "deploy@10.0.4.12" }).sub).toBe("deploy@10.0.4.12 · ssh · load 0.50");
   expect(machineCard({ target: "fly ssh console", via: true }).sub).toBe("via");

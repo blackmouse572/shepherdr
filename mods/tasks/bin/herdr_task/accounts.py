@@ -3,14 +3,17 @@
 An account is a Claude Code config folder on this machine: ~/.claude is "default", ~/.claude-<id> is <id>. The
 window keeps the person's picks in ~/.herdr/accounts.json: {"active": <id>, "auto": bool, "switch_at": 50..95 (of the
 5h window), "running": "stays" | "moves", "undo": bool, "names": {<id>: name}, "hidden": [<id>], "order": [<id>],
-"skipped": [<id>]} (lib/usage-data.js writes it; the status bar moves "active" to the next account in "order" that
+"skipped": [<id>], "moving": {"from": [<id>], "to": <id>, "at": ms}} (lib/usage-data.js writes it; the status bar moves "active" to the next account in "order" that
 isn't skipped, past the switch point). A switch_at of 100 from before "auto" means switching is off. A new Claude
 agent here starts on the active account (CLAUDE_CONFIG_DIR); a resumed one stays on the account its session is in,
 since a session lives in its account's folder. Each machine has its own file: none means ~/.claude.
 
 `herdr-task accounts prepare <id>` makes an account's folder (owner only) and gives it Shepherdr's hooks, as the
 installer gave ~/.claude (the question and permission cards); a launch on an account checks the hooks again, so a
-folder made by hand gets them too."""
+folder made by hand gets them too. `accounts list` / `accounts set '<json>'` read and set the picks for another
+machine's Settings > Accounts (run there with herdr's exec on that machine); `accounts move --from X --to Y` moves
+its running tasks between turns (moves.py), as "moving" does when the switch rule moves new work and "running" is
+"moves"."""
 
 import json
 import os
@@ -128,12 +131,119 @@ def prepare(account):
     return path, made, ensure_hooks(account)
 
 
+def ids():
+    """Every account here: default, then each ~/.claude-<id> folder."""
+    import glob
+    found = sorted(os.path.basename(d)[len(".claude-"):] for d in glob.glob(os.path.join(HOME, ".claude-*")) if os.path.isdir(d))
+    return [DEFAULT] + [x for x in found if ID.match(x)]
+
+
+def signed_in(account):
+    """Claude Code's sign-in as its folder records it (the account's email), or None. Cheap: nothing is run."""
+    own = account and account != DEFAULT
+    path = os.path.join(folder(account), ".claude.json") if own else os.path.join(HOME, ".claude.json")
+    d = _read(path) or {}
+    email = (d.get("oauthAccount") or {}).get("emailAddress") if isinstance(d.get("oauthAccount"), dict) else None
+    return str(email)[:80] if email else None
+
+
+def tasks_on():
+    """The running tasks here whose last agent is Claude, by account: {id: [{ref, folder, live}]}."""
+    from .store import read_list, store_files
+    out = {}
+    for p in store_files():
+        d = read_list(p) or {}
+        for t in d.get("tasks") or []:
+            a = (t.get("agents") or [None])[-1]
+            if t.get("state") != "running" or not a or a.get("agent") != "claude" or a.get("ended"):
+                continue
+            ref = f"{d['prefix']}-{t['id']}" if d.get("prefix") else f"#{t['id']}"
+            out.setdefault(a.get("account") or DEFAULT, []).append({"ref": ref, "folder": os.path.basename(d.get("folder") or "")})
+    return out
+
+
+def listing():
+    """This machine's accounts and picks, for another machine's Settings > Accounts (`accounts list --json`)."""
+    d, rule = picks(), switching()
+    names = {k: v for k, v in (d.get("names") or {}).items() if isinstance(v, str)} if isinstance(d.get("names"), dict) else {}
+    hidden = [x for x in d.get("hidden") or [] if isinstance(x, str)] if isinstance(d.get("hidden"), list) else []
+    on = tasks_on()
+    rows = [{"id": a, "name": names.get(a) or ("Default" if a == DEFAULT else a), "folder": folder(a).replace(HOME, "~", 1),
+             "account": signed_in(a), "signed_in": bool(signed_in(a)), "tasks": on.get(a, [])} for a in ids()]
+    return {"accounts": rows, "active": active(), "names": names, "hidden": hidden,
+            "undo": d["undo"] if isinstance(d.get("undo"), bool) else True, **rule}
+
+
+# The picks another machine may set here (`accounts set '<json>'`), each checked as normPrefs would.
+SETTABLE = ("active", "auto", "switch_at", "running", "undo", "order", "skipped", "hidden", "names")
+
+
+def set_picks(change):
+    """Merges checked picks into accounts.json (atomic). Raises Fail on a pick that isn't one."""
+    if not isinstance(change, dict) or not change or any(k not in SETTABLE for k in change):
+        raise Fail(f"Only these can be set: {', '.join(SETTABLE)}.")
+    known = set(ids())
+    for k, v in change.items():
+        if k == "active" and (not isinstance(v, str) or v not in known):
+            raise Fail(f"{v!r} isn't an account here.")
+        if k in ("auto", "undo") and not isinstance(v, bool):
+            raise Fail(f"{k} is true or false.")
+        if k == "switch_at" and (isinstance(v, bool) or not isinstance(v, (int, float))):
+            raise Fail("switch_at is a number.")
+        if k == "running" and v not in ("stays", "moves"):
+            raise Fail("running is stays or moves.")
+        if k in ("order", "skipped", "hidden") and (not isinstance(v, list) or any(not isinstance(x, str) or not ID.match(x) for x in v)):
+            raise Fail(f"{k} is a list of account names.")
+        if k == "names" and (not isinstance(v, dict) or any(not isinstance(x, str) for x in v.values())):
+            raise Fail("names maps an account to its name.")
+    if "switch_at" in change:
+        change = {**change, "switch_at": min(95, max(50, int(round(change["switch_at"] / 5.0)) * 5))}
+    d = {**picks(), **change}
+    if change.get("running") == "stays":
+        d.pop("moving", None)
+    os.makedirs(os.path.dirname(FILE), exist_ok=True)
+    tmp = f"{FILE}.{os.getpid()}.tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+        f.write("\n")
+    os.replace(tmp, FILE)
+    return d
+
+
 def cmd_accounts(args):
     from .output import say
     if args.action == "prepare":
         path, made, hooks = prepare(args.account)
         say(args, {"account": args.account, "folder": path, "made": made, "hooks": hooks},
             f"{path} {'made' if made else 'is there'}" + (f"; hooks added: {', '.join(hooks)}." if hooks else "."))
+    elif args.action == "list":
+        d = listing()
+        say(args, d, "\n".join(f"{'*' if a['id'] == d['active'] else ' '} {a['name']} ({a['folder']})"
+                               f"{'' if a['signed_in'] else ' signed out'}" for a in d["accounts"]))
+    elif args.action == "set":
+        try:
+            change = json.loads(args.account or "")
+        except ValueError:
+            raise Fail("set takes the picks as JSON: accounts set '{\"active\": \"work\"}'.")
+        set_picks(change)
+        say(args, listing(), "Saved.")
+    elif args.action == "move":
+        from .moves import move_round
+        frm = getattr(args, "frm", None) or args.account
+        to = getattr(args, "to", None) or DEFAULT
+        if not frm:
+            raise Fail("Which account do tasks move from? accounts move --from <account> [--to <account>]")
+        for a in (frm, to):
+            folder(a)
+            if a not in ids():
+                raise Fail(f"{a!r} isn't an account here.")
+        if frm == to:
+            raise Fail("They are the same account.")
+        r = move_round([frm], to, limit=50, stopped=True)
+        parts = [f"moved {', '.join(r['moved'])}" if r["moved"] else "",
+                 f"resume on {to}: {', '.join(r['repointed'])}" if r["repointed"] else "",
+                 f"still working, left to finish: {', '.join(sorted(set(r['waiting'])))}" if r["waiting"] else ""]
+        say(args, {"from": frm, "to": to, **r}, "; ".join(p for p in parts if p) or f"Nothing runs on {frm}.")
     else:
         a, rule = active(), switching()
         say(args, {"active": a, "folder": folder(a), **rule},

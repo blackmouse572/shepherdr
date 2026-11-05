@@ -598,7 +598,7 @@ export default class ShepherdrSettings extends View {
   render(cx) {
     const t = theme();
     // Machines gets the lantern dot while one needs the person (Doop App 09).
-    const dotted = { machines: machinesNeedYou() };
+    const dotted = { machines: machinesNeedYou(this.acc) };
     const navRow = (id, title, icon, on, onClick) => h_flex().id(`sh-s-${id}`).h(30).gap(10).px(10).flex_none()
       .items_center().rounded(RADIUS.card).bg(on ? t.raised : "#00000000")
       .when(!on, (el) => el.cursor_pointer().hover((st) => st.bg(t.hover)))

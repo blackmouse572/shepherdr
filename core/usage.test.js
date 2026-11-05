@@ -191,3 +191,45 @@ test("a dragged account lands on the row it's dropped on", async () => {
   // The person's order counts, not the order found.
   expect(dropped(list, { order: ["d", "c", "b", "a"] }, "d", "a")).toEqual(["c", "b", "a", "d"]);
 });
+
+test("Moves: the switch asks herdr-task to move running work, chained switches keep emptying the old ones", async () => {
+  const { normPrefs, movingAfter, switchToast } = await import("./usage.js");
+  const d = dueSwitch([acct("default", 96, 51), acct("personal", 27, 50)], { active: "default" });
+  expect(switchToast(d, null, "moves").body).toBe("New tasks start on Personal. Running tasks move to Personal between turns.");
+  const m = movingAfter(null, d, 5);
+  expect(m).toEqual({ from: ["default"], to: "personal", at: 5 });
+  const next = { from: { id: "personal" }, to: { id: "client" } };
+  expect(movingAfter(m, next, 9)).toEqual({ from: ["default", "personal"], to: "client", at: 9 });
+  expect(movingAfter({ from: ["x"], to: "other", at: 1 }, next, 9).from).toEqual(["personal"]);
+  expect(normPrefs({ moving: m }).moving).toEqual(m);
+  expect(normPrefs({ moving: { from: ["a"], to: "a", at: 1 } }).moving).toBe(null);
+  expect(normPrefs({ moving: "x" }).moving).toBe(null);
+});
+
+test("another machine's accounts go through herdr-task there (a fake exec)", async () => {
+  const { readRemote, setRemote, moveRemote, pausedLine } = await import("./usage.js");
+  const calls = [];
+  const listed = { accounts: [{ id: "default", name: "Default", folder: "~/.claude", signed_in: true, account: "a@b.c", tasks: [] },
+    { id: "personal", name: "Personal", folder: "~/.claude-personal", signed_in: false, tasks: [{ ref: "EVL-3", folder: "eval-runner" }, { ref: "EVL-4", folder: "eval-runner" }] }],
+    active: "personal", auto: true, switch_at: 95, running: "stays", order: [], skipped: [], names: {}, hidden: [] };
+  const exec = async (cmd, args, opts) => {
+    calls.push({ cmd, args, on: opts?.on });
+    if (args.includes("move")) return { code: 0, stdout: JSON.stringify({ moved: ["EVL-3"], waiting: ["EVL-4"], repointed: [] }), stderr: "" };
+    if (args.includes("set")) return { code: 0, stdout: `noise\n${JSON.stringify({ ...listed, active: "default" })}\n`, stderr: "" };
+    return { code: 0, stdout: JSON.stringify(listed), stderr: "" };
+  };
+  const r = await readRemote(exec, "build-box");
+  expect(calls[0]).toEqual({ cmd: "sh", args: ["-c", 'exec "$HOME/.local/bin/herdr-task" "$@"', "herdr-task", "accounts", "list", "--json"], on: "build-box" });
+  expect(r.accounts.map((a) => [a.id, a.error])).toEqual([["default", null], ["personal", "signed-out"]]);
+  expect(r.prefs.active).toBe("personal");
+  expect(pausedLine(r.accounts[1].tasks)).toBe("EVL-3 and EVL-4 in eval-runner are paused until it signs in");
+  expect(pausedLine([])).toBe("");
+  expect((await setRemote(exec, "build-box", { active: "default" })).prefs.active).toBe("default");
+  expect(calls[1].args.slice(3)).toEqual(["accounts", "set", '{"active":"default"}', "--json"]);
+  expect(await moveRemote(exec, "build-box", "personal")).toEqual({ moved: ["EVL-3"], waiting: ["EVL-4"], repointed: [] });
+  expect(calls[2].args.slice(3)).toEqual(["accounts", "move", "--from", "personal", "--to", "default", "--json"]);
+  const bad = async () => ({ code: 1, stdout: JSON.stringify({ error: "'x' isn't an account here." }), stderr: "" });
+  await expect(setRemote(bad, "build-box", { active: "x" })).rejects.toThrow("isn't an account here");
+  const old = async () => ({ code: 2, stdout: "", stderr: "usage: herdr-task ...\ninvalid choice: 'list'" });
+  await expect(readRemote(old, "build-box")).rejects.toThrow("invalid choice");
+});
