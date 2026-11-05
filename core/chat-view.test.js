@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { WORDS, clock, bandActs, senderName, briefLabel, newsWords, newsTimeline, resolveArtifacts, fitThumbs, dayLabel, imagesLine, questionsBelow, notSent, unsigned, elapsed } from "./chat-view.js";
+import { WORDS, attachedFiles, clock, bandActs, senderName, briefLabel, newsWords, newsTimeline, resolveArtifacts, fitThumbs, dayLabel, imagesLine, questionsBelow, notSent, unsigned, elapsed } from "./chat-view.js";
 
 const ROOT = join(import.meta.dir, "..");
 const read = (p) => readFileSync(join(ROOT, p), "utf8");
@@ -93,5 +93,15 @@ describe("rows", () => {
     expect(questionsBelow(2)).toBe("2 questions below");
     expect(notSent("Busy.")).toBe("Not sent: Busy. Click to try again.");
     expect(elapsed(75)).toBe("1:15");
+  });
+});
+
+describe("files sent with a message", () => {
+  test("its last paragraph of absolute paths: the files; the words before it: the message", () => {
+    expect(attachedFiles("Look\n\n/a/b c.pdf\n/x/y/z.md")).toEqual({ text: "Look", files: [{ path: "/a/b c.pdf", name: "b c.pdf" }, { path: "/x/y/z.md", name: "z.md" }] });
+    expect(attachedFiles("/tmp/shot.png")).toEqual({ text: "", files: [{ path: "/tmp/shot.png", name: "shot.png" }] });
+  });
+  test("a command, a path in a sentence, or a path mid-message is not one", () => {
+    for (const t of ["/model opus", "see /a/b.txt please", "/a/b.txt\n\nthen this", "Look\n\n/a/b.txt\nand more"]) expect(attachedFiles(t)).toEqual({ text: t, files: [] });
   });
 });

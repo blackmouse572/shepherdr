@@ -59,7 +59,9 @@ const VIEW = `
 d="$1"; shift; mkdir -p "$d"
 for p in "$@"; do
   [ -f "$p" ] || continue
-  s=$(magick identify -format '%w %h' "$p[0]" 2>/dev/null) || s=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=' ' "$p" 2>/dev/null)
+  s=$(magick identify -format '%w %h' "$p[0]" 2>/dev/null) || s=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=' ' "$p" 2>/dev/null) || s=
+  # macOS has neither by default: its own sips reads the size.
+  [ -n "$s" ] || s=$(sips -g pixelWidth -g pixelHeight "$p" 2>/dev/null | awk '/pixelWidth/{w=$2} /pixelHeight/{h=$2} END{if(w+0>0&&h+0>0)print w" "h}')
   [ -n "$s" ] || continue
   n=$(printf '%s' "$p" | cksum | cut -d' ' -f1)-$(printf '%s' "\${p##*/}" | tr -c 'A-Za-z0-9._-' '_')
   [ -f "$d/$n" ] || ln -f "$p" "$d/$n" 2>/dev/null || cp "$p" "$d/$n" 2>/dev/null || continue

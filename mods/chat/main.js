@@ -33,7 +33,7 @@ import { ruleOf } from "./core/allow.js";
 import { alwaysAllow } from "./allow.js";
 import { spaceOfTerminal } from "./core/notify.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
-import { WORDS, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
+import { WORDS, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
 import { AskCards, linkCtl } from "./cards.js";
@@ -1256,6 +1256,7 @@ export default class Chat extends View {
     // Herdr tag lines before the words: the message it replies to, the tasks it mentions.
     const body = messageBody({ text: msg.text, quote: msg.quote?.text ?? null, tags: this.taskTags(msg.text) });
     const p = { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
+      docs: msg.files.filter((f) => !f.image).map((f) => ({ path: f.path, name: f.name })),
       paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), sent: body,
       match: norm(msg.text).slice(0, 60) || null, msg };
     this.pending.push(p);
@@ -1448,6 +1449,7 @@ export default class Chat extends View {
     const local = machine || !msg ? [] : msg.files.map((f) => f.path);
     const task = msg ? [reply + msg.text, ...local].filter(Boolean).join("\n\n") : "";
     const p = msg ? { id: `pending-${msg.id}`, text: msg.text, replyTo: msg.quote ? excerpt(msg.quote.text, 80) : null, files: msg.files.filter((f) => !f.image).map((f) => f.name),
+      docs: msg.files.filter((f) => !f.image).map((f) => ({ path: f.path, name: f.name })),
       paths: msg.files.filter((f) => f.image).map((f) => f.path), at: Date.now(), sent: task, match: norm(msg.text).slice(0, 60) || null } : { failed: null };
     if (msg) this.pending.push(p);
     this.phase = "starting";
@@ -2433,11 +2435,15 @@ export default class Chat extends View {
       if (x.kind === "user") {
         const from = out.length;
         if (x.replyTo) out.push({ kind: "replyref", id: `rr:${x.id}`, to: x.replyTo, of: x.id, side: "user" });
+        // Files sent with it: their paths after its words, each a line of its own that opens it.
+        const sent = attachedFiles(x.text);
         // Rewind goes to a prompt; a /command isn't one.
-        out.push(x);
+        if (!sent.files.length) out.push(x);
+        else if (sent.text || x.from || x.images > (x.paths?.length ?? 0)) out.push({ ...x, text: sent.text });
         const chips = this.mentioned(x.text);
         if (chips.length) out.push({ kind: "chips", id: `tc:${x.id}`, tasks: chips.map((t) => ({ id: t.id, ref: taskRef(t), title: t.title })) });
         if (x.paths?.length) out.push({ kind: "imgs", id: `i:${x.id}`, paths: x.paths });
+        sent.files.forEach((f, n) => out.push({ kind: "file", id: `fl:${x.id}:${n}`, path: f.path, name: f.name }));
         // Its actions in a band row under it (the row above draws them too: band()).
         if (x.text) {
           const bar = { id: `b:${x.id}`, of: x.id, target: x.text, text: x.text, side: "user", at: x.at, pills: this.pills(x.id),
@@ -2484,8 +2490,9 @@ export default class Chat extends View {
     for (const p of this.pending) {
       const from = out.length;
       if (p.replyTo) out.push({ kind: "replyref", id: `rr:${p.id}`, to: p.replyTo, of: p.id, side: "user" });
-      out.push({ kind: "pending", id: p.id, text: p.text, files: p.files, failed: p.failed, late: p.late, delivered: p.delivered });
+      out.push({ kind: "pending", id: p.id, text: p.text, files: p.docs?.length ? null : p.files, failed: p.failed, late: p.late, delivered: p.delivered });
       if (p.paths?.length) out.push({ kind: "imgs", id: `i:${p.id}`, paths: p.paths, faded: !p.delivered });
+      (p.docs ?? []).forEach((f, n) => out.push({ kind: "file", id: `fl:${p.id}:${n}`, path: f.path, name: f.name, faded: !p.delivered }));
       block(from, p.id);
     }
     if (this.note) out.push({ kind: "note", id: this.note.id, text: this.note.text });
@@ -2619,6 +2626,7 @@ export default class Chat extends View {
       case "top": case "loading": case "note": return 36;
       case "brief": return this.opened.has(x.id) ? 32 + lines(x.text, w) * 19 : 20;
       case "replyref": return 22;
+      case "file": return 22;
       case "chips": return 30;
       case "imgs": return this.fitThumbs(x.paths).h + 8;
       case "codehead": return 34;
@@ -2741,6 +2749,11 @@ export default class Chat extends View {
           .cursor_pointer().text_size(11.5).text_color(t.dim).hover((s) => s.text_color(t.muted))
           .child(svg("mods/chat/reply.svg").size(12).flex_none())
           .child(div().min_w(0).truncate().child(x.to))), 18, 2);
+      case "file":
+        // A file sent with a message, under it on the right: a press opens it (clickRow()).
+        return col(h_flex().w_full().h(18).justify_end().when(Boolean(x.faded), (el) => el.opacity(0.55))
+          .child(h_flex().max_w(most).gap(5).items_center().cursor_pointer().text_size(12).text_color(t.dim).hover((s) => s.text_color(t.foreground))
+            .child(svg("mods/chat/paperclip.svg").size(12).flex_none()).child(div().min_w(0).truncate().child(x.name))), 18, 2);
       case "chips":
         return col(h_flex().w_full().h(24).gap(TASK_GAP).justify_end().children(x.tasks.map((k) => h_flex().w(TASK).h(22).flex_none().px(8).gap(6)
           .items_center().rounded(11).cursor_pointer().bg(t.accent + "26").border_1().border_color(t.accent + "4d").text_size(11.5)
@@ -2902,6 +2915,7 @@ export default class Chat extends View {
     } else if (row.kind === "codehead") this.copy(row.code, row.id, cx);
     else if (row.kind === "pending" && row.failed) { const p = this.pending.find((x) => x.id === row.id); if (p?.msg) this.retry(p, cx); }
     else if (row.kind === "artifact" && row.art) this.openArtifact(row);
+    else if (row.kind === "file") this.openFile(row.path);
     else if (row.kind === "tasknews") {
       // Accept's place on a Ready line: the line's right end, its padding in (as row() draws it:
       // col(…, 12, 0), then px 6).
@@ -3196,6 +3210,17 @@ export default class Chat extends View {
     noteChatArea(this.areaKey(), { area: this.area });
   }
 
+  // A file sent with a message: an image in the viewer, else the system's app for it (as the
+  // viewer's Open does). One not on this machine (sent to another) says so.
+  openFile(p) {
+    if (attach.isImage(p) && this.views[p]) { this.openImages([p], 0); return; }
+    const os = window()?.platform;
+    const run = os === "macos" ? 'open "$1"' : os === "windows" ? null : 'xdg-open "$1" >/dev/null 2>&1';
+    const go = run ? exec("sh", ["-c", `[ -e "$1" ] || exit 3; ${run}`, "open", p]) : exec("cmd", ["/c", "start", "", p]);
+    go.then((r) => { if (r?.code) toast({ title: r.code === 3 ? "That file isn't on this machine" : "Couldn't open the file", body: p, level: "error" }); })
+      .catch(() => toast({ title: "Couldn't open the file", body: p, level: "error" }));
+  }
+
   // A pasted text file in the viewer (mods/chat-image), over this chat pane.
   openText(f) {
     const a = this.paneArea();
@@ -3208,7 +3233,8 @@ export default class Chat extends View {
   openImages(paths, i) {
     const all = paths.map((p) => this.views[p] ? { ...this.views[p], name: p.split("/").pop(), path: p } : null);
     const images = all.filter(Boolean);
-    if (!images.length) return;
+    // None the viewer can show (no size read for it): the system's own app opens it.
+    if (!images.length) { if (paths[i] ?? paths[0]) this.openFile(paths[i] ?? paths[0]); return; }
     i = images.indexOf(all[i] ?? images[0]);
     // Over this chat pane, at its size (a popup's root needs its size spelled out).
     const a = this.paneArea();

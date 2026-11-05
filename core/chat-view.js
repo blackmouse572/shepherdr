@@ -65,6 +65,19 @@ export const shellWord = (s) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${String(s).
 export const sessionStarted = "Earlier session was gone, started a new one.";
 export const sessionFailed = (why) => `Earlier session was gone, and a new one didn't start: ${why}`;
 
+// Files sent with a message go as their paths, one a line, after its words (mods/chat attach.js deliver()):
+// -> { text: the words, files: [{ path, name }] }. Only a last paragraph of absolute paths with a folder
+// counts ("/model opus" is a command, not a file).
+const FILE_LINE = /^\/(?:[^/\n]+\/)+[^/\n]+$/;
+export function attachedFiles(text) {
+  const s = String(text ?? "").replace(/\s+$/, "");
+  const cut = s.lastIndexOf("\n\n");
+  const tail = s.slice(cut + 1).replace(/^\n/, "");
+  const lines = tail.split("\n").map((l) => l.trim());
+  if (!tail || !lines.every((l) => FILE_LINE.test(l))) return { text: String(text ?? ""), files: [] };
+  return { text: cut < 0 ? "" : s.slice(0, cut).trim(), files: lines.map((path) => ({ path, name: path.split("/").pop() })) };
+}
+
 // "1 image", "3 images": images sent with a message whose files the chat can't show.
 export const imagesLine = (n) => (n === 1 ? "1 image" : `${n} images`);
 // Scrolled up: cards waiting below what shows ("1 question below"), else Latest.

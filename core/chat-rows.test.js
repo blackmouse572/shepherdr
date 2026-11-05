@@ -104,3 +104,19 @@ test("an answered question's card is as tall as what it draws: every question, w
   expect(c.key(open)).not.toBe(c.key(card));
   expect(c.guess(open)).toBeLessThan(h);
 });
+
+test("a file sent with a message is a line of its own under it, and a press on it opens the file", async () => {
+  const c = await chat([typed(1, "Look at this\n\n/srv/files/Documents/Q3 report.pdf\n/srv/files/notes/todo.md")]);
+  const rows = c.rows();
+  expect(rows.find((r) => r.kind === "user").text).toBe("Look at this");
+  const files = rows.filter((r) => r.kind === "file");
+  expect(files.map((f) => f.name)).toEqual(["Q3 report.pdf", "todo.md"]);
+  inRenderer = true;
+  try { for (const r of rows) expect(() => c.row(r, {}, "v0-")).not.toThrow(); } finally { inRenderer = false; }
+  ran.length = 0;
+  c.clickRow(files[0].id, rows, { notify() {}, timer: { after() {} } }, []);
+  await Bun.sleep(0);
+  expect(ran[0][0]).toBe("sh");
+  expect(ran[0]).toContain("/srv/files/Documents/Q3 report.pdf");
+  expect(ran[0].join(" ")).toContain('open "$1"');
+});
