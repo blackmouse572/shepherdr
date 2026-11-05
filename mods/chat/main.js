@@ -35,7 +35,8 @@ import { WORDS, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsi
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
-import { button, red, green, need, working, H, RADIUS, TEXT, toast, toastWho, plainError } from "./ui.js";
+import { button, red, green, need, working, H, RADIUS, TEXT, toast, toastWho, plainError, readingInk, SERIF } from "./ui.js";
+import { READING_KEY, readingSig, proseMetrics, stepSize, codeLines } from "./core/reading.js";
 import { openViewer, noteChatArea } from "./artview.js";
 import { SecretCards } from "./secret-card.js";
 import * as secrets from "./secrets.js";
@@ -57,8 +58,8 @@ const PAGE = 200;
 // At most this many log records (and opened tool outputs) kept in memory per chat: past it, the
 // oldest go (scrolling to the top reads them again).
 const KEEP = 2000;
-// The conversation's width at most, in px: lines stay readable in a wide pane.
-const COLUMN = 760;
+// The conversation's width at most is this.rd.column (core/reading.js): the prose's measure plus room for the
+// person's bubbles, so lines stay readable in a wide pane.
 const KINDS = { "claude-code": "claude", claude: "claude", codex: "codex" };
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const same = (a, b) => norm(a) === norm(b);
@@ -94,9 +95,9 @@ const ACT = 22, ACT_GAP = 2, BAND_IN = 4, ACT_ROW = BAND_IN + ACT, GAP = 16;
 // baseline sits a little higher than the caps sit low), measured from the window.
 const QUIET_PY = 1, QUIET_IN = { top: 5, bottom: 6 };
 // A long reply folds (Show more) when it would run past FOLD_TALL lines, to its first FOLD
-// lines; LINE_H is a reply's line in px. Its words are measured as they draw, so one that
+// lines (a line: this.rd.line px, the reading size's). Its words are measured as they draw, so one that
 // turns out shorter than it looked isn't folded after all.
-const FOLD = 20, FOLD_TALL = 28, LINE_H = 21;
+const FOLD = 20, FOLD_TALL = 28;
 // A session that is gone (LOST), what the new agent hears (lostMessage) and the chat's note: core/chat-view.js, as
 // the service restarts one for the web app.
 // The picker's row a typed name means (/model sonnet, /model claude-opus-5-5, /model gpt-5):
@@ -108,8 +109,8 @@ function findModel(menus, name) {
   const hit = rows.find((r) => r.keys.some((k) => qs.includes(k))) ?? rows.find((r) => r.keys.some((k) => qs.some((q) => q && k.startsWith(q))));
   return hit ? { agent: hit.agent, model: hit.model } : null;
 }
-// About how many lines words take at a width (px), for a row's height before it's measured.
-const wrapLines = (text, width) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * 7) / Math.max(120, width))), 0);
+// About how many lines words take at a width (px), for a row's height before it's measured (letter: a letter's px).
+const wrapLines = (text, width, letter = 7) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * letter) / Math.max(120, width))), 0);
 const ICONS = { copy: "copy", reply: "reply", rewind: "rewind", fork: "git-fork", react: "smile-plus" };
 // Reaction pills: this wide, this far apart; and the gap before the first and after the last.
 const PILL = 46, PILL_GAP = 4, PILL_EDGE = 6;
@@ -325,6 +326,12 @@ export default class Chat extends View {
     this.screenErr = new Map();
     // Agents whose lost session this chat already started again (lostSession()).
     this.lostTried = new Set();
+    // Reading (core/reading.js, shared "chat.reading"): the prose's numbers, read again each render.
+    this.rd = proseMetrics(shared(READING_KEY));
+    this.rdSig = readingSig(this.rd);
+    // Tool rows the person closed while Fold tool steps is off (they show open then), and code blocks' colour runs.
+    this.shut = new Set();
+    this.codeRuns = new Map();
     // Long replies opened with Show more (by message id), and their words' drawn height.
     this.unfolded = new Set();
     this.natural = new Map();
@@ -460,6 +467,8 @@ export default class Chat extends View {
         if (c === "call" && addonOn("voice")) this.toggleCall(cx);
         if (c === "mute") this.callMute(cx);
         if (c === "find") this.openFind(cx);
+        // Cmd + / Cmd - (keys.json "mod:chat"): every chat's reading size a step up or down.
+        if (c === "text-bigger" || c === "text-smaller") setShared(READING_KEY, stepSize(shared(READING_KEY), c === "text-bigger" ? 1 : -1));
         cx.notify();
       }
     });
@@ -1763,7 +1772,7 @@ export default class Chat extends View {
 
   // The column's left and right edges in the pane, for the action buttons under messages.
   edges() {
-    const outer = Math.min(this.width, COLUMN + 36);
+    const outer = Math.min(this.width, this.rd.column + 36);
     const left = (this.width - outer) / 2 + 18;
     return { left, right: left + outer - 36 };
   }
@@ -2455,22 +2464,32 @@ export default class Chat extends View {
     return this.spaced(out);
   }
 
+  // The agent's prose's width in px: the measure, or the column's inside in a narrow pane.
+  proseW() {
+    return Math.max(200, Math.min(this.rd.measure, Math.min(this.width, this.rd.column + 36) - 36));
+  }
+
+  // A tools row shows its steps: opened by the person, or (Fold tool steps off) not closed by them.
+  toolsOpen(id) {
+    return this.rd.fold ? this.opened.has(id) : !this.shut.has(id);
+  }
+
   // How a long reply folds, or null when it's short (or holds what Find looks for): { open,
   // clips: part → px its words show, last: the last part shown }. Its parts' heights are
   // estimated from their words; one drawn (natural) shorter than that isn't folded after all.
   foldOf(x, ps) {
     const q = this.findQuery().toLowerCase();
     if (q && String(x.text).toLowerCase().includes(q)) return null;
-    const w = Math.max(240, Math.floor(Math.min(this.width, COLUMN) * 0.8)) - 24;
-    const est = ps.map((p) => (p.type === "md" ? wrapLines(p.text, w) * LINE_H : 34 + 16 + p.code.split("\n").length * 19));
+    const L = this.rd.line, w = this.proseW();
+    const est = ps.map((p) => (p.type === "md" ? wrapLines(p.text, w, this.rd.letter) * L : 34 + 16 + p.code.split("\n").length * this.rd.code.line));
     const drawn = ps.length === 1 ? this.natural.get(x.id) : null;
-    if ((drawn ?? est.reduce((a, b) => a + b, 0)) <= FOLD_TALL * LINE_H) return null;
+    if ((drawn ?? est.reduce((a, b) => a + b, 0)) <= FOLD_TALL * L) return null;
     if (this.unfolded.has(x.id)) return { open: true, clips: new Map(), last: ps.length - 1 };
     const clips = new Map();
-    let left = FOLD * LINE_H, last = ps.length - 1;
+    let left = FOLD * L, last = ps.length - 1;
     for (let n = 0; n < ps.length; n++) {
       if (est[n] < left && n < ps.length - 1) { left -= est[n]; continue; }
-      clips.set(n, Math.max(3 * LINE_H, ps[n].type === "md" ? left : left - 34));
+      clips.set(n, Math.max(3 * L, ps[n].type === "md" ? left : left - 34));
       last = n;
       break;
     }
@@ -2553,7 +2572,7 @@ export default class Chat extends View {
   key(x) {
     const q = this.findQuery();
     const found = q && String(x.text ?? x.code ?? "").toLowerCase().includes(q.toLowerCase()) ? `|f:${q}` : "";
-    const open = (x.kind === "tools" || x.kind === "brief") && this.opened.has(x.id);
+    const open = x.kind === "tools" ? this.toolsOpen(x.id) : x.kind === "brief" && this.opened.has(x.id);
     const shown = open && x.steps ? x.steps.filter((s) => this.results.get(s.id) != null).length : 0;
     return `${x.id}|${x.kind}${x.closed ? `.${x.closed}` : ""}|${open ? `o${x.steps?.length ?? 1}.${shown}` : ""}|${x.text?.length ?? x.code?.length ?? 0}|${x.from ? 1 : 0}${x.failed ? 1 : 0}${x.late ? 1 : 0}${x.images ? 1 : 0}${x.files?.length ?? 0}|${x.paths?.length ?? 0}${x.paths?.every((p) => this.views[p]) ? "v" : ""}|${(x.pills ?? []).map((p) => p.emoji + (p.you ? 1 : 0) + (p.agent ? 1 : 0)).join("")}|${x.bar ? "b" : ""}${x.kind === "artifact" ? `|a${x.version ?? ""}${x.line ? "l" : ""}${x.pending ? "p" : ""}` : ""}${x.kind === "tasknews" ? `|${x.accept ? "a" : ""}` : ""}${x.kind === "cardstrip" ? `|cs${x.sig}${x.first ? "F" : ""}${x.last ? "L" : ""}` : ""}|${x.clip ? `c${x.clip}` : ""}${x.open ? "o" : ""}${x.kind === "day" ? x.text : ""}|${x.top0 ? "T" : ""}${x.bot0 ? "B" : ""}${x.h ?? ""}${found}`;
   }
@@ -2564,7 +2583,7 @@ export default class Chat extends View {
   }
 
   guessBare(x) {
-    const w = Math.min(this.width, COLUMN) - 36;
+    const w = Math.min(this.width, this.rd.column) - 36;
     const lines = (text, width) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * 7) / Math.max(120, width))), 0);
     switch (x.kind) {
       case "end": return 10;
@@ -2574,12 +2593,12 @@ export default class Chat extends View {
       case "chips": return 30;
       case "imgs": return this.fitThumbs(x.paths).h + 8;
       case "codehead": return 34;
-      case "code": return 16 + (x.clip ?? String(x.code).split("\n").length * 19);
+      case "code": return 16 + (x.clip ?? String(x.code).split("\n").length * this.rd.code.line);
       case "fold": return 26;
       case "day": return 18;
-      case "user": case "pending": return 30 + lines(x.text, w * 0.8 - 24) * 20 + (x.from ? 17 : 0) + ((x.images || x.files?.length) ? 20 : 0);
-      case "agent": return 30 + (x.clip ?? lines(x.text, w * 0.8 - 24) * 21);
-      case "tools": return this.opened.has(x.id) ? 26 + x.steps.length * 19 : 20;
+      case "user": case "pending": return 30 + wrapLines(x.text, w * 0.8 - 30, this.rd.letter) * this.rd.line + (x.from ? 17 : 0) + ((x.images || x.files?.length) ? 20 : 0);
+      case "agent": return 14 + (x.clip ?? wrapLines(x.text, this.proseW(), this.rd.letter) * this.rd.line);
+      case "tools": return this.toolsOpen(x.id) ? 26 + x.steps.length * 19 : 20;
       case "artifact": return x.pending || x.line ? 20 : 62;
       case "tasknews": return x.accept ? 26 : 20;
       case "cardstrip": {
@@ -2637,19 +2656,21 @@ export default class Chat extends View {
     // A readable column, centered when the pane is wide.
     // At a block's edge a row drops its outer room there: spaced() puts the gap between blocks.
     const col = (el, px = 18, py = 6) => h_flex().w_full().justify_center()
-      .child(div().w_full().max_w(COLUMN + 2 * px).px(px).pt(x.top0 ? 0 : py).pb(x.bot0 ? 0 : py).child(el));
+      .child(div().w_full().max_w(this.rd.column + 2 * px).px(px).pt(x.top0 ? 0 : py).pb(x.bot0 ? 0 : py).child(el));
     const pad = (el) => col(el, 18, 7);
-    // The person's words on the right in an accent tint; the agent's on the left, quieter.
-    const most = Math.max(240, Math.floor(Math.min(this.width, COLUMN) * 0.8));
+    // Reading (Doop App 14): the person's words on the right in a neutral bubble; the agent's on the left as
+    // plain prose at the measure. Both in the reading size, leading, font and prose colour.
+    const most = Math.max(240, Math.floor(Math.min(this.width, this.rd.column) * 0.8));
+    const rd = this.rd, ink = readingInk();
+    const prose = (el) => el.text_size(rd.size).line_height(rd.leading).text_color(ink.prose).when(rd.font === "serif", (el) => el.font_family(SERIF));
     const bubble = (text, faded) => h_flex().w_full().justify_end().child(
-      // An accent tint under the normal text color: readable in light and dark themes (the
-      // accent's own text color on the full accent was too faint on light accents).
-      div().max_w(most).px(12).py(8).rounded(12).bg(t.accent + "33").border_1().border_color(t.accent + "4d")
-        .text_color(t.foreground).when(faded, (el) => el.opacity(0.55))
+      prose(div().max_w(most).px(14).py(9).rounded(14).rounded_br(4).bg(ink.bubble))
+        .when(Boolean(ink.bubbleBorder), (el) => el.border_1().border_color(ink.bubbleBorder))
+        .when(faded, (el) => el.opacity(0.55))
         .child(TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(typed(text)) || " ").selectable(true)));
     const theirs = (text) => h_flex().w_full().justify_start().child(
-      div().max_w(most).px(12).py(8).rounded(12).bg(t.raised).text_color(t.foreground)
-        .child(x.clip ? this.clipped(t.raised, x.clip, div().id(`${pre}fold-in-${x.id}`).flex_none()
+      prose(div().w_full().max_w(this.proseW()).py(2))
+        .child(x.clip ? this.clipped(t.background, x.clip, div().id(`${pre}fold-in-${x.id}`).flex_none()
           // Its words' drawn height: a reply shorter than it looked isn't folded (foldOf()).
           .on_size_change((size, cx) => { const was = this.natural.get(x.id); if (!was || Math.abs(was - size.height) > 1) { this.natural.set(x.id, size.height); cx.notify(); } })
           .child(TextView.markdown(`${pre}chat-md-${x.id}`, this.findMark(text) || " ").selectable(true)))
@@ -2680,7 +2701,7 @@ export default class Chat extends View {
           .when(!x.failed && x.late, (el) => el.child(div().text_size(12).text_color(t.dim).child(WORDS.late))));
       case "replyref":
         // The message this one answers, in one dim line above it.
-        return col(h_flex().w_full().h(18).justify_end().child(h_flex().max_w(Math.floor(Math.min(this.width, COLUMN) * 0.6)).gap(5).items_center()
+        return col(h_flex().w_full().h(18).justify_end().child(h_flex().max_w(Math.floor(Math.min(this.width, this.rd.column) * 0.6)).gap(5).items_center()
           .cursor_pointer().text_size(11.5).text_color(t.dim).hover((s) => s.text_color(t.muted))
           .child(svg("mods/chat/reply.svg").size(12).flex_none())
           .child(div().min_w(0).truncate().child(x.to))), 18, 2);
@@ -2707,21 +2728,25 @@ export default class Chat extends View {
         return pad(theirs(x.text));
       case "codehead": {
         const done = this.copied === x.id;
-        return col(h_flex().w_full().h(28).pl(12).pr(4).items_center().rounded_t(8).bg(t.surface).border_1().border_b(0).border_color(t.border)
+        return col(h_flex().w_full().max_w(this.proseW()).h(28).pl(14).pr(4).items_center().rounded_t(10).bg(readingInk().codeBg).border_1().border_b(0).border_color(readingInk().codeBorder)
           .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(x.lang || "code"))
           .child(h_flex().h(22).px(6).gap(5).items_center().rounded(6).cursor_pointer().text_size(12).text_color(done ? t.foreground : t.dim)
             .hover((s) => s.bg(t.hover).text_color(t.foreground))
             .child(svg(`mods/chat/${done ? "check" : "copy"}.svg`).size(12).flex_none()).child(done ? "Copied" : "Copy")), 18, 0).pt(x.top0 ? 0 : 6);
       }
       case "code": {
-        const lines = v_flex().w_full().flex_none().children(x.code.split("\n").map((l) => div().min_h(19).child(l || " ")));
-        return col(div().w_full().px(12).py(8).rounded_b(8).bg(t.surface).border_1().border_color(t.border).overflow_hidden()
-          .font_family(settings().font_family ?? "JetBrains Mono").text_size(12.5).text_color(t.foreground)
-          .child(x.clip ? this.clipped(t.surface, x.clip, lines) : lines), 18, 0).pb(x.bot0 ? 0 : 6);
+        // Soft syntax colours (core/reading.js codeLines), one run a part; a plain line is one text.
+        const ink = readingInk(), c = this.rd.code;
+        const lines = v_flex().w_full().flex_none().children(this.runsOf(x).map((runs) => runs.length === 1 && !runs[0][0]
+          ? div().min_h(c.line).child(runs[0][1] || " ")
+          : h_flex().flex_wrap().min_h(c.line).children(runs.map(([k, text]) => div().when(Boolean(k), (el) => el.text_color(ink.syntax[k])).child(text)))));
+        return col(div().w_full().max_w(this.proseW()).px(14).py(8).rounded_b(10).bg(ink.codeBg).border_1().border_color(ink.codeBorder).overflow_hidden()
+          .font_family(settings().font_family ?? "JetBrains Mono").text_size(c.size).line_height(c.leading).text_color(ink.prose)
+          .child(x.clip ? this.clipped(ink.codeBg, x.clip, lines) : lines), 18, 0).pb(x.bot0 ? 0 : 6);
       }
       case "fold":
         // Show more / Show less, under the reply's bubble, in line with its words (clickRow()).
-        return col(h_flex().w_full().h(22).pl(12).child(h_flex().h(22).gap(4).items_center().cursor_pointer()
+        return col(h_flex().w_full().h(22).child(h_flex().h(22).gap(4).items_center().cursor_pointer()
           .text_size(12.5).font_medium().text_color(t.muted).hover((s) => s.text_color(t.foreground))
           .child(x.open ? WORDS.showLess : WORDS.showMore)
           .child(svg(`mods/chat/chevron-${x.open ? "up" : "down"}.svg`).size(14).flex_none())), 18, 2);
@@ -2782,12 +2807,15 @@ export default class Chat extends View {
       case "error":
         return pad(div().w_full().text_size(12.5).text_color(t.blocked).child(x.text));
       case "tools": {
-        const open = this.opened.has(x.id);
+        // One quiet line, "Claude Code · read 7 files ›"; the chevron opens the steps (open by default while
+        // Fold tool steps is off).
+        const open = this.toolsOpen(x.id);
+        const said = summary(x.steps), who = agent.NAMES[this.kind];
         return col(v_flex().w_full().px(6).py(QUIET_PY).rounded(7).cursor_pointer()
           .hover((s) => s.bg(t.hover))
-          .child(h_flex().gap(6).items_center().text_size(12).text_color(t.dim)
-            .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none())
-            .child(div().flex_1().min_w(0).truncate().child(summary(x.steps))))
+          .child(h_flex().gap(4).items_center().text_size(12).text_color(t.dim)
+            .child(div().min_w(0).truncate().child(who ? `${who} · ${said[0].toLowerCase()}${said.slice(1)}` : said))
+            .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none()))
           .when(open, (el) => el.child(v_flex().pl(18).pt(4).pb(2).gap(3).text_size(12).text_color(t.muted)
             .children(x.steps.flatMap((s) => {
               const out = this.results.get(s.id);
@@ -2800,7 +2828,19 @@ export default class Chat extends View {
     return div();
   }
 
-  // A folded reply's first `h` px of `el`, fading out into `bg` (its bubble's color).
+  // A code block's colour runs, kept per block (at most 300 blocks).
+  runsOf(x) {
+    const k = `${x.id}|${x.code.length}`;
+    let r = this.codeRuns.get(k);
+    if (!r) {
+      if (this.codeRuns.size > 300) this.codeRuns.clear();
+      r = codeLines(x.code, x.lang);
+      this.codeRuns.set(k, r);
+    }
+    return r;
+  }
+
+  // A folded reply's first `h` px of `el`, fading out into `bg` (the surface behind it).
   clipped(bg, h, el) {
     const fade = [0.3, 0.55, 0.8, 0.95];
     return div().relative().w_full().max_h(h).overflow_hidden().child(el)
@@ -2814,15 +2854,16 @@ export default class Chat extends View {
     const bar = this.hitBar(row);
     if (bar) { this.act(row.bar, bar, cx); cx.notify(); return; }
     if (row.kind === "tools") {
-      if (this.opened.has(key)) this.opened.delete(key);
-      else { this.opened.add(key); this.loadResults(row, cx); }
+      const fold = this.rd.fold;
+      if (this.toolsOpen(key)) { if (fold) this.opened.delete(key); else this.shut.add(key); }
+      else { if (fold) this.opened.add(key); else this.shut.delete(key); this.loadResults(row, cx); }
     } else if (row.kind === "codehead") this.copy(row.code, row.id, cx);
     else if (row.kind === "pending" && row.failed) { const p = this.pending.find((x) => x.id === row.id); if (p?.msg) this.retry(p, cx); }
     else if (row.kind === "artifact" && row.art) this.openArtifact(row);
     else if (row.kind === "tasknews") {
       // Accept's place on a Ready line: the line's right end, its padding in (as row() draws it:
       // col(…, 12, 0), then px 6).
-      const inner = Math.min(this.width, COLUMN + 24) - 24;
+      const inner = Math.min(this.width, this.rd.column + 24) - 24;
       const off = (this.width + inner) / 2 - 6 - (this.press?.x ?? -1);
       if (row.accept && off >= -2 && off <= (this.cardW.get("accept") ?? ACCEPT) + 2) this.acceptTask(row, cx);
       // Needs you with its card open just under it: the card takes the keys.
@@ -2838,8 +2879,8 @@ export default class Chat extends View {
     }
     else if (row.kind === "brief") { if (this.opened.has(key)) this.opened.delete(key); else this.opened.add(key); }
     else if (row.kind === "fold") {
-      // Only on its words (as rowBare() draws them: the column's edge, the bubble's padding in).
-      const off = (this.press?.x ?? -1) - this.edges().left - 12;
+      // Only on its words (as rowBare() draws them: at the column's edge, as the prose).
+      const off = (this.press?.x ?? -1) - this.edges().left;
       if (off >= -4 && off <= 100) this.toggleFold(row, rows);
     }
     else if (row.kind === "replyref") {
@@ -2882,7 +2923,7 @@ export default class Chat extends View {
     if (this.asks.length || this.sasks?.some((a) => !a.kept) || (this.addr && openCard(this.addr))) return null;
     // The agent this chat is starting, before it says anything.
     if ((this.phase === "starting" || this.phase === "finding") && this.role && this.pending.length) {
-      return h_flex().id("chat-status").flex_none().w_full().max_w(COLUMN + 36).mx_auto().h(30).px(18).gap(8).items_center().text_size(12).text_color(t.muted)
+      return h_flex().id("chat-status").flex_none().w_full().max_w(this.rd.column + 36).mx_auto().h(30).px(18).gap(8).items_center().text_size(12).text_color(t.muted)
         .child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900))
         .child(div().flex_1().min_w(0).truncate().child(`Starting the ${this.role === "coordinator" ? "Assistant" : this.role}…`));
     }
@@ -2896,7 +2937,7 @@ export default class Chat extends View {
       // Only waiting (hc wait, a sleep, a monitor, a helper it waits on): calm, no spinner; a
       // message wakes it (or comes in at once).
       const waiting = this.waitingNow() && !this.stopping;
-      return h_flex().id("chat-status").flex_none().w_full().max_w(COLUMN + 28).mx_auto().h(30).px(14).gap(8).items_center().text_size(12).text_color(t.muted)
+      return h_flex().id("chat-status").flex_none().w_full().max_w(this.rd.column + 28).mx_auto().h(30).px(14).gap(8).items_center().text_size(12).text_color(t.muted)
         .when(waiting, (el) => el.child(svg("mods/chat/clock.svg").size(12).flex_none().text_color(t.dim)))
         .when(!waiting, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
         .child(div().flex_1().min_w(0).truncate().child(doing))
@@ -2912,7 +2953,7 @@ export default class Chat extends View {
           .child(div().text_size(11).text_color(t.dim).child("Esc")));
     }
     if (st === "blocked") {
-      return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(6).child(h_flex().px(12).py(10).gap(10).items_center().rounded(10)
+      return div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(6).child(h_flex().px(12).py(10).gap(10).items_center().rounded(10)
         .bg(t.surface).border_1().border_color(t.border)
         .child(div().size(8).flex_none().rounded(4).bg(t.blocked))
         .child(v_flex().flex_1().min_w(0).gap(2)
@@ -2925,7 +2966,7 @@ export default class Chat extends View {
 
   // Why a call can't start (no key yet).
   callBar(t) {
-    const wrap = (el) => div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(6).child(el);
+    const wrap = (el) => div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(6).child(el);
     if (this.callHelp) {
       return wrap(v_flex().px(12).py(10).gap(8).rounded(8).bg(t.surface).border_1().border_color(t.border)
         .child(h_flex().gap(8).items_center()
@@ -2977,7 +3018,7 @@ export default class Chat extends View {
       .child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900))
       .child(div().flex_1().min_w(0).truncate().font_medium().text_color(t.foreground).child(h.label))
       .child(div().flex_none().font_family(settings().font_family ?? "JetBrains Mono").text_size(11.5).text_color(t.dim).child(ago(h.at)));
-    return v_flex().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(4)
+    return v_flex().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(4)
       .children(list.map(row))
       .when(!open, (el) => el.child(h_flex().id("helpers-more").h(22).px(6).gap(6).items_center().rounded(6).cursor_pointer()
         .text_size(12).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -2993,7 +3034,7 @@ export default class Chat extends View {
       .text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => { cx.stop_propagation(); fn(cx); cx.notify(); })
       .child(label);
-    return v_flex().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(6).gap(4).children(this.queue.map((m) =>
+    return v_flex().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(6).gap(4).children(this.queue.map((m) =>
       h_flex().id(`queued-${m.id}`).w_full().h(40).pl(10).pr(4).gap(8).items_center().rounded(8).border_1().border_color(t.border).bg(t.background)
         .child(svg("mods/chat/clock.svg").size(14).flex_none().text_color(t.dim))
         .child(v_flex().flex_1().min_w(0)
@@ -3251,7 +3292,7 @@ export default class Chat extends View {
     const c = this.call;
     const word = c.muted && c.phase !== "speaking" ? "Muted"
       : { connecting: "Connecting", listening: "Listening", thinking: "Thinking", speaking: "Speaking" }[c.phase] ?? "Connecting";
-    return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8).child(div().id("chat-call-box").w_full()
+    return div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(8).child(div().id("chat-call-box").w_full()
       .rounded(10).border_1().border_color(t.input).bg(t.background)
       .track_focus(this.callFocus)
       .on_key_down((e, cx) => {
@@ -3277,7 +3318,7 @@ export default class Chat extends View {
   composer(t, st, cx = null) {
     if (this.call) return this.callComposer(t);
     // A thread whose worker ended: read-only now.
-    if (this.thread && this.ended) return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8)
+    if (this.thread && this.ended) return div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(8)
       .child(h_flex().w_full().h(36).px(12).gap(8).items_center().rounded(10).border_1().border_color(t.border)
         .text_size(12.5).text_color(t.dim).child(div().size(6).flex_none().rounded(3).bg(t.dim)).child(div().flex_1().child(WORDS.ended))
         .when(Boolean(this.taskKey), (el) => el.child(this.button("chat-resume", this.resuming ? WORDS.resuming : "Resume",null, "primary", t, (cx) => this.resumeTask(cx)))));
@@ -3292,7 +3333,7 @@ export default class Chat extends View {
     const recallable = !list.length && (!this.box.value() || this.recall >= 0);
     const take = (fn) => (_e, cx) => { fn(cx); cx.stop_propagation(); cx.notify(); };
     const sel = Math.min(this.slashSel, Math.max(0, list.length - 1));
-    return div().flex_none().w_full().max_w(COLUMN + 28).mx_auto().px(14).pt(8).child(v_flex().id("chat-composer").w_full().rounded(10).border_1()
+    return div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(8).child(v_flex().id("chat-composer").w_full().rounded(10).border_1()
       // Esc stops a working agent while the box is empty and nothing is open over it.
       .key_context([list.length ? "chat_slash" : recallable ? "chat_recall" : "chat_composer",
         st === "working" && !list.length && !this.box.value().trim() && !this.quote ? "chat_stop" : null].filter(Boolean).join(" "))
@@ -3533,6 +3574,12 @@ export default class Chat extends View {
     if (this.call && paneFocused && !this.callHadFocus) cx.timer.after(0, () => { if (this.call) this.callFocus.focus(); });
     this.callHadFocus = Boolean(this.call && paneFocused);
     this.alerts(cx);
+    // Reading changed (the header's Aa, Cmd + / -): every row is measured again at the new size.
+    this.rd = proseMetrics(shared(READING_KEY));
+    if (readingSig(this.rd) !== this.rdSig) {
+      this.rdSig = readingSig(this.rd);
+      this.heights.clear(); this.measuredAt.clear(); this.natural.clear(); this.measureGen++;
+    }
     const t = theme();
     const st = this.status() ?? null;
     if (st === "working" && this.lastWorking !== "working") this.workingSince = Date.now();

@@ -12,12 +12,15 @@
 // back on. Each swap's last step removes the pane this header is on, so it goes last.
 // Which chat shows which agent is the agent's core label herdr.chat=<chat pane>: every screen
 // sees it, and the agents list, tab bar, spaces and status bar read it (chat/parked.js).
+// A chat's header also has Aa: a popover (this mod again, props { view: "reading" }) that sets how every chat on
+// this device reads (core/reading.js, shared "chat.reading").
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared } from "herdr";
+import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
-import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF } from "./ui.js";
+import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF, dialogTitle, toggleSwitch } from "./ui.js";
+import { READING_KEY, READING_WORDS, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice } from "./core/reading.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
 import { endAgent } from "./core/menus.js";
@@ -26,6 +29,8 @@ const CHAT = "chat";
 const LABEL = "herdr.chat";
 // When a toggle last swapped a pane (every copy of this build shares it).
 let lastSwap = 0;
+// The reading popover's size, and its padding.
+const READING_W = 400, READING_H = 312, READING_PAD = 14;
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -74,6 +79,8 @@ function parked(terminal) {
 export default class Pane extends View {
   init(_props, cx) {
     this.hovered = false;
+    // The reading popover is only a view: no Autopilot, no toggle.
+    if (props()?.view === "reading") return;
     // An Assistant's header: its Autopilot, looked at again now and then (the scheduler changes it).
     cx.timer.every(4000, (cx) => apPoll(this, cx));
     this.opening = false;
@@ -197,7 +204,33 @@ export default class Pane extends View {
       (v, _e, cx) => (v === "chat" ? onChat(cx) : onTerminal(cx)));
   }
 
+  // Aa's popover (Doop App 14): every pick goes to shared "chat.reading" and shows at once in the chats behind it.
+  reading() {
+    const t = theme();
+    const W = READING_WORDS, pad = READING_PAD;
+    const p = readingPrefs(shared(READING_KEY));
+    const set = (k) => (v) => setShared(READING_KEY, withChoice(shared(READING_KEY), k, v));
+    const row = (label, ctl) => h_flex().h(30).flex_none().gap(12).items_center()
+      .child(div().w(92).flex_none().text_size(12.5).text_color(t.muted).child(label))
+      .child(div().flex_1().min_w(0).child(ctl));
+    const seg = (key, opts, labelOf = (o) => o[1]) => segmented(`rd-${key}`, opts.map((o) => [o[0], labelOf(o)]), p[key], set(key), { fill: true });
+    return v_flex().id("reading").size_full().p(pad).bg(isDark() ? t.chrome : t.background).text_size(TEXT.body).text_color(t.foreground)
+      .child(dialogTitle("reading-title", W.title, { pad, sub: W.sub, lead: "mods/pane-chat/type.svg", size: HEAD.small }))
+      .child(v_flex().flex_1().min_h(0).pt(12).gap(10)
+        .child(row(W.size, seg("size", SIZES)))
+        .child(row(W.leading, seg("leading", LEADINGS)))
+        .child(row(W.width, seg("width", WIDTHS)))
+        .child(row(W.font, seg("font", FONTS, (o) => (o[0] === "serif" ? div().font_family(SERIF).text_size(13).child(o[1]) : o[1]))))
+        .child(h_flex().h(24).flex_none().gap(12).items_center()
+          .child(div().flex_1().min_w(0).text_size(12.5).text_color(t.muted).child(W.fold))
+          .child(toggleSwitch("rd-fold", p.fold, (on) => set("fold")(on)))))
+      .child(h_flex().h(40).flex_none().mx(-pad).mb(-pad).px(pad).gap(8).items_center().border_t(1).border_color(t.border).bg(t.chrome)
+        .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(W.live))
+        .child(uiButton("rd-reset", W.reset, { kind: "plain", onClick: () => setShared(READING_KEY, null) })));
+  }
+
   render(cx) {
+    if (props()?.view === "reading") return this.reading();
     const t = theme();
     const self = this.me();
     if (!self) return div();
@@ -271,6 +304,10 @@ export default class Pane extends View {
         .child(this.button(t, `ph-z-${pane}`, self.zoomed ? "unzoom" : "zoom", "pane.zoom", { pane }))
         .when(!entry, el => el.child(this.button(t, `ph-x-${pane}`, "close", "pane.close", { pane })))
         .when(Boolean(entry), el => el.child(this.button(t, `ph-x-${pane}`, "close", null, null, () => { this.ending = true; }).tooltip(endAgent(prog).tip))))
+      // A chat's Aa: how every chat reads (reading()).
+      .when(chatMode && canSwitch, (el) => el.child(this.button(t, `ph-aa-${pane}`, "type", null, null,
+        () => openOverlay({ mod: "pane-chat", kind: "popup", at: "pointer", width: READING_W, height: READING_H, props: { view: "reading" } }))
+        .tooltip(READING_WORDS.open)))
       .when(canSwitch, (el) => el.child(this.switcher(t, `ph-mode-${pane}`, chatMode,
         (cx) => this.toChat(self, cx),
         // No agent yet: the chat starts it (no first message) and then shows its terminal.

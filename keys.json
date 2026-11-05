@@ -31,7 +31,10 @@
   "mod:chat": {
     "ctrl-shift-d": "chat.dictate",
     "ctrl-shift-space": "chat.call",
-    "ctrl-f": "chat.find"
+    "ctrl-f": "chat.find",
+    "cmd-=": "chat.text-bigger",
+    "cmd-+": "chat.text-bigger",
+    "cmd--": "chat.text-smaller"
   },
   "layout:shepherdr": {
     "ctrl-shift-w": "tabs-tasks.close",
