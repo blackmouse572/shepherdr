@@ -23,10 +23,12 @@ test("an ask's rule is exactly what it asked", () => {
   expect(ruleOf(bash("  "))).toBe(null);
 });
 
-test("a rule matches the exact tool and command prefix, never more", () => {
+test("a rule matches the exact tool and the whole command, never more", () => {
   const r = ruleOf(bash("npm test"));
   expect(matches(r, bash("npm test"))).toBe(true);
-  expect(matches(r, bash("npm  test --watch"))).toBe(true);
+  expect(matches(r, bash("npm  test"))).toBe(true);
+  expect(matches(r, bash("npm test --watch"))).toBe(false);
+  expect(matches(ruleOf(bash("rm -rf build")), bash("rm -rf build ~"))).toBe(false);
   expect(matches(r, bash("npm testx"))).toBe(false);
   expect(matches(r, bash("npm"))).toBe(false);
   expect(matches(r, bash("npm test; rm -rf ~"))).toBe(false);
@@ -47,7 +49,8 @@ test("a rule matches the exact tool and command prefix, never more", () => {
   const app = { tool: "mcp__github__create_issue" };
   expect(matches(app, { tool_name: "mcp__github__create_issue", tool_input: { title: "x" } })).toBe(true);
   expect(matches(app, { tool_name: "mcp__github__delete_repo", tool_input: {} })).toBe(false);
-  expect(findRule([file, r], bash("npm test -s"))).toEqual(r);
+  expect(findRule([file, r], bash("npm test"))).toEqual(r);
+  expect(findRule([file, r], bash("npm test -s"))).toBe(null);
   expect(findRule([], bash("npm test"))).toBe(null);
 });
 
@@ -63,7 +66,7 @@ test("rules live under their space in shepherdr.json", () => {
   cfg = withoutRule(cfg, "sp1", r);
   expect(cfg.spaces.sp1).toEqual({ name: "Web" });
   expect(cfg.everywhere).toEqual({ worker: "x" });
-  expect(ruleWords(r)).toBe("Run: npm test …");
+  expect(ruleWords(r)).toBe("Run: npm test");
   expect(ruleWords({ tool: "Edit", path: "/r/a.js" })).toBe("Edit /r/a.js");
   expect(ruleWords({ tool: "Bash", command: "a | b" })).toBe("Run exactly: a | b");
 });

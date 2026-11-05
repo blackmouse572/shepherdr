@@ -1,6 +1,6 @@
 // "Always in this space" (Needs you's permission card, Doop App 03): a space's standing allow rules for Claude's
 // permission asks. A rule is exactly what one ask asked, never broader:
-//   Bash, one plain command        { tool: "Bash", prefix: [words] }   that command, or it with more words after
+//   Bash, one plain command        { tool: "Bash", prefix: [words] }   that command, word for word (no more words)
 //   Bash, anything else            { tool: "Bash", command }           only that exact command (pipes, ;, $(), > ...)
 //   Edit / Write / MultiEdit / Read / NotebookEdit   { tool, path }    that one file
 //   WebFetch                       { tool, url }                       that exact URL
@@ -68,11 +68,12 @@ export function cleanRule(r) {
 const key = (r) => JSON.stringify(cleanRule(r));
 export const sameRule = (a, b) => key(a) !== "null" && key(a) === key(b);
 
-// Whether a rule answers this ask: the exact tool, and the same command (its words first, nothing chained), file or URL.
+// Whether a rule answers this ask: the exact tool, and the same command (the same words, nothing chained), file or URL.
 export function matches(rule, req) {
   const r = cleanRule(rule), q = ruleOf(req);
   if (!r || !q || r.tool !== q.tool) return false;
-  if (r.prefix) return Boolean(q.prefix) && q.prefix.length >= r.prefix.length && r.prefix.every((w, i) => q.prefix[i] === w);
+  // Note: the whole command, word for word: a rule for `rm -rf build` never allows `rm -rf build ~`.
+  if (r.prefix) return Boolean(q.prefix) && q.prefix.length === r.prefix.length && r.prefix.every((w, i) => q.prefix[i] === w);
   if (r.command) return q.command === r.command;
   if (r.path) return q.path === r.path;
   if (r.url) return q.url === r.url;
@@ -85,7 +86,7 @@ export const findRule = (rules, req) => (rules ?? []).find((r) => matches(r, req
 export function ruleWords(rule) {
   const r = cleanRule(rule);
   if (!r) return "";
-  if (r.prefix) return `Run: ${r.prefix.join(" ")} …`;
+  if (r.prefix) return `Run: ${r.prefix.join(" ")}`;
   if (r.command) return `Run exactly: ${r.command}`;
   if (r.path) return `${r.tool === "Read" ? "Read" : r.tool === "Write" ? "Write" : "Edit"} ${r.path}`;
   if (r.url) return `Fetch ${r.url}`;
