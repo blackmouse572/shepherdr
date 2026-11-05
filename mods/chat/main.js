@@ -28,7 +28,10 @@ import { focused, props, run, theme, home, hc, exec, shared, setShared, watchFol
 import { agents, panes, terminals, spaces, inRender } from "./live.js";
 import * as fs from "fs/promises";
 import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names } from "./core/chat-log.js";
-import { words, howAnswered } from "./core/asks.js";
+import { words, howAnswered, allow } from "./core/asks.js";
+import { ruleOf } from "./core/allow.js";
+import { alwaysAllow } from "./allow.js";
+import { spaceOfTerminal } from "./core/notify.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
 import { WORDS, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
 // Sending the person's words, as the web app does (core/send.js).
@@ -302,6 +305,7 @@ export default class Chat extends View {
       reply: (ask, text, cx) => this.reply(ask, text, cx),
       toTerminal: () => this.toTerminal(),
       chatAbout: () => this.box.focus(),
+      always: (ask) => this.always(ask, this.addr, (a, t, cx) => this.reply(a, t, cx)),
     }, cx.focus_handle());
     // An Assistant's chat: its tasks' workers' asks on the same cards (workerAsks()). Shown ones
     // by id, the requests being read, those answered here (until the hook lets them go).
@@ -309,6 +313,7 @@ export default class Chat extends View {
       reply: (ask, text, cx) => this.replyWorker(ask, text, cx),
       toTerminal: (ask) => { openTaskThread(ask.terminal, ask.ref, ask.title); requestWorkerTerminal(ask.terminal); },
       chatAbout: (ask) => openTaskThread(ask.terminal, ask.ref, ask.title),
+      always: (ask) => this.always(ask, ask.terminal, (a, t, cx) => this.replyWorker(a, t, cx)),
     }, cx.focus_handle());
     this.shownAsks = new Map();
     // Secrets agents ask for (herdr-secret ask): their masked cards, here and for the workers.
@@ -637,6 +642,17 @@ export default class Chat extends View {
     cx.notify();
     // A task worker's ask may show in its Assistant's chat too: that copy reads how it went.
     cx.spawn(async () => answerAsk(this.askDir, ask.id, text, howAnswered(ask, text, this.thread || this.t?.labels?.["herdr.task"] ? "in the task's chat" : "in its chat")));
+  }
+
+  // "Always in this space" (lib/allow.js): the ask's rule kept for its agent's space, then this
+  // one allowed. Null when the ask can't have a rule or its agent has no space.
+  always(ask, address, reply) {
+    const space = spaceOfTerminal(terminals().find((k) => k.address === address));
+    if (!space || !ruleOf(ask.req)) return null;
+    return (cx) => cx.spawn(async (cx) => {
+      try { await alwaysAllow(space, ask.req); } catch (e) { toast({ title: "Couldn't keep the rule", body: plainError(e), level: "error" }); return; }
+      reply(ask, allow(), cx);
+    });
   }
 
   // ---- a task worker's asks (an Assistant's chat) ---------------------------------------------

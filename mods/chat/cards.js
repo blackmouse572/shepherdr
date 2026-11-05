@@ -3,13 +3,15 @@
 // "Chat about this", one Submit). The chat shows it in the conversation where it was asked, as
 // strips of the timeline (strips.js). The host does the rest: host.reply(ask, text, cx) sends
 // the hook its answer, host.toTerminal(ask, cx) shows the agent's terminal,
-// host.chatAbout(ask, cx) goes where the person can write to it.
+// host.chatAbout(ask, cx) goes where the person can write to it, host.always(ask) (optional)
+// gives "Always in this space"'s handler or null.
 // Every card the chat shows (these, a secret's, a CLI's start screen) starts with one header
 // strip (headStrip()): a red dot, "Claude asks" or "HERD-12 asks", quiet links at the right.
 
 import { div } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { allow, deny, answer, answers, chatAbout, release } from "./core/asks.js";
+import { ALWAYS } from "./core/allow.js";
 
 // A card's first strip. opts: { who ("Claude", "HERD-12"), asks (false: what follows `who`
 // instead, e.g. "Kept"), dot (its color; default red), links ([ctl] at the right) }.
@@ -58,6 +60,9 @@ export class AskCards {
       const ctls = [];
       // Always answerable here; only a request the chat couldn't read at all goes to the terminal.
       if (!w.unread) ctls.push({ id: `ask-allow-${id}`, label: w.kind === "plan" ? "Approve" : "Allow", look: "primary", fn: (cx) => this.host.reply(ask, allow(), cx) });
+      // "Always in this space": the host's, when the ask can have a rule (lib/allow.js).
+      const always = w.kind === "permission" && !w.unread ? this.host.always?.(ask) : null;
+      if (always) ctls.push({ id: `ask-always-${id}`, label: ALWAYS, look: "secondary", fn: always });
       ctls.push({ id: `ask-deny-${id}`, label: w.kind === "plan" ? "Keep planning" : "Deny", look: "secondary",
         fn: (cx) => this.host.reply(ask, w.kind === "plan" ? deny("The person didn't approve this plan yet. Ask them what to change.") : deny(), cx) });
       out.push({ key: "actions", kind: "controls", align: "start", ctls });

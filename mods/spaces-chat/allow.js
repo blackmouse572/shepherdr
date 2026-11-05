@@ -1,7 +1,7 @@
 // "Always in this space", the window's side: a space's allow rules (core/allow.js) in ~/.herdr/shepherdr.json, and the
 // engine that answers a matching permission ask "allow" by the same path the cards use (data/chat-asks: end/<id> says
 // how, then ans/<id>.json holds the hook's decision; mods/chat/ask-hook.sh prints it to Claude).
-//   alwaysAllow(space, req)    Needs you's "Always in this space": the ask's rule is kept for its space
+//   alwaysAllow(space, req)    "Always in this space" (Needs you, the chat's cards): the ask's rule is kept for its space
 //   removeRule(space, rule)    Settings > Agents' list
 //   startAllowRules(cx)        from the sidebar's init (always loaded): every waiting ask (shared "inbox.asks", which
 //                              the tab bar's engine keeps) whose space has a matching rule is allowed
