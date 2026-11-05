@@ -2665,7 +2665,7 @@ export default class Chat extends View {
     // plain prose at the measure. Both in the reading size, leading, font and prose colour.
     const most = Math.max(240, Math.floor(Math.min(this.width, this.rd.column) * 0.8));
     const rd = this.rd, ink = readingInk();
-    const prose = (el) => el.text_size(rd.size).line_height(rd.leading).text_color(ink.prose).when(rd.font === "serif", (el) => el.font_family(SERIF));
+    const prose = (el) => el.text_size(rd.size).line_height(`${rd.line}px`).text_color(ink.prose).when(rd.font === "serif", (el) => el.font_family(SERIF));
     const bubble = (text, faded) => h_flex().w_full().justify_end().child(
       prose(div().max_w(most).px(14).py(9).rounded(14).rounded_br(4).bg(ink.bubble))
         .when(Boolean(ink.bubbleBorder), (el) => el.border_1().border_color(ink.bubbleBorder))
@@ -2744,7 +2744,7 @@ export default class Chat extends View {
           ? div().min_h(c.line).child(runs[0][1] || " ")
           : h_flex().flex_wrap().min_h(c.line).children(runs.map(([k, text]) => div().when(Boolean(k), (el) => el.text_color(ink.syntax[k])).child(text)))));
         return col(div().w_full().max_w(this.proseW()).px(14).py(8).rounded_b(10).bg(ink.codeBg).border_1().border_color(ink.codeBorder).overflow_hidden()
-          .font_family(settings().font_family ?? "JetBrains Mono").text_size(c.size).line_height(c.leading).text_color(ink.prose)
+          .font_family(settings().font_family ?? "JetBrains Mono").text_size(c.size).line_height(`${c.line}px`).text_color(ink.prose)
           .child(x.clip ? this.clipped(ink.codeBg, x.clip, lines) : lines), 18, 0).pb(x.bot0 ? 0 : 6);
       }
       case "fold":
