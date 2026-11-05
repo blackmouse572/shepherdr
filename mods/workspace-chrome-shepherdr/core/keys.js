@@ -22,7 +22,7 @@ export const NAMES = {
   "pane.swap": (d) => `Swap with the pane ${DIRS[d] ?? d}`,
   "pane.close": () => "Close pane",
   "pane.zoom": () => "Zoom pane, or show all",
-  "layout.toggle": (id) => (id === "sidebar" ? "Show or hide the sidebar" : `Show or hide ${id}`),
+  "layout.toggle": (id) => ({ sidebar: "Show or hide the sidebar", panel: "Show or hide the side panel" })[id] ?? `Show or hide ${id}`,
   "layout.switch": () => "Next layout",
   "mod.open": (name) => ({ jump: "Jump to a space, task or artifact", keybinds: "Keybinds" })[name] ?? `Open ${name}`,
   "app.help": () => "Keybinds",

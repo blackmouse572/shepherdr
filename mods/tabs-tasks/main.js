@@ -402,7 +402,7 @@ export default class Tabs extends View {
     const [need, ready] = [counts ? inboxCount() : 0, greens ? readyCount() : 0];
     const toggle = h_flex().id("panel-toggle").h(28).px(6).gap(5).flex_none().items_center().rounded(RADIUS.control + 1).cursor_pointer()
       .bg(open ? t.selected : t.chrome).text_color(open ? t.foreground : t.muted).hover((s) => s.bg(open ? t.selected : t.hover).text_color(t.foreground))
-      .tooltip("Side panel").on_mouse_down("left", stop)
+      .tooltip("Side panel (⌘L)").on_mouse_down("left", stop)
       .on_click(() => {
         if (open) run("layout.hide", { id: "panel" });
         else if (enabled.includes(body?.active)) run("layout.show", { id: "panel" });
