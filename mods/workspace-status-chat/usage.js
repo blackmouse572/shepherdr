@@ -289,7 +289,9 @@ export class UsagePopover {
 
   render() {
     const H = this.p.height ?? 600;
-    return h_flex().id("usage-root").size_full().items_end().gap(POP.gap).track_focus(this.handle)
+    // Note: the root is the overlay's height (size_full only reaches the tallest child), so the popover sits on its
+    // bottom edge, just over the pill, however far the height estimate is off.
+    return h_flex().id("usage-root").w_full().h(H).items_end().gap(POP.gap).track_focus(this.handle)
       .on_key_down((e) => { if (e.key === "escape") this.close(); })
       .on_click(() => this.close())
       .child(this.popover(H))
