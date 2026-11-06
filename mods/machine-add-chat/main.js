@@ -222,7 +222,7 @@ export default class MachineAdd extends View {
           .px(10)
           .gap(10)
           .items_center()
-          .rounded(RADIUS.card)
+          .rounded(RADIUS.row)
           .when(idle, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.add(target, cx)))
           .child(svg(I("server")).size(15).text_color(t.muted))
           .child(div().flex_none().text_size(13).text_color(t.foreground).child(label))

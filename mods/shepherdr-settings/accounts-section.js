@@ -77,7 +77,7 @@ const signInNow = (a) => signIn(a.id, a.name).catch(failed("Couldn't open the si
 // state: the banner's ("attention" gets the lantern wash and an amber edge; Settings > Machines uses it too).
 export function card(t, id, { lead, title, sub, right = null, state = "neutral" }, body) {
   const d = isDark();
-  return v_flex().id(id).w_full().rounded(RADIUS.card + 4).overflow_hidden().bg(t.raised).border_1()
+  return v_flex().id(id).w_full().rounded(RADIUS.card).overflow_hidden().bg(t.raised).border_1()
     .border_color(state === "attention" ? `${need()}66` : t.border)
     .child(div().relative().w_full().h(54).flex_none().overflow_hidden().border_b(1).border_color(t.border)
       .when(d, (el) => el.bg(bannerBg(state)).child(bannerDots(state)))
@@ -203,7 +203,7 @@ function accountRow(t, s, a, i, list, pr) {
     : s?.confirm === a.id
       ? h_flex().gap(6).items_center()
         .child(div().flex_1().min_w(0).text_size(TEXT.label).line_height("17px").text_color(t.dim).child(WORDS.removeAbout(a.folder)))
-        .child(button(`acc-rm-yes-${a.id}`, WORDS.removeYes, { onClick: () => { s.confirm = null; hideAccount(a.id); } }))
+        .child(button(`acc-rm-yes-${a.id}`, WORDS.removeYes, { kind: "ember", onClick: () => { s.confirm = null; hideAccount(a.id); } }))
         .child(button(`acc-rm-no-${a.id}`, WORDS.keep, { kind: "plain", onClick: () => { s.confirm = null; } }))
       : null;
   return v_flex().w_full().child(row).when(Boolean(under), (el) => el.child(div().px(14).pb(10).child(under)));
@@ -275,7 +275,7 @@ function codexCard(t, s, cx, roles = null, readOnly = false) {
     .when(!readOnly && s.codexOut, (el) => el.child(v_flex().gap(8)
       .child(dim(WORDS.signOutAbout))
       .child(h_flex().gap(8)
-        .child(button("acc-codex-out-yes", WORDS.signOut, { onClick: () => { s.codexOut = false; codexSignOut().catch(failed("Couldn't sign out of Codex")); } }))
+        .child(button("acc-codex-out-yes", WORDS.signOut, { kind: "ember", onClick: () => { s.codexOut = false; codexSignOut().catch(failed("Couldn't sign out of Codex")); } }))
         .child(button("acc-codex-out-no", WORDS.keep, { kind: "plain", onClick: () => { s.codexOut = false; } })))));
   return card(t, "acc-codex", { lead: logo("codex", 16), title: WORDS.codex, sub: WORDS.codexSub }, [body]);
 }

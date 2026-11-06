@@ -197,6 +197,6 @@ export default class Coordinator extends View {
         .child(choice("stop", true, "Stop its workers", "Ends the agents it started and closes their tabs."))
         .child(choice("keep", false, "Let them finish", "Workers keep running in their own tabs, on their own.")))
       .child(div().flex_1())
-      .child(dialogFooter({ onCancel: () => closeOverlay(p.overlay), primary: { id: "confirm", label: "Close Assistant", onClick: confirm } }));
+      .child(dialogFooter({ onCancel: () => closeOverlay(p.overlay), primary: { id: "confirm", label: "Close Assistant", kind: n > 0 && this.stop ? "ember" : "primary", onClick: confirm } }));
   }
 }

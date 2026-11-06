@@ -13,9 +13,10 @@ import { settings, theme, openOverlay, notify, layout, shared, setShared, spaces
 export const H = { xs: 20, sm: 24, lg: 32, button: 30 };
 // Text: 11 IDs and times, 12 second lines and labels, 13 body and titles, 15 page titles.
 export const TEXT = { id: 11, label: 12, body: 13, title: 15 };
-// Corners: 6 on controls, 8 on cards (and hovers), 12 on bubbles, 16 on dialogs that draw their own frame, 18 on
-// the Settings window. Those dialogs' surface is theme().chrome (the design's bg-panel).
-export const RADIUS = { control: 6, card: 8, bubble: 12, dialog: 16, window: 18, button: 8, field: 9 };
+// Corners (DS 01 radius tokens): 6 on chips and small controls, 9 on buttons and fields, 12 on cards, 16 on windows
+// and dialogs that draw their own frame; 8 on rows, tabs and hovers (App 02 .tk, .tab); bubbles 14 with a 4 tail
+// corner. Those dialogs' surface is theme().chrome (the design's bg-panel).
+export const RADIUS = { control: 6, row: 8, card: 12, bubble: 14, tail: 4, dialog: 16, window: 16, button: 9, field: 9 };
 
 // Status colors -----------------------------------------------------------
 // The design system's status colours (night pasture), light and dark, the same as the task dots (dot.js uses
@@ -135,7 +136,7 @@ export function closeX(id, onClose) {
 // Hover and pointer --------------------------------------------------------
 // Only what a click does something on gets the pointer and a hover; everything else gets
 // neither. The hover is a rounded 8 background. `el` needs an id.
-export function clickable(el, onClick, { radius = RADIUS.card } = {}) {
+export function clickable(el, onClick, { radius = RADIUS.row } = {}) {
   const t = theme();
   return el.rounded(radius).cursor_pointer().hover((s) => s.bg(t.hover))
     .on_click((e, cx) => { cx.stop_propagation(); onClick(e, cx); cx.notify(); });
@@ -165,10 +166,12 @@ const RAISED = {
   primary: { border: "#5C3504", lit: "#FFF4D6D9", shade: "#964A0059" },
   secondary: { border: "#000000", lit: "#FFFFFF17", shade: "#00000073", bg: "#22231E", hover: "#2A2B26" },
   wool: { border: "#050505", lit: "#FFFFFF", shade: "#0000002E" },
+  ember: { border: "#5A1510", lit: "#FFDCD7B3", shade: "#780A0059" },
 };
 // kind: "primary" (solid accent; one per panel or dialog), "wool" (solid light: a confirm beside the accent, as Merge),
-// "secondary" (bordered), "plain" (words only, a hover behind them). size: "xs" 20 (in a row's second line), "sm" 24
-// or "lg" 30 (radius 8). Sized to its words, never cut.
+// "ember" (solid red: a destructive confirm, as End agent; DS 02 .btn--ember), "secondary" (bordered), "plain" (words
+// only, a hover behind them). size: "xs" 20 (in a row's second line), "sm" 24
+// or "lg" 30 (radius 9). Sized to its words, never cut.
 // opts: { kind, size, icon (an svg path), disabled, onClick, keys (keycaps drawn inside, after the words: ["⌘", "⏎"]) }.
 export function button(id, label, { kind = "secondary", size = "sm", icon = null, disabled = false, onClick = null, keys = null } = {}) {
   const t = theme();
@@ -181,12 +184,12 @@ export function button(id, label, { kind = "secondary", size = "sm", icon = null
   // Dark: the design's raised (skeuomorphic) buttons, as near as a mod can draw them. Mods have no inset shadow or
   // gradient fill, so the lit top edge and the shaded bottom are two hairlines inside the button, kept off the
   // rounded corners; a small drop shadow lifts it, and a press dims it (motion is opacity only).
-  const solid = kind === "primary" || kind === "wool";
+  const solid = kind === "primary" || kind === "wool" || kind === "ember";
   const raised = dark() && (solid || kind === "secondary");
   const R = RAISED[kind] ?? RAISED.secondary;
   // Wool: the light fill with dark words in dark; light mode inverts it (ink on paper).
-  const fill = kind === "wool" ? t.foreground : t.solid;
-  const ink = kind === "wool" ? t.background : t.solid_foreground;
+  const fill = kind === "wool" ? t.foreground : kind === "ember" ? red() : t.solid;
+  const ink = kind === "wool" ? t.background : kind === "ember" ? "#ffffff" : t.solid_foreground;
   const edge = (top, color, px) => div().absolute().left(radius).right(radius).h(px).bg(color)
     .when(top, (el) => el.top(0)).when(!top, (el) => el.bottom(0));
   return h_flex().id(id).h(h).flex_none().gap(6).items_center().rounded(radius).whitespace_nowrap()
@@ -194,7 +197,7 @@ export function button(id, label, { kind = "secondary", size = "sm", icon = null
     // An icon's side is padded like its top, so it sits square in the corner.
     .pl(icon ? (h - iconSize) / 2 : pad).pr(pad)
     .when(raised, (el) => el.relative().overflow_hidden().border_1().border_color(R.border).shadow_sm()
-      .child(edge(true, R.lit, 1)).child(edge(false, R.shade, kind === "primary" ? 2 : 1))
+      .child(edge(true, R.lit, 1)).child(edge(false, R.shade, kind === "primary" || kind === "ember" ? 2 : 1))
       .when(live, (el) => el.active((s) => s.opacity(0.8))))
     .when(raised && solid, (el) => el.bg(fill).text_color(ink).when(live, (el) => el.hover((s) => s.opacity(0.92))))
     .when(raised && kind === "secondary", (el) => el.bg(R.bg).text_color(t.foreground).when(live, (el) => el.hover((s) => s.bg(R.hover))))
@@ -266,37 +269,22 @@ export function toggleSwitch(id, on, onToggle, { disabled = false } = {}) {
 }
 
 // Segmented control ----------------------------------------------------------
-// options: [[value, label, { disabled, tip }?], ...]. Every segment is as wide as its words and
-// never cut; `fill` stretches the segments over the row (still never narrower than their words).
-// A disabled segment is dim and takes no click; `tip` is its tooltip.
-// opts: { size: "sm" 24 | "lg" 32, disabled, fill }.
-export function segmented(id, options, value, onPick, { size = "sm", disabled = false, fill = false } = {}) {
-  const t = theme();
-  return h_flex().h(size === "lg" ? H.lg : H.sm).flex_none().p(2).gap(2).rounded(RADIUS.control).bg(t.raised)
-    .when(fill, (el) => el.w_full())
-    .when(disabled, (el) => el.opacity(0.5))
-    .children(options.map(([v, label, o]) => {
-      const on = v === value, off = disabled || Boolean(o?.disabled);
-      return h_flex().id(`${id}-${v}`).h_full().px(8).justify_center().items_center().rounded(RADIUS.control - 2)
-        .whitespace_nowrap().text_size(TEXT.label)
-        .when(fill, (el) => el.flex_1())
-        .when(!fill, (el) => el.flex_none())
-        .when(Boolean(o?.tip), (el) => el.tooltip(o.tip))
-        .when(on, (el) => el.bg(t.background).text_color(t.foreground).font_medium())
-        .when(!on && Boolean(o?.disabled), (el) => el.text_color(t.dim).opacity(0.6))
-        .when(!on && !o?.disabled, (el) => el.text_color(t.muted))
-        .when(!on && !off, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground))
-          .on_click((e, cx) => { cx.stop_propagation(); onPick(v, e, cx); cx.notify(); }))
-        .child(label);
-    }));
-}
-
-// Tabs on a well whose raised pill slides to the chosen one (Doop App 02's .seg, the side panel switcher's look).
-// Each tab is as wide as its words, measured into `sizes` (a Map the caller keeps across renders); the pill is placed
-// by them in px, so the native transition eases it (left and width, 180 ms ease-in-out). Options as segmented()'s.
+// A sunken well whose raised pill slides to the chosen segment (DS 02 SegmentedControl, Doop App 02's .seg).
+// options: [[value, label, { disabled, tip }?], ...]. Every segment is as wide as its words and never cut; `fill`
+// stretches the segments over the row (still never narrower than their words). A disabled segment is dim and takes
+// no click; `tip` is its tooltip. Each segment is measured (kept per control id, across renders); the pill is placed
+// by those sizes in px, so the native transition eases it (left and width, 180 ms ease-in-out). Until they're known,
+// the chosen segment draws its own fill.
+// opts: { size: "sm" 24 | "lg" 32, disabled, fill, sizes (a Map to measure into; a module one per id by default),
+// pad (each segment's side padding, 8) }.
 const PILL_MOTION = { duration: 180, easing: "ease-in-out" };
-export function pillTabs(id, options, value, onPick, sizes) {
+const SEG_SIZES = new Map();
+export function segmented(id, options, value, onPick, { size = "sm", disabled = false, fill = false, sizes = null, pad = 8 } = {}) {
   const t = theme();
+  if (!sizes) {
+    if (!SEG_SIZES.has(id)) SEG_SIZES.set(id, new Map());
+    sizes = SEG_SIZES.get(id);
+  }
   const at = options.findIndex(([v]) => v === value);
   const known = at >= 0 && options.every(([v]) => sizes.has(v));
   // Measured sizes come zoomed (settings' zoom); lengths are drawn at the zoom, so they're set unzoomed.
@@ -305,21 +293,33 @@ export function pillTabs(id, options, value, onPick, sizes) {
   const pill = known && div().id(`${id}-pill`).absolute().top(0).h_full().left(left).w(sizes.get(value) / z)
     .transition("left", PILL_MOTION).transition("width", PILL_MOTION)
     .child(raisedLook(div().size_full().rounded(RADIUS.control - 2), RADIUS.control - 2).when(!dark(), (el) => el.bg(t.background)));
-  return well(div().id(`${id}-well`).h(H.sm).flex_none().p(2), RADIUS.control)
+  return well(div().id(`${id}-well`).h(size === "lg" ? H.lg : H.sm).flex_none().p(2), RADIUS.control)
+    .when(fill, (el) => el.w_full())
+    .when(disabled, (el) => el.opacity(0.5))
     .child(h_flex().relative().h_full().gap(2)
+      .when(fill, (el) => el.w_full())
       .when(Boolean(pill), (el) => el.child(pill))
       .children(options.map(([v, label, o]) => {
-        const on = v === value, off = Boolean(o?.disabled);
-        return h_flex().id(`${id}-${v}`).h_full().flex_none().px(10).justify_center().items_center().rounded(RADIUS.control - 2)
+        const on = v === value, off = disabled || Boolean(o?.disabled);
+        return h_flex().id(`${id}-${v}`).h_full().px(pad).justify_center().items_center().rounded(RADIUS.control - 2)
           .whitespace_nowrap().text_size(TEXT.label)
+          .when(fill, (el) => el.flex_1())
+          .when(!fill, (el) => el.flex_none())
           .on_size_change((size, cx) => { if (Math.abs((sizes.get(v) ?? -1) - size.width) > 0.5) { sizes.set(v, size.width); cx.notify(); } })
           .when(Boolean(o?.tip), (el) => el.tooltip(o.tip))
           .when(on, (el) => el.text_color(t.foreground).font_medium().when(!pill, (el) => el.bg(t.background)))
-          .when(!on && off, (el) => el.text_color(t.dim).opacity(0.6))
-          .when(!on && !off, (el) => el.text_color(t.muted).cursor_pointer().hover((s) => s.text_color(t.foreground))
+          .when(!on && Boolean(o?.disabled), (el) => el.text_color(t.dim).opacity(0.6))
+          .when(!on && !o?.disabled, (el) => el.text_color(t.muted))
+          .when(!on && !off, (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground))
             .on_click((e, cx) => { cx.stop_propagation(); onPick(v, e, cx); cx.notify(); }))
           .child(label);
       })));
+}
+
+// The same control as tabs (the side panel switcher, the task view's header): segments padded 10, measured into
+// `sizes` (a Map the caller keeps across renders).
+export function pillTabs(id, options, value, onPick, sizes) {
+  return segmented(id, options, value, onPick, { sizes, pad: 10 });
 }
 
 // Menu row -------------------------------------------------------------------
@@ -364,7 +364,7 @@ export function cardHeader(title, actions = []) {
 // `pad`, as dialogTitle's), a top border on a darker chrome, an Esc keycap at the left, an optional note (`error`
 // turns it red), then a plain Cancel and the one solid primary. It takes H.lg (32) of the flow, as the old row did,
 // so fixed dialog heights hold. `keys`: keycaps inside the primary (only for a key the dialog handles).
-// opts: { onCancel, primary: { id, label, onClick, disabled, keys }, cancelLabel, note, error, pad (the root's, 18),
+// opts: { onCancel, primary: { id, label, onClick, disabled, keys, kind ("ember" for a destructive one) }, cancelLabel, note, error, pad (the root's, 18),
 // radius (the dialog's own corner radius less its border, for one that draws its own frame), esc (the Esc cap) }.
 const FOOT = "#0F100E";
 // A dialog's submit shortcut, ⌘⏎ (Ctrl+Enter off macOS): submitKeys() its caps for the primary's `keys`,
@@ -381,7 +381,7 @@ export function dialogFooter({ onCancel, primary, cancelLabel = "Cancel", note =
     .child(div().flex_1().min_w(0).truncate().text_size(TEXT.label).text_color(error ? red() : t.dim).child(note || ""))
     .child(button("dialog-cancel", cancelLabel, { kind: "plain", size: "lg", onClick: onCancel }))
     .when(Boolean(primary), (el) => el.child(button(primary.id ?? "dialog-primary", primary.label,
-      { kind: "primary", size: "lg", disabled: primary.disabled, onClick: primary.onClick, keys: primary.keys })));
+      { kind: primary.kind ?? "primary", size: "lg", disabled: primary.disabled, onClick: primary.onClick, keys: primary.keys })));
 }
 
 // Count badge ------------------------------------------------------------------------------

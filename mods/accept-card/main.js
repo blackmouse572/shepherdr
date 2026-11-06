@@ -236,7 +236,7 @@ export default class AcceptCard extends View {
   // Proof: a row that looks pressable, opening the artifact in a modal.
   proof(t, e) {
     if (!e.proof) return div().text_color(t.muted).child(ACCEPT.noProof);
-    return h_flex().id("open-proof").w_full().h(32).px(10).gap(8).items_center().rounded(RADIUS.card)
+    return h_flex().id("open-proof").w_full().h(32).px(10).gap(8).items_center().rounded(RADIUS.row)
       .border_1().border_color(t.border).bg(t.surface).cursor_pointer().hover((s) => s.bg(t.hover))
       .on_click((_e, cx) => { cx.stop_propagation(); this.openProof(cx); cx.notify(); })
       .child(div().flex_1().min_w(0).truncate().text_color(t.foreground)

@@ -72,7 +72,7 @@ export default class WorkspaceChrome extends View {
   // The design's Jump field (Doop App 02 .jump): a sunken box with its words and ⌘K; a click opens Jump.
   jumpField(t) {
     const caps = capsOf("mod.open:jump");
-    return h_flex().id("jump-field").flex_1().min_w(0).h(26).mt(TL_DROP).pl(10).pr(4).gap(8).items_center().rounded(RADIUS.card)
+    return h_flex().id("jump-field").flex_1().min_w(0).h(26).mt(TL_DROP).pl(10).pr(4).gap(8).items_center().rounded(RADIUS.row)
       .bg(t.background).border_1().border_color(t.border).text_size(TEXT.label).text_color(t.dim).cursor_pointer()
       .hover(s => s.border_color(t.input ?? t.border).text_color(t.muted))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())

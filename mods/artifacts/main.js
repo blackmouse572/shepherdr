@@ -268,7 +268,7 @@ export default class Artifacts extends View {
     const open = panes().find((p) => p.mod === mod && tabs.has(p.tab));
     const shown = shared("artifacts.view")?.mod === mod;
     const busy = this.opening === a.id;
-    return h_flex().id(`art-${a.id}`).flex_none().px(8).py(6).gap(11).items_center().rounded(RADIUS.card).cursor_pointer()
+    return h_flex().id(`art-${a.id}`).flex_none().px(8).py(6).gap(11).items_center().rounded(RADIUS.row).cursor_pointer()
       .when(shown, (el) => el.bg(t.selected))
       .hover((s) => s.bg(shown ? t.selected : t.hover))
       .on_click((_e, cx) => this.open(a, (m) => this.inPlace(m, a), cx))

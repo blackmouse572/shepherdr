@@ -44,6 +44,6 @@ export default class Confirm extends View {
       .child(div().flex_1().min_h(0).text_color(t.muted).child(p.detail ?? ""))
       .child(div().h(8).flex_none())
       .child(dialogFooter({ onCancel: () => closeOverlay(props().overlay),
-        primary: { id: "yes", label: p.verb ?? "OK", onClick: () => this.yes() } }));
+        primary: { id: "yes", label: p.verb ?? "OK", kind: danger ? "ember" : "primary", onClick: () => this.yes() } }));
   }
 }

@@ -84,7 +84,7 @@ function body(t, s, pre) {
           .border_color(s.on ? t.accent : t.input).when(Boolean(s.on), (el) => el.bg(t.accent))
           .when(Boolean(s.on) && Boolean(s.multi), (el) => el.child(svg("mods/chat/check.svg").size(10).text_color(t.background)))
           .when(Boolean(s.on) && !s.multi, (el) => el.child(div().size(6).rounded(3).bg(t.background)));
-      return h_flex().w_full().px(8).py(6).gap(10).items_start().rounded(RADIUS.card)
+      return h_flex().w_full().px(8).py(6).gap(10).items_start().rounded(RADIUS.row)
         .when(Boolean(s.disabled), (el) => el.opacity(0.6))
         .when(!s.disabled, (el) => el.cursor_pointer().hover((st) => st.bg(s.on ? t.selected : t.hover)))
         .when(Boolean(s.on), (el) => el.bg(t.selected))
@@ -95,7 +95,7 @@ function body(t, s, pre) {
           .when(Boolean(s.desc), (el) => el.child(div().text_size(TEXT.label).text_color(t.dim).child(s.desc))));
     }
     case "review":
-      return h_flex().w_full().px(8).py(6).gap(10).rounded(RADIUS.card).cursor_pointer().hover((st) => st.bg(t.hover))
+      return h_flex().w_full().px(8).py(6).gap(10).rounded(RADIUS.row).cursor_pointer().hover((st) => st.bg(t.hover))
         .child(div().w(150).flex_none().truncate().text_size(TEXT.label).text_color(t.dim).child(s.label))
         .child(div().flex_1().min_w(0).text_color(s.missing ? red() : t.foreground).child(s.answer));
     case "input":

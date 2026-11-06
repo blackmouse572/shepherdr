@@ -11,19 +11,21 @@ picker, peek, help, ...) are read-only: clone them first.
 
 | What | Value |
 |---|---|
-| `H.sm` / `H.button` | buttons 24 in panels, rows and headers; 30 in dialogs and cards (radius `RADIUS.button` 8) |
+| `H.sm` / `H.button` | buttons 24 in panels, rows and headers; 30 in dialogs and cards (radius `RADIUS.button` 9) |
 | `H.lg` | 32: fields, menu rows and other rows beside a dialog's buttons |
 | `H.xs` | 20: a button inside a row's 16 tall second line (a Ready row's Accept), so the row keeps its height |
 | `TEXT.id` 11 | IDs, times, badges |
 | `TEXT.label` 12 | second lines, labels, small headings, button words (24) |
 | `TEXT.body` 13 | body, row titles, menu rows, button words (32) |
 | `TEXT.title` 15 | page and dialog titles (light; dark headers use `HEAD`: 20, 16 small, 22 Settings, in the serif) |
-| `RADIUS.control` 6 | small buttons, segmented, menu rows |
+| `RADIUS.control` 6 | chips, small buttons, segmented, menu rows (DS 01 radius-chip) |
+| `RADIUS.button` 9 | 30 tall buttons (DS 01 radius-button) |
 | `RADIUS.field` 9 | text fields (`fieldFrame`) |
-| `RADIUS.card` 8 | cards, popovers, every hover background |
-| `RADIUS.bubble` 12 | chat bubbles |
+| `RADIUS.row` 8 | rows, tabs and every hover background (App 02 `.tk`, `.tab`) |
+| `RADIUS.card` 12 | cards, popovers, toasts (DS 01 radius-card) |
+| `RADIUS.bubble` 14, `RADIUS.tail` 4 | chat bubbles: 14 with a 4 tail corner (bottom-right on the person's) |
 | `RADIUS.dialog` 16 | dialogs that draw their own frame (New space, Rename), on `theme().chrome` (the design's bg-panel) |
-| `RADIUS.window` 18 | the Settings window, on `theme().chrome` |
+| `RADIUS.window` 16 | the Settings window, on `theme().chrome` (DS 01 radius-window) |
 
 No other sizes. Use the names, not the numbers, so a change here reaches everyone.
 
@@ -44,8 +46,8 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
 ## Parts
 
 - `button(id, label, { kind, size, icon, disabled, onClick, keys })`: `primary` (solid accent, one per panel
-  or dialog), `wool` (solid light, DS 02's `.btn.wool`: a confirm such as Merge), `secondary` (bordered), `plain`
-  (words only). `size` `"xs"` 20 (a row's second line only) / `"sm"` 24 / `"lg"` 30, radius 8, 12.5 words. `keys`:
+  or dialog), `ember` (solid red, DS 02's `.btn--ember`: a destructive confirm such as End agent, Close space), `wool` (solid light, DS 02's `.btn.wool`: a confirm such as Merge), `secondary` (bordered), `plain`
+  (words only). `size` `"xs"` 20 (a row's second line only) / `"sm"` 24 / `"lg"` 30, radius 9, 12.5 words. `keys`:
   small keycaps inside, after the words (only for a key the view handles). Always as wide as its words; never
   truncated. Disabled: half opacity, no pointer, no hover.
 - `raisedLook(el, radius)`: the secondary button's raised look on something that isn't a button (outline, lit top and
@@ -55,8 +57,10 @@ a small drop shadow, and dim while pressed. The design's lantern and wool fills 
 - `link(id, label, onClick)`: a quiet text link (card headers, "Show all").
 - `toggleSwitch(id, on, onToggle(next), { disabled })`: the on/off switch, 34 × 20 (Doop `.tg`): on, the accent
   track with a dark ring and a light knob; off, a sunken well with the strong border's ring and a gray knob.
-- `segmented(id, [[value, label]...], value, onPick, { size, disabled, fill })`: segments sized to
-  their words, never cut; `fill` stretches them over the row.
+- `segmented(id, [[value, label]...], value, onPick, { size, disabled, fill })`: DS 02's SegmentedControl, a sunken
+  well with a raised pill that slides to the chosen segment; segments sized to their words, never cut; `fill`
+  stretches them over the row. Sizes are measured per control id. `pillTabs(id, options, value, onPick, sizes)`: the
+  same, padded 10, measured into the caller's Map.
 - `menuRow(id, label, { icon, hint, check, danger, disabled, onClick })`: a popup menu's 32 row:
   16 icon slot, label, dim hint, a check at the right when `check` is true (`false` keeps the slot
   so a choice list lines up).
