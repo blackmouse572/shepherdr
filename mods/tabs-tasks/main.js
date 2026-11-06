@@ -394,7 +394,7 @@ export default class Tabs extends View {
       const coord = isCoordinatorTab(c.id);
       const task = coord ? null : this.taskOf(space, ps, byAddress, cx);
       const titled = ps.find(p => p.program?.agent) ?? ps[0];
-      const name = task?.title && !c.named ? task.title : tabName(c.name, program?.name, titled?.program?.agent ? titled.title : null);
+      const name = task?.title && !c.named ? task.title : tabName(c.named ? c.name : null, program?.name, titled?.program?.agent ? titled.title : null);
       const tint = c.active ? t.accent : t.dim;
       const icon = coord ? svg("mods/spaces-chat/compass.svg").size(14).flex_none().text_color(tint)
         : program?.icon && !program.shell ? (program.tint ? svg(program.icon).size(14).flex_none().text_color(tint) : image(program.icon).size(14).flex_none())
