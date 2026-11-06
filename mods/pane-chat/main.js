@@ -23,7 +23,7 @@ import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainEr
 import { READING_KEY, READING_WORDS, READING_POP, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice, fontOptions, fontFamily } from "./core/reading.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
-import { endAgent } from "./core/menus.js";
+import { endAgent, sessionTitle } from "./core/menus.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { paneLine, reportOf } from "./core/tasks.js";
 import { defaults, current, modelName } from "./agent.js";
@@ -333,11 +333,12 @@ export default class Pane extends View {
     const prog = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "Shell";
     const k = terminals().find((x) => x.address === (agent ?? self.terminal));
     const isAssistant = Boolean(lazy) || k?.labels?.["herdr.role"] === "coordinator";
-    // The name: a task's title, an Assistant its space's name (Doop App 01, App 02); the program shows as its logo.
+    // The name: a task's title, an Assistant its space's name (Doop App 01, App 02), another agent its session title
+    // (core/menus.js sessionTitle); the program shows as its logo.
     const rec = art === null ? taskOf(k, cx) : null;
     const spaceName = isAssistant ? spaces().find((s) => s.tabs?.some((x) => x.id === self.tab))?.name : null;
     const name = art ?? (lazy ? spaceName || "Assistant" : chatMode && p === self ? "Chat"
-      : rec?.task.title || (isAssistant ? spaceName || `Assistant · ${prog}` : prog));
+      : rec?.task.title || (isAssistant ? spaceName || `Assistant · ${prog}` : (p.program?.agent && sessionTitle(p.title, prog)) || prog));
     const pic = art !== null ? svg("mods/artifacts/artifacts.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = self.pane;
