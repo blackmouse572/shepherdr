@@ -114,6 +114,8 @@ describe("the task header (Doop App 02)", () => {
     expect(prPill({ number: 48 })).toBe("PR #48");
     expect(prPill({ number: 48 }, "draft")).toBe("PR #48 · draft");
     expect(prPill(null)).toBe(null);
+  });
+});
 
 describe("the list's rows (Doop App 02, App 13)", () => {
   test("groups go Needs you, Working, Queued, Ready, Merging, Done", () => {
