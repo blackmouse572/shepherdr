@@ -362,6 +362,11 @@ function codexStep(name, args) {
 //   { kind: "ask", id, text, qs?, answers?, closed? }  (the agent's own question tool; closed once its dialog
 //                                          is gone: "answered" | "dismissed"; qs: Claude's questions,
 //                                          answers: { question: the choice picked })   { kind: "error", id, text }
+//   { kind: "helper", id, call, desc, at?, text?, out? }  (a Claude Code helper finished, where its report came: a
+//                                          helper run on its own says it in text; one it waited for has its
+//                                          report at `out`, read when shown: reportText())
+// `todos` is the agent's newest step list (Claude Code's TodoWrite, Codex's update_plan): { at, items: [{ text,
+// status: "completed" | "in_progress" | "pending" }] }, or null.
 // `doing` is what it does right now (the last call not answered yet), for the status line.
 // `meta` is what the agent runs on, from its newest lines: { model, effort, speed, used, window }
 // (used: tokens in its context window now; window: that window's size when the log says it;
@@ -386,6 +391,17 @@ export class Conversation {
     // run on its own is done when its task-notification comes.
     this.helpers = new Map();
     this.questions = new Map();
+    this.todos = null;
+  }
+
+  // A helper finished: its report card's item, once.
+  reported(id, item) {
+    const h = this.helpers.get(id);
+    if (!h) return;
+    h.done = true;
+    if (h.reported) return;
+    h.reported = true;
+    this.push({ kind: "helper", call: id, desc: h.desc, ...item });
   }
 
   push(item) {
@@ -517,9 +533,8 @@ export class Conversation {
         const async = ids.includes("ASYNC");
         for (const id of ids) {
           if (id === "ASYNC") continue;
-          // A helper that answered (not one launched to run on its own) is done.
-          const h = this.helpers.get(id);
-          if (h && !async) h.done = true;
+          // A helper that answered (not one launched to run on its own) is done: its report is at this line.
+          if (!async) this.reported(id, { id: `h${r.off}`, out: r.off });
           this.done(id, r.off);
         }
         continue;
@@ -547,8 +562,9 @@ export class Conversation {
       const text = typeof c === "string" ? c : Array.isArray(c) ? c.map((b) => b?.text ?? "").join("\n") : "";
       const id = /<tool-use-id>([^<]+)<\/tool-use-id>/.exec(text)?.[1];
       if (id) {
-        const h = this.helpers.get(id);
-        if (h) h.done = true;
+        // Its report is in the notification (its result, else its summary).
+        const said = (/<result>([\s\S]*?)<\/result>/.exec(text) ?? /<summary>([\s\S]*?)<\/summary>/.exec(text))?.[1]?.trim() ?? null;
+        this.reported(id, { id: `h${off}`, at: time(queued ? l.attachment.timestamp ?? l.timestamp : l.timestamp), text: said });
         this.bg = this.bg.filter((j) => j.id !== id);
       }
       return;
@@ -610,6 +626,7 @@ export class Conversation {
             this.open.set(b.id, "Asking you something");
             this.doing = "Asking you something";
           } else {
+            if (b.name === "TodoWrite") this.todos = todoList(b.input?.todos, time(l.timestamp));
             if (b.name === "Agent" || b.name === "Task") this.helpers.set(String(b.id), { desc: String(b.input?.description ?? "a helper"), done: false, at: time(l.timestamp) });
             this.step(String(b.id), off, claudeStep(String(b.name ?? ""), b.input ?? {}), b.name === "Agent" || b.name === "Task" ? String(b.id) : null);
             if (b.name === "Bash" && ARTIFACT.test(String(b.input?.command ?? ""))) this.push({ kind: "artifact", id: `art${off}`, at: time(l.timestamp) });
@@ -649,6 +666,11 @@ export class Conversation {
           return;
         }
         const st = codexStep(String(p.name ?? "shell"), p.arguments ?? p.input ?? p.action);
+        if (p.name === "update_plan") {
+          let a = p.arguments;
+          try { a = typeof a === "string" ? JSON.parse(a) : a; } catch {}
+          this.todos = todoList((Array.isArray(a?.plan) ? a.plan : []).map((x) => ({ content: x?.step, status: x?.status })), time(l.timestamp));
+        }
         // Codex's helpers count as running until its turn ends (its log says no more).
         if (st?.spawn) this.helpers.set(cid, { desc: st.spawn, done: false, untilTurn: true });
         this.step(cid, off, st, st?.spawn ? cid : null);
@@ -668,6 +690,12 @@ export class Conversation {
       this.doing = null;
     }
   }
+}
+
+// A step list as the chat keeps it: { at, items: [{ text, status }] } (status as the CLIs say it), or null if empty.
+function todoList(list, at) {
+  const items = (Array.isArray(list) ? list : []).map((x) => ({ text: clip(String(x?.content ?? "").trim(), 200), status: String(x?.status ?? "pending") })).filter((x) => x.text);
+  return items.length ? { at, items } : null;
 }
 
 // Turns LOG's output into its header line and records.
@@ -709,6 +737,26 @@ export function resultText(line, id) {
   const shown = rows.slice(0, 8).map((r) => (r.length > 160 ? r.slice(0, 159) + "…" : r));
   if (rows.length > 8) shown.push(`… ${rows.length - 8} more lines`);
   return shown.join("\n").trim() || "(no output)";
+}
+
+// A finished helper's report from its result line (LOG's `results`): its words, without what Claude Code adds after
+// them (its agent id, its usage). Cut short (64 KB): as resultText() reads it.
+export function reportText(line, id) {
+  const l = parse(line);
+  const c = Array.isArray(l?.message?.content) ? l.message.content : null;
+  const b = c && (c.find((x) => x?.type === "tool_result" && x.tool_use_id === id) ?? c.find((x) => x?.type === "tool_result"));
+  if (!b) return resultText(line, id);
+  const parts = typeof b.content === "string" ? [b.content] : Array.isArray(b.content) ? b.content.map((x) => x?.text ?? "") : [];
+  const text = parts.filter((t) => t.trim() && !/^\s*(agentId:|<usage>)/.test(t)).join("\n\n").replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").trim();
+  return text || "(no report)";
+}
+
+// The tools row's calls as small counts, most first, at most four: [["read", 6], ["bash", 2]].
+export function toolCounts(steps, kind = "claude") {
+  const name = { read: "read", edit: "edit", run: kind === "codex" ? "shell" : "bash", search: "grep", web: "web", agent: "helper", plan: "plan", tool: "tool" };
+  const n = new Map();
+  for (const s of steps ?? []) { const k = name[s.kind] ?? "tool"; n.set(k, (n.get(k) ?? 0) + (s.count ?? 1)); }
+  return [...n].sort((a, b) => b[1] - a[1]).slice(0, 4);
 }
 
 // The open row's summary: "Read 3 files, ran 2 commands".

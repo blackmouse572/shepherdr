@@ -82,7 +82,8 @@ function body(t, s, pre) {
       return div().min_w(0).text_size(TEXT.body).font_medium().text_color(t.foreground).child(s.text);
     case "text":
       // size "body": a card's main words (a helper's report), at the body size.
-      return s.size === "body" ? div().min_w(0).text_size(TEXT.body).line_height(`${BODY_LINE}px`).text_color(tone(t, s.tone ?? "fg")).child(s.text)
+      return s.size === "body" ? v_flex().w_full().min_w(0).text_size(TEXT.body).line_height(`${BODY_LINE}px`).text_color(tone(t, s.tone ?? "fg"))
+          .children(String(s.text ?? "").split("\n").map((l) => div().min_w(0).child(l || " ")))
         : div().min_w(0).text_size(TEXT.label).line_height("18px").text_color(tone(t, s.tone)).child(s.text);
     case "banner": {
       const dark = isDark(), state = s.state ?? "attention";

@@ -27,19 +27,19 @@ import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, VirtualListScrollHa
 import { focused, props, run, theme, home, hc, exec, shared, setShared, watchFolder, window, settings, playSound, notify, appHome, readTextFile, writeTextFile, nextCommand, openOverlay, knownAgents } from "herdr";
 import { agents, panes, terminals, spaces, inRender } from "./live.js";
 import * as fs from "fs/promises";
-import { FIND, LOG, Conversation, records, resultText, summary, excerpt, names } from "./core/chat-log.js";
+import { FIND, LOG, Conversation, records, resultText, reportText, summary, toolCounts, excerpt, names } from "./core/chat-log.js";
 import { words, howAnswered, allow } from "./core/asks.js";
 import { ruleOf } from "./core/allow.js";
 import { alwaysAllow } from "./allow.js";
 import { spaceOfTerminal } from "./core/notify.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
-import { WORDS, queuedChips, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
+import { WORDS, queuedChips, stepRows, stepsDone, stepsMore, helperSub, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
 import { ago } from "./core/tasks.js";
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
 import { AskCards, linkCtl } from "./cards.js";
 import * as strips from "./strips.js";
-import { button, red, green, need, working, H, RADIUS, TEXT, toast, toastWho, plainError, readingInk, SERIF } from "./ui.js";
+import { button, red, green, need, working, H, RADIUS, TEXT, MONO, toast, toastWho, plainError, readingInk, raisedLook, SERIF } from "./ui.js";
 import { READING_KEY, readingSig, proseMetrics, stepSize, codeLines, fontFamily } from "./core/reading.js";
 import { openViewer, noteChatArea } from "./artview.js";
 import { SecretCards } from "./secret-card.js";
@@ -122,6 +122,8 @@ function findModel(menus, name) {
 const wrapLines = (text, width, letter = 7) => String(text ?? "").split("\n").reduce((n, l) => n + Math.max(1, Math.ceil((l.length * letter) / Math.max(120, width))), 0);
 // The agent's question card (an "ask" row): its line heights and room, drawn and counted alike.
 const ASK = { py: 10, gap: 4, head: 16, line: 19, answer: 17 };
+// A helper's report card shows this much of a long report until Show more.
+const REPORT = { lines: 6, chars: 600 };
 // Its lines: each question's (Claude's, else the asked text's), and after each the choice picked for it.
 const askLines = (x) => (x.qs?.length ? x.qs : [x.text]).flatMap((q) => [
   ...String(q ?? "").split("\n").map((text) => ({ text })),
@@ -2433,6 +2435,11 @@ export default class Chat extends View {
         if (body) out.push({ kind: "brief", id: `${x.id}:b`, label: "New session", text: body });
         x = { ...x, text: ft };
       }
+      // A helper's report: a Claude Code helper finished, or a helper terminal of this agent's (a task's reviewer)
+      // wrote to it. Its card (Doop App 02), in place of a tools row's end or a "Message from" row.
+      if (x.kind === "helper") { putCard(this.helperCard(x)); continue; }
+      const helper = x.kind === "user" && x.from ? this.helperOf(x.from) : null;
+      if (helper) { putCard(this.helperCard({ id: x.id, name: helper.name, terminal: helper.terminal, at: x.at, text: unsigned(x.text) })); continue; }
       if (x.kind === "user" && !(i === 0 && ft && x.text === ft) && this.brief(x, i)) {
         // Not typed by the person: a launch brief or another agent's message, as a quiet row.
         // A fresh start's handover says it all in its label.
@@ -2590,6 +2597,58 @@ export default class Chat extends View {
   sender(from, text = null) {
     // core/chat-view.js: the web app's chat names senders the same way.
     return senderName(from, text, { find: (a) => terminals().find((x) => x.address === a), machine:this.machine, taskOf: (a) => this.workerTasks().get(a)?.ref ?? null });
+  }
+
+  // A message's sender when it is one of this agent's helpers: a terminal it started (hc; not an Assistant's: those are
+  // its tasks' workers) or a task's reviewer. -> { name, terminal (to peek at, while it's live) } or null.
+  helperOf(from) {
+    const addr = String(from ?? "").trim().split(/\s+/)[0];
+    if (!/^([\w.-]+\/)?t\d[0-9a-z]*$/.test(addr)) return null;
+    const full = !addr.includes("/") && this.machine ? `${this.machine}/${addr}` : addr;
+    const k = terminals().find((x) => x.address === full);
+    const bare = (a) => String(a ?? "").split("/").pop(), on = (a) => (String(a ?? "").includes("/") ? String(a).split("/")[0] : null);
+    const reviewer = k ? k.labels?.["herdr.role"] === "reviewer" : this.sender(from) === "Reviewer";
+    const mine = Boolean(k?.parent) && !this.assistant() && this.role !== "coordinator" && bare(k.parent) === bare(this.addr) && on(k.address) === on(this.addr);
+    if (!reviewer && !mine) return null;
+    return { name: reviewer ? "review" : k?.name || k?.program?.name || "helper", terminal: k?.state === "live" ? k.address : null };
+  }
+
+  // A finished helper's report as a card (Doop App 02): its name, "helper · reported 1m ago", Peek (its terminal,
+  // when it has one) and its report, the first lines of a long one (Show more). h: { id, name | desc, terminal,
+  // at, text } or a log "helper" item, whose report is read from the log once shown (loadReports()).
+  helperCard(h) {
+    const rep = h.call ? this.reports?.get(h.call) : null;
+    const text = h.text ?? rep?.text ?? null, at = h.at ?? rep?.at ?? null;
+    const id = h.id, key = `rep:${id}`, open = this.opened.has(key);
+    const all = String(text ?? "").trim().split("\n");
+    const long = all.length > REPORT.lines || String(text ?? "").length > REPORT.chars;
+    const shown = text == null ? WORDS.loadingReport : open || !long ? String(text).trim() : `${all.slice(0, REPORT.lines).join("\n").slice(0, REPORT.chars).trimEnd()}…`;
+    const links = [...(long ? [linkCtl(`rep-all-${id}`, open ? WORDS.showLess : WORDS.showMore, () => { if (open) this.opened.delete(key); else this.opened.add(key); })] : []),
+      ...(h.terminal ? [{ id: `rep-peek-${id}`, label: WORDS.peek, look: "link", icon: "mods/chat/eye.svg", fn: () => run("terminal.peek", { terminal: h.terminal }) }] : [])];
+    return { id: `card:h:${id}`, info: true, strips: [
+      { key: "head", kind: "line", icon: "mods/chat/check.svg", tone: green(), title: h.name ?? h.desc ?? "helper", sub: helperSub(at ? ago(at) : "just now"), links },
+      { key: "body", kind: "text", size: "body", gap: 4, tone: text == null ? "dim" : "fg", text: shown || " " }] };
+  }
+
+  // The reports of the Claude Code helpers shown (log "helper" items waiting on theirs), read from the log now.
+  loadReports(items, cx) {
+    this.reports ??= new Map();
+    const want = items.filter((x) => x.kind === "helper" && x.text == null && x.out != null && !this.reports.has(x.call)).slice(-20);
+    if (!want.length || !this.path) return;
+    for (const x of want) this.reports.set(x.call, null);
+    const path = this.path;
+    cx.spawn(async (cx) => {
+      try {
+        const r = await this.log(["results", path, ...want.map((x) => String(x.out))]);
+        for (const part of r.stdout.split("\x1e").slice(1)) {
+          const nl = part.indexOf("\n");
+          const off = Number(part.slice(0, nl)), line = part.slice(nl + 1).replace(/\n$/, "");
+          const at = Date.parse(/"timestamp":"([^"]+)"/.exec(line)?.[1] ?? "") || null;
+          for (const x of want) if (x.out === off) this.reports.set(x.call, { text: reportText(line, x.call), at });
+        }
+      } catch {}
+      cx.notify();
+    });
   }
 
   // Whose ask a card shows: the CLI's short name ("Claude asks").
@@ -2876,14 +2935,17 @@ export default class Chat extends View {
       case "error":
         return pad(div().w_full().text_size(12.5).text_color(t.blocked).child(x.text));
       case "tools": {
-        // One quiet line, "Claude Code · read 7 files ›"; the chevron opens the steps (open by default while
-        // Fold tool steps is off).
+        // One quiet line, "Claude Code · read 7 files [read ×7] ›"; the chevron opens the steps (open by default while
+        // Fold tool steps is off). The calls as counts (Doop DS 04), once there's more than one; 16 px, in the line.
         const open = this.toolsOpen(x.id);
         const said = summary(x.steps), who = agent.NAMES[this.kind];
+        const counts = x.steps.reduce((n, s) => n + (s.count ?? 1), 0) > 1 ? toolCounts(x.steps, this.kind) : [];
         return col(v_flex().w_full().px(6).py(QUIET_PY).rounded(7).cursor_pointer()
           .hover((s) => s.bg(t.hover))
           .child(h_flex().gap(4).items_center().text_size(12).text_color(t.dim)
             .child(div().min_w(0).truncate().child(who ? `${who} · ${said[0].toLowerCase()}${said.slice(1)}` : said))
+            .children(counts.map(([k, n]) => div().h(16).px(5).ml(2).flex_none().flex().items_center().rounded(4).border_1().border_color(t.border)
+              .bg(t.background).font_family(MONO).text_size(10.5).text_color(t.dim).child(`${k} ×${n}`)))
             .child(svg(`mods/workspace-chrome/chevron-${open ? "down" : "right"}.svg`).size(12).flex_none()))
           .when(open, (el) => el.child(v_flex().pl(18).pt(4).pb(2).gap(3).text_size(12).text_color(t.muted)
             .children(x.steps.flatMap((s) => {
@@ -3007,20 +3069,7 @@ export default class Chat extends View {
       // Only waiting (hc wait, a sleep, a monitor, a helper it waits on): calm, no spinner; a
       // message wakes it (or comes in at once).
       const waiting = this.waitingNow() && !this.stopping;
-      return h_flex().id("chat-status").flex_none().w_full().max_w(this.rd.column + 28).mx_auto().h(30).px(14).gap(8).items_center().text_size(12).text_color(t.muted)
-        .when(waiting, (el) => el.child(svg("mods/chat/clock.svg").size(12).flex_none().text_color(t.dim)))
-        .when(!waiting, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)))
-        .child(div().flex_1().min_w(0).truncate().child(doing))
-        .child(div().flex_none().font_family(settings().font_family ?? "JetBrains Mono").text_size(11.5).text_color(t.dim)
-          .child(elapsed(secs)))
-        .child(h_flex().id("chat-stop").h(22).px(8).gap(6).flex_none().items_center().rounded(6).border_1().border_color(t.input)
-          .text_size(12).text_color(t.muted)
-          .when(this.stopping, (el) => el.opacity(0.45))
-          .when(!this.stopping, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
-            .on_click((_e, cx) => { cx.stop_propagation(); this.stop(cx); }))
-          .child(svg("mods/chat/stop-chip.svg").size(8).flex_none())
-          .child(div().child("Stop"))
-          .child(div().text_size(11).text_color(t.dim).child("Esc")));
+      return this.runningCard(t, doing, secs, waiting);
     }
     if (st === "blocked") {
       return div().flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(6).child(h_flex().px(12).py(10).gap(10).items_center().rounded(10)
@@ -3032,6 +3081,43 @@ export default class Chat extends View {
         .child(this.button("chat-open-terminal", WORDS.openTerminal,"mods/workspace-chrome/terminal.svg", "primary", t, () => this.toTerminal())));
     }
     return null;
+  }
+
+  // The working card (Doop DS 04, App 02): a lantern spinner (a clock while it only waits), what it does, for how
+  // long, and Stop; under it the agent's steps while its step list has any left (core/chat-log.js todos): done ✓, the
+  // current one, the rest. Outside the list: its handlers are allowed here.
+  runningCard(t, doing, secs, waiting) {
+    const todos = this.conv?.todos;
+    const steps = todos?.items.some((x) => x.status !== "completed") ? stepRows(todos) : null;
+    const mark = (state) => state === "done" ? svg("mods/chat/check.svg").size(13).flex_none().text_color(green())
+      : state === "now" ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(working()).spin(900)
+      : div().size(7).flex_none().rounded(4).border_1().border_color(t.dim);
+    const step = (x, i) => h_flex().id(`chat-step-${i}`).h(22).gap(10).items_center()
+      .child(h_flex().w(13).flex_none().justify_center().child(mark(x.state)))
+      .child(div().min_w(0).truncate().text_size(TEXT.body).line_height("20px")
+        .text_color(x.state === "now" ? t.foreground : t.muted).child(x.text));
+    const quiet = (id, text) => h_flex().id(id).h(20).pl(23).items_center().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(text);
+    const stop = raisedLook(h_flex().id("chat-stop").h(24).pl(9).pr(4).gap(6).flex_none().items_center().rounded(RADIUS.control)
+      .text_size(TEXT.label).font_medium().text_color(t.foreground), RADIUS.control)
+      .when(this.stopping, (el) => el.opacity(0.45))
+      .when(!this.stopping, (el) => el.cursor_pointer().hover((s) => s.opacity(0.85))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.stop(cx); }))
+      .child(svg("mods/chat/stop-chip.svg").size(9).flex_none().text_color(red()))
+      .child(div().child("Stop"))
+      .child(div().h(16).min_w(16).px(4).flex_none().flex().items_center().justify_center().rounded(4).border_1().border_color(t.border)
+        .bg(t.background).font_family(MONO).text_size(9.5).text_color(t.dim).child("esc"));
+    return div().id("chat-status").flex_none().w_full().max_w(this.rd.column + 28).mx_auto().px(14).pt(6)
+      .child(v_flex().w_full().rounded(RADIUS.bubble).border_1().border_color(t.border).bg(t.surface)
+        .child(h_flex().h(42).pl(14).pr(8).gap(10).items_center().text_size(TEXT.body)
+          .when(waiting, (el) => el.child(svg("mods/chat/clock.svg").size(13).flex_none().text_color(t.dim)))
+          .when(!waiting, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(13).flex_none().text_color(need()).spin(900)))
+          .child(div().flex_1().min_w(0).truncate().text_color(t.foreground).child(doing))
+          .child(div().flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(elapsed(secs)))
+          .child(stop))
+        .when(Boolean(steps), (el) => el.child(v_flex().w_full().pl(14).pr(14).pb(10)
+          .when(steps.done > 0, (el) => el.child(quiet("chat-steps-done", `✓ ${stepsDone(steps.done)}`)))
+          .children(steps.rows.map(step))
+          .when(steps.more > 0, (el) => el.child(quiet("chat-steps-more", stepsMore(steps.more)))))));
   }
 
   // Why a call can't start (no key yet).
@@ -3777,6 +3863,7 @@ export default class Chat extends View {
       else if (ask && this.secretCards.ready(ask)) { this.focusSecret = null; cx.timer.after(0, () => this.secretCards.focus(ask)); }
     }
     const rows = this.rows();
+    this.loadReports(this.conv?.items ?? [], cx);
     // First-seen times this render found (seenAt()), shared once it's done; the newest 60 kept.
     if (this.seenNew && !this.seenFlush) {
       this.seenFlush = true;
@@ -3798,7 +3885,7 @@ export default class Chat extends View {
     const lit = new Set(found.map((m) => m.id));
     this.needViews([...this.files.filter((f) => f.image).map((f) => f.path), ...rows.flatMap((r) => (r.kind === "imgs" ? r.paths : []))], cx);
     // What sits under the list (an ask card, the working line) changes its height: stay on the newest.
-    const below = `${this.asks.length}|${this.sasks.map((a) => a.name + (a.kept ? "+" : "")).join(",")}|${this.wasks.map((a) => a.id).join(",")}|${[this.addr, ...this.workerTasks().keys()].map((a) => openCard(a)?.id ?? "").join("")}|${st}|${this.focused}|${this.queue.length}|${Boolean(this.call)}|${this.files.length}|${Boolean(this.quote)}`;
+    const below = `${this.asks.length}|${this.sasks.map((a) => a.name + (a.kept ? "+" : "")).join(",")}|${this.wasks.map((a) => a.id).join(",")}|${[this.addr, ...this.workerTasks().keys()].map((a) => openCard(a)?.id ?? "").join("")}|${st}|${this.focused}|${this.queue.length}|${Boolean(this.call)}|${this.files.length}|${Boolean(this.quote)}|${(this.conv?.todos?.items ?? []).map((x) => x.status[0]).join("")}`;
     if (below !== this.below) { this.below = below; if (this.pinned) this.stick = true; }
     if (Math.abs(this.heightsFor - this.width) > 1) { this.heights.clear(); this.measuredAt.clear(); this.heightsFor = this.width; this.measureGen++; }
     const keys = rows.map((x) => this.key(x));

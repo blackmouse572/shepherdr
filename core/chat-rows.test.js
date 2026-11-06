@@ -11,6 +11,8 @@ const sized = [];
 const drawn = [];
 const ran = [];
 let platform = "macos", runs = () => ({ code: 0, stdout: "", stderr: "" });
+// Herdr's terminals, and the commands run (run()), as a test sets them.
+let terms = [], runner = () => null;
 const el = () => {
   const self = new Proxy(function () {}, {
     get: (_t, k) => (k === "then" ? undefined : (...a) => {
@@ -31,11 +33,11 @@ const host = {
   View: class {}, div: el, svg: el, image: el, PathBuilder: el(), Background: el(),
   v_flex: el, h_flex: el, TextareaState: { new: el }, Textarea: el(), Scrollbar: el(), VirtualListScrollHandle: { new: el },
   TextView: el(), v_virtual_list: el, InputState: { new: el }, Input: el(),
-  focused: none, props: () => ({}), run: none, theme: () => ({}), home: () => "/nohome", hc: async () => ({ stdout: "" }),
+  focused: none, props: () => ({}), run: (...a) => runner(...a), theme: () => ({}), home: () => "/nohome", hc: async () => ({ stdout: "" }),
   exec: async (cmd, args) => { ran.push([cmd, ...args]); return runs(cmd, args); }, shared: none, setShared: none, watchFolder: async () => {},
   window: () => ({ platform }),
   settings: () => ({}), playSound: none, notify: none, appHome: () => "/noapp", readTextFile: async () => "", writeTextFile: async () => {},
-  nextCommand: () => new Promise(() => {}), openOverlay: none, knownAgents: list, terminals: list, spaces: list, panes: list,
+  nextCommand: () => new Promise(() => {}), openOverlay: none, knownAgents: list, terminals: () => terms, spaces: list, panes: list,
   agents: list, machines: list, layout: none,
 };
 for (const m of ["gpui-kit", "gpui-base", "herdr"]) mock.module(m, () => host);
@@ -48,7 +50,8 @@ async function chat(lines) {
     natural: new Map(), results: new Map(), asks: [], sasks: [], wasks: [], askEnds: [], tasks: [], width: 700, views: {}, queue: [], files: [],
     rd: proseMetrics(null), codeRuns: new Map(), myReacts: new Map(), cardW: new Map() });
   let off = 0;
-  c.records = lines.map((l) => { const r = { off, kind: "J", data: JSON.stringify(l) }; off += r.data.length + 1; return r; });
+  // { R: "<ids>" }: a tool result's line as LOG sends it (its call ids only).
+  c.records = lines.map((l) => { const r = l.R ? { off, kind: "R", data: ` ${l.R}` } : { off, kind: "J", data: JSON.stringify(l) }; off += r.data.length + 1; return r; });
   c.rebuild();
   return c;
 }
@@ -221,5 +224,102 @@ describe("the Doop cards", () => {
     // What it was made of, only: nothing set, just why it waits.
     const { queuedChips } = await import("./chat-view.js");
     expect(queuedChips({ reason: "Starts soon" })).toEqual([{ label: "Queued · starts soon" }]);
+  });
+
+  const called = (n, name, input, id = `tu${n}`) => ({ isSidechain: false, type: "assistant", uuid: `u${n}`, timestamp: "2026-11-01T10:00:00Z",
+    message: { id: `m${n}`, model: "claude", content: [{ type: "tool_use", id, name, input }] } });
+
+  test("the working card: its steps from the newest TodoWrite, done, current and to do, with the time and Stop (App 02)", async () => {
+    const todos = [
+      { content: "Read the review", activeForm: "Reading the review", status: "completed" },
+      { content: "Colour meters amber past the switch tick", activeForm: "Colouring meters", status: "in_progress" },
+      { content: "Label the refresh button, then run the tests", activeForm: "Labelling", status: "pending" },
+    ];
+    const c = await chat([called(1, "TodoWrite", { todos: todos.map((x) => ({ ...x, status: "pending" })) }), called(2, "TodoWrite", { todos })]);
+    expect(c.conv.todos.items.map((x) => x.status)).toEqual(["completed", "in_progress", "pending"]);
+    expect(c.conv.doing).toBe("Colouring meters");
+    drawn.length = 0;
+    c.runningCard({}, c.conv.doing, 72, false);
+    for (const w of ["Colouring meters", "1:12", "Stop", "esc", ...todos.map((x) => x.content)]) expect(drawn).toContain(w);
+    // A long list keeps a window around the current step.
+    const { stepRows } = await import("./chat-view.js");
+    const many = { items: Array.from({ length: 12 }, (_, i) => ({ text: `Step ${i + 1}`, status: i < 6 ? "completed" : i === 6 ? "in_progress" : "pending" })) };
+    const r = stepRows(many);
+    expect(r.rows.map((x) => x.text)).toEqual(["Step 6", "Step 7", "Step 8", "Step 9", "Step 10", "Step 11", "Step 12"]);
+    expect([r.done, r.more]).toEqual([5, 0]);
+    // Every step done: no list under the working line.
+    const done = await chat([called(1, "TodoWrite", { todos: todos.map((x) => ({ ...x, status: "completed" })) })]);
+    drawn.length = 0;
+    done.runningCard({}, "Working", 3, false);
+    expect(drawn).not.toContain("Read the review");
+  });
+
+  test("a helper's report: a card where it finished, its report read from the log, Peek only with a terminal (App 02)", async () => {
+    const report = "2 minor findings: meters ignore the 95% tick, and refresh has no label.";
+    const notice = (n, id, text) => ({ isSidechain: false, type: "user", uuid: `n${n}`, timestamp: "2026-11-01T10:05:00Z", origin: { kind: "task-notification" },
+      message: { role: "user", content: `<task-notification>\n<tool-use-id>${id}</tool-use-id>\n<status>completed</status>\n<result>${text}</result>\n</task-notification>` } });
+    const c = await chat([called(1, "Agent", { description: "Review the diff" }), { R: "tu1" }, called(2, "Task", { description: "Check the tests" }), { R: "tu2 ASYNC" },
+      notice(3, "tu2", "All 31 pass."), said(4, "Both helpers are done.")]);
+    let rows = c.rows().filter((r) => r.kind === "cardstrip");
+    expect(rows.map((r) => r.s.kind)).toEqual(["line", "text", "line", "text"]);
+    expect(rows[0].s.title).toBe("Review the diff");
+    expect(rows[1].s.text).toBe("Reading its report…");
+    expect(rows[3].s.text).toBe("All 31 pass.");
+    expect(rows.every((r) => r.info)).toBe(true);
+    // No terminal to peek at for Claude Code's own helpers.
+    expect(rows[0].s.links).toEqual([]);
+    // Its report, read from its result line (without Claude Code's agent id and usage after it).
+    const out = c.conv.items.find((x) => x.kind === "helper" && x.call === "tu1").out;
+    const line = JSON.stringify({ type: "user", timestamp: "2026-11-01T10:04:00Z", message: { content: [{ type: "tool_result", tool_use_id: "tu1",
+      content: [{ type: "text", text: report }, { type: "text", text: "agentId: a1b2 (for resuming)\n<usage>total_tokens: 900</usage>" }] }] } });
+    c.path = "/log.jsonl";
+    c.log = async (args) => { expect(args.slice(0, 3)).toEqual(["results", "/log.jsonl", String(out)]); return { stdout: `\x1e${out}\n${line}\n` }; };
+    const jobs = [];
+    const cx = { notify() {}, spawn: (fn) => jobs.push(fn(cx)) };
+    c.loadReports(c.conv.items, cx);
+    await Promise.all(jobs);
+    rows = c.rows().filter((r) => r.kind === "cardstrip");
+    expect(rows[1].s.text).toBe(report);
+    expect(rows[0].s.sub).toMatch(/^helper · reported /);
+    drawn.length = 0;
+    drawsInList(c, c.rows());
+    for (const w of ["Review the diff", report, "All 31 pass."]) expect(drawn).toContain(w);
+    // Its estimate holds its words at the column's width.
+    const inner = Math.min(c.width, c.rd.column + 36) - 36 - 26;
+    expect(c.guess(rows[1])).toBeGreaterThanOrEqual(Math.ceil((report.length * 6.5) / inner) * 20);
+  });
+
+  test("a task reviewer's message is its report card, and Peek opens its terminal (App 02)", async () => {
+    const msg = (n, from, text) => ({ isSidechain: false, type: "user", uuid: `p${n}`, timestamp: "2026-11-01T10:06:00Z", message: { role: "user", content: `<hc from="${from}">${text}</hc>` } });
+    const long = Array.from({ length: 9 }, (_, i) => `Finding ${i + 1}: something to fix.`).join("\n");
+    const c = await chat([msg(1, "t9 review", long), msg(2, "t4 other", "Not a helper.")]);
+    c.addr = "t3";
+    const live = [{ address: "t9", state: "live", labels: { "herdr.role": "reviewer" } }, { address: "t4", state: "live", labels: {} }];
+    terms = live;
+    try {
+      const rows = c.rows();
+      const card = rows.filter((r) => r.kind === "cardstrip");
+      expect(card.map((r) => r.s.kind)).toEqual(["line", "text"]);
+      expect(card[0].s.title).toBe("review");
+      expect(card[0].s.links.map((k) => k.label)).toEqual(["Show more", "Peek"]);
+      expect(card[1].s.text.split("\n").length).toBe(6);
+      expect(rows.some((r) => r.kind === "brief")).toBe(true);
+      drawsInList(c, rows);
+      // Peek: the press at its place (the card's right edge in).
+      const runs = [];
+      runner = (...a) => runs.push(a);
+      c.press = { x: c.edges().right - 1 - 12 - 4 };
+      c.clickRow(card[0].id, rows, { notify() {}, timer: { after() {} } }, []);
+      expect(runs).toEqual([["terminal.peek", { terminal: "t9" }]]);
+    } finally { terms = []; runner = () => null; }
+  });
+
+  test("a tools row counts its calls as small tags (DS 04)", async () => {
+    const { toolCounts } = await import("./chat-log.js");
+    expect(toolCounts([{ kind: "read" }, { kind: "read" }, { kind: "run", count: 2 }, { kind: "search" }])).toEqual([["read", 2], ["bash", 2], ["grep", 1]]);
+    const c = await chat([called(1, "Read", { file_path: "/a.js" }), called(2, "Bash", { command: "ls" })]);
+    drawn.length = 0;
+    drawsInList(c, c.rows());
+    for (const w of ["read ×1", "bash ×1"]) expect(drawn).toContain(w);
   });
 });

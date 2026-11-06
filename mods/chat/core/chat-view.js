@@ -100,6 +100,20 @@ export function queuedChips(x) {
   return out;
 }
 
+// The working card's steps (Doop App 02): the agent's newest step list (core/chat-log.js todos), each done, the
+// current one ("now") or still to do; at most `max` rows, the window kept around the current one. -> { rows: [{ text,
+// state }], done: done ones left out above, more: ones left out below }.
+export function stepRows(todos, max = 7) {
+  const items = (todos?.items ?? []).map((x) => ({ text: x.text, state: x.status === "completed" ? "done" : x.status === "in_progress" ? "now" : "todo" }));
+  if (items.length <= max) return { rows: items, done: 0, more: 0 };
+  const cur = items.findIndex((x) => x.state !== "done");
+  const from = Math.max(0, Math.min((cur < 0 ? items.length : cur) - 1, items.length - max));
+  return { rows: items.slice(from, from + max), done: from, more: items.length - from - max };
+}
+// Its lines for the steps left out.
+export const stepsDone = (n) => `${n} done`;
+export const stepsMore = (n) => `${n} more`;
+
 // A finished helper's report card (Doop App 02): "<name> helper · reported 1m ago". ago: core/tasks.js ago()'s.
 export const helperSub = (ago) => `helper · reported ${ago}`;
 
