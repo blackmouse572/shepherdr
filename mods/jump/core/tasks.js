@@ -192,3 +192,20 @@ export function secondLine(p, w, queued = null, now = Date.now()) {
 
 // The minutes left under a working row's dot ("6m"), only once they're a real estimate.
 export const leftOf = (p, w) => (p.section === "working" && !p.why && w?.left != null ? short(w.left) : null);
+
+// The task header's line under its title (Doop App 02 .subl): "SHE-12 · work/12-usage-popover · Opus 5.5 · High ·
+// Default" (id, branch, model, effort, account); what isn't known is left out.
+export const taskLine = ({ ref, branch, model, effort, account } = {}) => [ref, branch, model, effort, account].filter(Boolean).join(" · ");
+
+// The header's progress pill (App 02 .chip "62% · ~6 min left"), from reportOf()'s { done, left, paused }: no minutes
+// while it waits on the person (they don't count down); null with neither.
+export function progressPill(w) {
+  if (!w) return null;
+  const pct = typeof w.done === "number" ? `${Math.round(w.done)}%` : null;
+  const left = typeof w.left === "number" && !w.paused
+    ? (w.left < 1 ? "<1 min left" : w.left < 60 ? `~${w.left} min left` : `~${Math.round(w.left / 60)} h left`) : null;
+  return [pct, left].filter(Boolean).join(" · ") || null;
+}
+
+// The header's pull request pill (App 02 "PR #48 · draft"): its number, and its state once known; null without one.
+export const prPill = (pr, state = null) => (pr?.number ? (state ? `PR #${pr.number} · ${state}` : `PR #${pr.number}`) : null);

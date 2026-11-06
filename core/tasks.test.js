@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, WORKING_AGAIN } from "./tasks.js";
+import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, WORKING_AGAIN, taskLine, progressPill, prPill } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -90,5 +90,29 @@ describe("a Ready task back at work (as herdr-task's busy_again)", () => {
   test("asking the person while back at work needs them", () => {
     const task = { id: 7, state: "ready", ready_at: back.now - 600_000, ready_turns: { t1: 5 } };
     expect(place(list([task]), task, { live: [{ address: "t1", status: "blocked", turn: 5 }], now: back.now }).section).toBe("needs");
+  });
+});
+
+describe("the task header (Doop App 02)", () => {
+  test("its line: id, branch, model, effort, account; unknowns left out", () => {
+    expect(taskLine({ ref: "SHE-12", branch: "work/12-usage-popover", model: "Opus 5.5", effort: "High", account: "Default" }))
+      .toBe("SHE-12 · work/12-usage-popover · Opus 5.5 · High · Default");
+    expect(taskLine({ ref: "SHE-12", model: "Opus 5.5" })).toBe("SHE-12 · Opus 5.5");
+    expect(taskLine({})).toBe("");
+  });
+
+  test("the progress pill", () => {
+    expect(progressPill({ done: 62, left: 6 })).toBe("62% · ~6 min left");
+    expect(progressPill({ done: 62.4, left: 0 })).toBe("62% · <1 min left");
+    expect(progressPill({ done: null, left: 120 })).toBe("~2 h left");
+    expect(progressPill({ done: 40, left: 6, paused: true })).toBe("40%");
+    expect(progressPill({ done: null, left: null })).toBe(null);
+    expect(progressPill(null)).toBe(null);
+  });
+
+  test("the pull request pill", () => {
+    expect(prPill({ number: 48 })).toBe("PR #48");
+    expect(prPill({ number: 48 }, "draft")).toBe("PR #48 · draft");
+    expect(prPill(null)).toBe(null);
   });
 });

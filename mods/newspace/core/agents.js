@@ -282,3 +282,17 @@ export function forkArgv(kind, argv, session) {
   const flags = [...kept(kind, argv), ...same];
   return kind === "claude" ? ["claude", ...flags, "--resume", session, "--fork-session"] : ["codex", "fork", ...flags, session];
 }
+
+// A model as the picker names it: Claude's aliases by its menu ("opus" → "Opus 5.5"), else modelName().
+export function modelLabel(id) {
+  if (!id) return null;
+  return CLAUDE_MODELS.find((m) => m.id === id || m.match.includes(id))?.name ?? modelName(id);
+}
+
+// What a task's agent was started on, from its record (herdr-task's { agent, argv }): { model, effort } in words, each
+// null when its argv doesn't say (the CLI's own default isn't known here, so it's left out, never guessed).
+export function runsOn(a) {
+  if (!a || !Array.isArray(a.argv) || !NAMES[a.agent]) return { model: null, effort: null };
+  const c = current(a.agent, a.argv, {}, {});
+  return { model: c.label ?? modelLabel(c.model), effort: levelName(c.effort) };
+}

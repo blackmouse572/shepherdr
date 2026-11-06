@@ -19,18 +19,30 @@
 // task side panel. All are one switcher (only one shows at a time), the main chat's header switch
 // (ui.js pillTabs); Pull request only once the task has one. They show the task the header
 // publishes (shared "tasks.thread.where", from its record: lib/taskwhere.js).
+// The header is Doop App 02's task header: a banner in the task's state over the switcher, the
+// title in the serif, its line (id · branch · model · effort · account), its progress and pull
+// request pills, Stop (ends its worker, asked first) and ⋯ (the task row's menu, mods/tasks-menu).
 
 import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { shared, setShared, run, theme, exec, appHome, home, readTextFile, writeTextFile, notify, layout, openOverlay } from "herdr";
+import { shared, setShared, run, theme, exec, appHome, home, readTextFile, writeTextFile, notify, layout, openOverlay, settings } from "herdr";
 import { terminals, agents } from "./live.js";
-import { taskDot, ownProgress, estimated } from "./dot.js";
-import { busyAgain } from "./core/tasks.js";
-import { button, pillTabs, TEXT, RADIUS, toast, plainError } from "./ui.js";
+import { taskDot, ownProgress } from "./dot.js";
+import { busyAgain, reportOf, retryLine, taskLine, progressPill, prPill } from "./core/tasks.js";
+import { runsOn, NAMES } from "./agent.js";
+import { endAgent } from "./core/menus.js";
+import { button, pillTabs, TEXT, RADIUS, HEAD, MONO, SERIF, isDark, bannerBg, bannerDots, red, working, toast, plainError } from "./ui.js";
 import { on as addonOn } from "./addons.js";
 
 // The task header's shared left edge, and task ids in the Tasks list's monospace (mods/tasks).
-const EDGE = 12, ID_FONT = "JetBrains Mono";
+const EDGE = 12, ID_FONT = MONO;
+// The banner's height (under the 96 of its dots' picture) and the switcher row's: with the border,
+// the "tasks-thread-head" block's size in layouts/shepherdr.json (133). Keep them in step.
+const BANNER_H = 92, VIEWS_H = 40;
+// The header's pills give way on a narrow panel (its width, unzoomed): PR first, then progress.
+const PR_PILL_W = 430, PROGRESS_PILL_W = 340;
+// A task's state as its banner's (ui.js banner states).
+const BANNER = { needs: "attention", working: "working", merging: "done", ready: "done", done: "done" };
 // The Claude account the task's agent runs on (herdr-task's record), by the person's name for it (Settings >
 // Accounts, shared "usage.prefs"); null with only one account here.
 function accountName(rec) {
@@ -199,16 +211,22 @@ export class PanelHost {
   // The task's status dot, by the Tasks list's rules (mods/tasks place()): its record, then its
   // worker's own status. Nothing (an empty spot the dot's size) until its record is read.
   dot(st, addr) {
+    const r = this.rec, s = this.stateOf(st, addr);
+    if (!s) return div();
+    return taskDot(s, { pct: ownProgress([addr])?.pct ?? r.progress?.done, halo: true });
+  }
+
+  // Its state by those rules (the dot's, the banner's), or null until its record is read.
+  stateOf(st, addr) {
     const r = this.rec;
-    if (!r) return div();
+    if (!r) return null;
     const live = terminals().find((x) => x.address === addr)?.state === "live";
     const last = r.agents?.[r.agents.length - 1];
     const starting = !last?.ended && Date.now() - Math.max(0, ...[r.started, last?.at].filter((x) => typeof x === "number")) < 90000;
-    const s = ["todo", "queued", "done"].includes(r.state) ? r.state
+    return ["todo", "queued", "done"].includes(r.state) ? r.state
       : r.attention || st === "blocked" || r.retry?.over ? "needs"
       : r.state === "ready" && !this.again(st, addr) ? ((r.merge_requested && live) || (r.auto_merge && r.pr && !r.merged) ? "merging" : "ready")
       : st === "working" || r.retry || starting ? "working" : "needs";
-    return taskDot(s, { pct: ownProgress([addr])?.pct ?? r.progress?.done, halo: true });
   }
 
   status(addr) {
@@ -237,24 +255,47 @@ export class PanelHost {
     });
   }
 
-  // Pin / Unpin the task: a view choice in shared "tasks.pinned", keyed as the Tasks list keys it
-  // ("<machine, empty here>:<folder>#<id>", mods/tasks). Pinned, it sits pressed in.
-  pinButton(t) {
+  // ⋯ (App 02): the task row's own menu (mods/tasks-menu "row": Pin / Unpin in shared "tasks.pinned", keyed as the
+  // Tasks list keys it, "<machine, empty here>:<folder>#<id>"), at the pointer as the row's right-click opens it.
+  moreButton(t) {
     const r = this.rec, key = `${r.machine ?? ""}:${r.folder}#${r.id}`;
     const pins = Array.isArray(shared("tasks.pinned")) ? shared("tasks.pinned") : [];
     const on = pins.includes(key);
-    return h_flex().id("thread-pin").size(24).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer()
-      .when(on, (el) => el.bg(t.selected)).text_color(on ? t.foreground : t.dim)
-      .hover((s) => s.bg(on ? t.selected : t.hover).text_color(t.foreground))
-      .tooltip(on ? "Unpin" : "Pin")
+    return h_flex().id("thread-more").size(24).flex_none().items_center().justify_center().rounded(RADIUS.control).cursor_pointer()
+      .text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip(on ? "Pinned" : "More")
       .on_click((_e, cx) => {
         cx.stop_propagation();
-        const now = shared("tasks.pinned");
-        const rest = (Array.isArray(now) ? now : []).filter((k) => k !== key);
-        setShared("tasks.pinned", on ? rest : [...rest, key]);
-        cx.notify();
+        openOverlay({ mod: "tasks-menu", kind: "popup", at: "pointer", width: 160, height: 8 + 32, props: { menu: "row", key, on } });
       })
-      .child(svg("mods/workspace-chrome/pin.svg").size(14).flex_none());
+      .child(svg("mods/tasks/more.svg").size(14).flex_none());
+  }
+
+  // Stop (App 02): ends the task's worker, as an agent pane's × does (pane-chat: terminal.kill), asked first in its
+  // place (this.ending). The task stays; its chat offers Resume.
+  stopButton() {
+    const label = h_flex().gap(6).items_center()
+      .child(svg("mods/chat/stop-chip.svg").size(8).flex_none().text_color(red()))
+      .child("Stop");
+    return button("thread-stop", label, { onClick: () => { this.ending = true; } });
+  }
+
+  endWorker(addr, cx) {
+    this.ending = false;
+    if (addr) run("terminal.kill", { terminal: addr });
+    cx.spawn(async (cx) => this.loadTask(addr, cx));
+  }
+
+  // A pill on the banner (App 02 .chip): a dark well with a faint edge; with onClick, a hover.
+  pill(id, label, t, { icon = null, onClick = null, tip = null } = {}) {
+    const d = isDark();
+    return h_flex().id(id).h(24).px(9).gap(6).flex_none().items_center().rounded(7).whitespace_nowrap()
+      .bg(d ? "#00000059" : t.background).border_1().border_color(d ? "#FFFFFF17" : t.border)
+      .text_size(11.5).font_medium().text_color(t.muted)
+      .when(Boolean(tip), (el) => el.tooltip(tip))
+      .when(Boolean(onClick), (el) => el.cursor_pointer().hover((s) => s.text_color(t.foreground))
+        .on_click((e, cx) => { cx.stop_propagation(); onClick(e, cx); }))
+      .when(Boolean(icon), (el) => el.child(svg(icon).size(12).flex_none()))
+      .child(label);
   }
 
   // Chat | Terminal | Files | Changes | Pull request | Browser: the main chat's header switch
@@ -291,30 +332,20 @@ export class PanelHost {
         .child(want?.note ?? (want ? "Opening…" : "Pick a task to see its chat."));
   }
 
-  // The worker's report (herdr-task status) or a provider retry's line, under the title (as its
-  // Tasks row): the words give way first, so the minutes never get cut off. While it waits on the
-  // person it's frozen, its % at the end instead.
-  reportLine(st, t) {
+  // What its agent is doing now (herdr-task status) or a provider retry's line: App 02's hint at the switcher's right,
+  // its spinner while it works, dim and still while it waits on the person (the minutes are the progress pill's).
+  // It gives way first: the switcher keeps its width.
+  reportHint(st, t) {
     const r = this.rec, addr = this.cur?.terminal;
     if (!r || r.state !== "running") return null;
-    let text = null, end = null, paused = false;
-    if (r.retry && r.retry.address === addr && !r.retry.over && st !== "blocked") {
-      text = r.retry.due ? `${r.retry.reason} · Retry in ${Math.max(1, Math.ceil((r.retry.due - Date.now()) / 60000))}m` : `${r.retry.reason} · Retrying`;
-    } else if (r.progress?.text) {
-      const p = r.progress;
-      text = p.text;
-      paused = st !== "working";
-      if (paused) end = typeof p.done === "number" ? `${p.done}%` : null;
-      else if (estimated(p)) {
-        const rem = Math.max(0, p.left - ((p.paused_at ?? Date.now()) - (p.at ?? Date.now())));
-        const n = rem < 60000 ? 0 : Math.ceil(rem / 60000);
-        end = n < 1 ? "<1 min" : n < 60 ? `~${n} min` : `~${Math.round(n / 60)} h`;
-      }
-    }
+    let text = null, paused = false;
+    if (r.retry && r.retry.address === addr && !r.retry.over && st !== "blocked") text = retryLine(r.retry);
+    else if (r.progress?.text) { text = r.progress.text; paused = st !== "working"; }
     if (!text) return null;
-    return h_flex().id("thread-report").w_full().min_w(0).gap(4).items_center().text_size(TEXT.label).text_color(paused ? t.dim : t.muted)
-      .child(div().min_w(0).truncate().child(text))
-      .when(Boolean(end), (el) => el.child(div().flex_none().text_color(t.dim).child(`· ${end}`)));
+    return h_flex().id("thread-report").flex_1().min_w(0).gap(6).justify_end().items_center()
+      .font_family(ID_FONT).text_size(TEXT.id).text_color(paused ? t.dim : t.muted)
+      .when(!paused, (el) => el.child(svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(working()).spin(900)))
+      .child(div().min_w(0).truncate().child(text));
   }
 
   renderHead(cx) {
@@ -322,6 +353,7 @@ export class PanelHost {
     if (wantId(want) !== wantId(this.cur)) {
       this.cur = want;
       this.rec = null;
+      this.ending = false;
       cx.timer.after(0, (cx) => cx.spawn(async (cx) => this.loadTask(want?.terminal, cx)));
     }
     // The task's record, again every 3 s while a worker shows (12 s on another machine).
@@ -364,56 +396,78 @@ export class PanelHost {
       // The task's own browser, watched live (mods/task-browser), when the layout has it.
       ...(find(layout(), BROWSER) && addonOn("browser") ? [{ key: "browser", label: "Browser", on: shownNow === BROWSER, fn: pick(BROWSER) }] : []),
     ];
-    // Three rows on one left edge (EDGE): a slim bar (‹ Tasks; base, Pin, Accept), the task (its
-    // dot, id and title, and under them what its agent is doing), then the switcher.
-    // Their height is the "tasks-thread-head" block's size in layouts/shepherdr.json (127): keep them in step.
-    return v_flex().id("thread-head-rows").size_full().pt(8).pb(12).gap(12).bg(t.background).border_b(1).border_color(t.border)
-      .child(v_flex().flex_none().gap(8)
-        .child(this.barRow(t, st, addr))
-        .child(this.taskBlock(t, { want, st, addr })))
-      .child(h_flex().id("thread-views").flex_none().px(EDGE).overflow_x_scroll()
-        .child(this.switcher(t, segs)));
+    // Two rows on one left edge (EDGE), Doop App 02: the banner (‹ Tasks and the task's controls over its dot, title
+    // and line), then the switcher with what its agent is doing at the right. BANNER_H + VIEWS_H + the border are the
+    // "tasks-thread-head" block's size in layouts/shepherdr.json (133): keep them in step.
+    return v_flex().id("thread-head-rows").size_full().bg(t.background).border_b(1).border_color(t.border)
+      // Its width, for the pills that give way (measured zoomed: unzoomed here).
+      .on_size_change((size, cx) => {
+        const w = size.width / (Number(settings()?.zoom) || 1);
+        if (Math.abs((this.width ?? 0) - w) > 0.5) { this.width = w; cx.notify(); }
+      })
+      .child(this.banner(t, { want, st, addr, live, hasPr, openPr: pick(PR) }))
+      .child(h_flex().id("thread-views").h(VIEWS_H).flex_none().px(EDGE).gap(10).items_center()
+        .child(h_flex().id("thread-views-scroll").min_w(0).overflow_x_scroll().child(this.switcher(t, segs)))
+        .child(this.reportHint(st, t) ?? div()));
   }
 
-  // The slim bar: ‹ Tasks back to the list on the left (its chevron on the shared edge, its hover
-  // reaching past it), and on the right the task's base, Pin and Accept.
-  barRow(t, st, addr) {
-    return h_flex().id("thread-bar").h(24).flex_none().pl(EDGE - 6).pr(EDGE).gap(4).items_center()
+  // The banner (App 02 .bn.half .hd): the wash and dots of the task's state in dark (light keeps the plain header).
+  // Its top row: ‹ Tasks back to the list (its chevron on the shared edge, its hover reaching past it), the task's own
+  // base, then its progress and pull request pills, Accept (Ready) or Stop (a live worker), and ⋯; Stop's question
+  // and its two buttons in their place while it asks. Under it the task: its dot (as its Tasks row, Needs you with
+  // its halo), the title in the serif and its line. No agent logo: the chat input's model button says which agent.
+  banner(t, { want, st, addr, live, hasPr, openPr }) {
+    const r = this.rec, w = this.width ?? Infinity, s = this.stateOf(st, addr);
+    const tone = isDark() ? BANNER[s] ?? "neutral" : null;
+    const progress = r && s ? progressPill(reportOf(r, s, ownProgress([addr]))) : null;
+    // The task's PR (its record's), else the one the Pull request view found for its branch; merged once it is.
+    const pr = r ? prPill(r.pr ?? (hasPr ? shared("tasks.thread.pr") : null), r.merged ? "merged" : null) : null;
+    const accept = this.acceptable(st, addr);
+    const stop = Boolean(r && r.state === "running" && live && !accept);
+    if (this.ending && !stop) this.ending = false;
+    const last = r?.agents?.[r.agents.length - 1];
+    const ask = endAgent(NAMES[last?.agent] ?? "the agent");
+    const base = r?.base_set && r?.base ? r.base : null;
+    const bar = h_flex().id("thread-bar").h(24).flex_none().pl(EDGE - 6).pr(EDGE).gap(6).items_center()
       .child(h_flex().id("thread-back").h(24).pl(2).pr(8).gap(2).flex_none().items_center().rounded(RADIUS.control).cursor_pointer()
         .text_size(TEXT.label).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); backToTasks(); })
         .child(svg("mods/workspace-chrome/chevron-left.svg").size(14).flex_none())
         .child("Tasks"))
-      .child(div().flex_1())
-      // A task's own base (herdr-task add --base), where it merges into; the folder's default isn't shown.
-      .when(Boolean(this.rec?.base_set && this.rec?.base), (el) => el.child(div().id("thread-base").flex_none().max_w(160).truncate().pr(4)
-        .text_size(TEXT.label).text_color(t.muted).tooltip(`Merges into ${this.rec.base}`).child(`→ ${this.rec.base}`)))
-      // Pin / Unpin, as the task's row in the list (not an archived task's).
-      .when(Boolean(this.rec && !(this.rec.archived && this.rec.state === "done")), (el) => el.child(this.pinButton(t)))
-      // Accept: the header's one primary button (merges first when there's something to merge).
-      .when(this.acceptable(st, addr), (el) => el.child(button("thread-accept", this.accepting ? "Accepting…" : "Accept",
-        { kind: "primary", disabled: this.accepting, onClick: (_e, cx) => this.accept(cx) })));
-  }
-
-  // The task: its status dot (as its Tasks row, Needs you with its halo) beside the title line,
-  // the id (the list's monospace) and title; under them what its agent says it's doing, with the
-  // minutes left ("Fixing the two failing tests · ~6 min"), on the title's left edge. No agent
-  // logo or name: the chat input's model button says which agent it is. The second line ends with the Claude account
-  // it runs on (App 02's "· Default") when there is more than one. Both lines always keep
-  // their height, so nothing jumps as reports come and go.
-  taskBlock(t, { want, st, addr }) {
-    const report = this.reportLine(st, t);
-    const title = want?.title ?? this.rec?.title ?? "";
-    const acct = accountName(this.rec);
-    return h_flex().id("thread-task").flex_none().px(EDGE).gap(8).items_start().text_color(t.foreground)
-      .child(h_flex().w(16).h(22).flex_none().items_center().justify_center().child(this.dot(st, addr)))
+      // A task's own base (herdr-task add --base), where it merges into; the folder's default isn't shown. It gives way first.
+      .child(h_flex().flex_1().min_w(0).justify_end()
+        .when(Boolean(base) && !this.ending, (el) => el.child(div().id("thread-base").min_w(0).truncate().pr(2)
+          .text_size(TEXT.label).text_color(t.muted).tooltip(`Merges into ${base}`).child(`→ ${base}`))))
+      .when(this.ending, (el) => el
+        .child(div().flex_none().whitespace_nowrap().text_size(TEXT.label).text_color(t.foreground).child(ask.ask))
+        .child(button("thread-end-no", ask.cancel, { kind: "plain", onClick: () => { this.ending = false; } }))
+        .child(button("thread-end", ask.verb, { kind: "primary", onClick: (_e, cx) => this.endWorker(addr, cx) })))
+      .when(!this.ending, (el) => el
+        .when(Boolean(progress) && w >= PROGRESS_PILL_W, (el) => el.child(this.pill("thread-progress", progress, t)))
+        .when(Boolean(pr) && w >= PR_PILL_W, (el) => el.child(this.pill("thread-pr", pr, t,
+          { icon: "mods/task-pr/git-pull-request.svg", onClick: () => openPr(), tip: "Pull request" })))
+        // Accept: the header's one primary button (merges first when there's something to merge).
+        .when(accept, (el) => el.child(button("thread-accept", this.accepting ? "Accepting…" : "Accept",
+          { kind: "primary", disabled: this.accepting, onClick: (_e, cx) => this.accept(cx) })))
+        .when(stop, (el) => el.child(this.stopButton()))
+        // Not an archived task's (as its row in the list).
+        .when(Boolean(r && !(r.archived && r.state === "done")), (el) => el.child(this.moreButton(t))));
+    const title = want?.title ?? r?.title ?? "";
+    // "SHE-12 · work/12-usage-popover · Opus 5.5 · High · Default": what its agent was started on (left out when
+    // its argv doesn't say), and the Claude account when there's more than one. Both lines keep their height.
+    const line = taskLine({ ref: want?.task ?? r?.ref, branch: r?.branch, ...runsOn(last), account: accountName(r) });
+    const task = h_flex().id("thread-task").flex_none().px(EDGE).gap(10).items_start().text_color(t.foreground)
+      .child(h_flex().w(16).h(24).flex_none().items_center().justify_center().child(this.dot(st, addr)))
       .child(v_flex().flex_1().min_w(0).gap(2)
-        .child(h_flex().h(22).min_w(0).gap(8).items_center()
-          .when(Boolean(want?.task), (el) => el.child(div().flex_none().font_family(ID_FONT).text_size(TEXT.label).text_color(t.dim).child(want.task)))
-          .child(div().id("thread-title").flex_1().min_w(0).truncate().text_size(TEXT.title).font_medium()
+        .child(h_flex().h(24).min_w(0).items_center()
+          .child(div().id("thread-title").min_w(0).truncate()
+            .when(isDark(), (el) => el.font_family(SERIF).text_size(HEAD.title))
+            .when(!isDark(), (el) => el.text_size(TEXT.title).font_medium())
             .when(Boolean(title), (el) => el.tooltip(title)).child(title)))
-        .child(h_flex().h(16).min_w(0).gap(8).items_center()
-          .child(div().flex_1().min_w(0).when(Boolean(report), (el) => el.child(report)))
-          .when(Boolean(acct), (el) => el.child(div().flex_none().font_family(ID_FONT).text_size(TEXT.id).text_color(t.dim).child(acct)))));
+        .child(div().h(14).min_w(0).truncate().font_family(ID_FONT).text_size(TEXT.id).text_color(t.muted).child(line)));
+    return v_flex().id("thread-banner").relative().overflow_hidden().w_full().h(BANNER_H).flex_none().pt(8).pb(12).gap(8)
+      .when(Boolean(tone), (el) => el.bg(bannerBg(tone)).child(bannerDots(tone)).border_b(1).border_color(t.border))
+      .child(bar)
+      .child(task);
   }
 }
