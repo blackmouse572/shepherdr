@@ -161,3 +161,38 @@ describe("pasting in the box (Cmd+V)", () => {
     expect(c.files[0].path).toMatch(/\/data\/chat-attach\/pasted-.*\.png$/);
   });
 });
+
+// A card's rows (strips.js) drawn as the list draws them: none may throw (a handler there blanks the list), and each
+// strip's estimate is at least what it draws (`lines` of text at `line` px each, plus its padding).
+function drawsInList(c, rows) {
+  inRenderer = true;
+  try { for (const r of rows) expect(() => c.row(r, {}, "v0-")).not.toThrow(); } finally { inRenderer = false; }
+}
+
+describe("the Doop cards", () => {
+  test("a plan to approve: its banner, its steps numbered, Approve plan and Ask for changes (App 01)", async () => {
+    const { AskCards } = await import(join(import.meta.dir, "../mods/chat/cards.js"));
+    const { words } = await import("./asks.js");
+    const plan = "# Threshold card\n\n1. Add a Switch-above card to Settings › Accounts, with a stepper from 50% to 99%.\n2. Save it as `accounts.switchAbove` in settings.json, default 95.\n3. Draw the threshold as a tick on the status bar meter, so you can see how close the account is.\n\n## Testing\n- bun test";
+    const c = await chat([said(1, "Here's my plan.")]);
+    const replies = [];
+    c.cards = new AskCards({ reply: (a, text) => replies.push(text), toTerminal() {}, chatAbout() {} }, { focus() {} });
+    c.asks = [{ id: "a.1793000000.1", words: words({ tool_name: "ExitPlanMode", tool_input: { plan } }) }];
+    const rows = c.rows().filter((r) => r.kind === "cardstrip");
+    expect(rows.map((r) => r.s.kind)).toEqual(["banner", "step", "step", "step", "controls"]);
+    expect(rows[0].s.title).toBe("Claude has a plan to approve");
+    expect(rows[2].s.text).toBe("Save it as accounts.switchAbove in settings.json, default 95.");
+    expect(rows[4].s.ctls.map((k) => k.label)).toEqual(["Approve plan", "Ask for changes"]);
+    drawn.length = 0;
+    drawsInList(c, rows);
+    for (const w of ["Claude has a plan to approve", "Approve plan", "Ask for changes", "approve", "1", "3"]) expect(drawn).toContain(w);
+    // The estimate holds the banner and every step's wrapped lines.
+    const inner = Math.min(c.width, c.rd.column + 36) - 36 - 26;
+    expect(c.guess(rows[0])).toBeGreaterThanOrEqual(58 + 1);
+    for (const r of rows.filter((r) => r.s.kind === "step")) expect(c.guess(r)).toBeGreaterThanOrEqual(Math.ceil((r.s.text.length * 6.5) / (inner - 29)) * 20);
+    // A press on Approve plan (where it is drawn: the card's left edge in) approves it.
+    c.press = { x: c.edges().left + 1 + 12 + 10 };
+    c.clickRow(rows[4].id, c.rows(), { notify() {}, timer: { after() {} }, spawn() {} }, []);
+    expect(JSON.parse(replies[0]).hookSpecificOutput.decision.behavior).toBe("allow");
+  });
+});

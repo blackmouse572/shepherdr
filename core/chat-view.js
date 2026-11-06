@@ -44,7 +44,46 @@ export const WORDS = {
   noAgentBody: "This chat pane isn't tied to an agent.",
   startingAssistant: "Starting the Assistant…",
   sessionGone: "Earlier session was gone, starting a new one…",
+  // A plan's card (Doop App 01), as Needs you says it.
+  approvePlan: "Approve plan",
+  askChanges: "Ask for changes",
+  approveKey: "approve",
+  openTask: "Open task",
+  // A helper's report card (Doop App 02).
+  peek: "Peek",
+  loadingReport: "Reading its report…",
 };
+
+// A plan's card: whose plan it is, in its banner ("SHE-14 has a plan to approve").
+export const planTitle = (who) => `${who} has a plan to approve`;
+
+// A plan's steps (ExitPlanMode's markdown): its first-level list items as plain words, numbered ones first (a
+// plan's "Testing" bullets after its numbered steps are left out); null when it isn't such a list of 2 to 12 items
+// (the card then shows the plan as it is).
+export function planSteps(plan) {
+  const items = [];
+  let indent = null;
+  for (const l of String(plan ?? "").split("\n")) {
+    const m = /^(\s*)(\d+[.)]|[-*+])\s+(\S.*)$/.exec(l);
+    if (m) {
+      const at = m[1].replace(/\t/g, "  ").length;
+      indent ??= at;
+      if (at <= indent) items.push({ num: /\d/.test(m[2]), text: m[3] });
+      else if (items.length) items[items.length - 1].sub = true;
+    } else if (items.length && !items[items.length - 1].sub && /^\s{2,}\S/.test(l)) items[items.length - 1].text += ` ${l.trim()}`;
+  }
+  const numbered = items.filter((x) => x.num);
+  const steps = (numbered.length >= 2 ? numbered : items).map((x) => plainWords(x.text));
+  return steps.length >= 2 && steps.length <= 12 ? steps : null;
+}
+// Markdown's marks out of one line: bold, code, links.
+const plainWords = (s) => {
+  const t = String(s).replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/(\*\*|__)(.+?)\1/g, "$2").replace(/`([^`]+)`/g, "$1").trim();
+  return t.length > 400 ? `${t.slice(0, 399)}…` : t;
+};
+
+// A finished helper's report card (Doop App 02): "<name> helper · reported 1m ago". ago: core/tasks.js ago()'s.
+export const helperSub = (ago) => `helper · reported ${ago}`;
 
 // ---- a session that is gone ------------------------------------------------------------------
 // Claude Code: "No conversation found with session ID: …". Codex: "ERROR: No saved session found with ID …".

@@ -34,6 +34,7 @@ import { alwaysAllow } from "./allow.js";
 import { spaceOfTerminal } from "./core/notify.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
 import { WORDS, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
+import { ago } from "./core/tasks.js";
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
 import { AskCards, linkCtl } from "./cards.js";
@@ -758,7 +759,9 @@ export default class Chat extends View {
   // { id, at, strips, owner (its AskCards, for keys), ask, question (a questions card) }.
   timelineCards() {
     const out = [];
-    for (const a of this.asks) out.push({ id: `card:${a.id}`, at: askAt(a.id), strips: this.cards.strips(a, { who: this.cli() }), owner: this.cards, ask: a, question: a.words.kind === "questions" });
+    // A plan's banner line: what runs it and how long it has waited (Doop App 01).
+    for (const a of this.asks) out.push({ id: `card:${a.id}`, at: askAt(a.id), owner: this.cards, ask: a, question: a.words.kind === "questions",
+      strips: this.cards.strips(a, { who: this.cli(), sub: [agent.NAMES[this.kind], ago(askAt(a.id))].filter(Boolean).join(" · ") }) });
     for (const a of this.sasks ?? []) {
       if (!a.kept) out.push({ id: `card:s:${a.name}`, at: this.seenAt(`s:${a.address}|${a.name}`), strips: this.secretCards.strips(a, { who: this.cli() }) });
     }
@@ -772,6 +775,13 @@ export default class Chat extends View {
       if (a.secret) {
         if (!a.secret.kept) out.push({ id: `card:${a.id}`, at: this.afterNews(a.ref, this.seenAt(`s:${a.secret.address}|${a.secret.name}`)),
           strips: this.secretCards.strips(a.secret, { who: a.ref, links: open(a.id, a.ref, a.title, a.terminal) }) });
+      } else if (a.words.kind === "plan") {
+        // A plan: its task's title, what runs it, its account and age under the banner's title; Open task at its right.
+        const x = this.workerTasks().get(a.terminal), acct = x?.agents?.[x.agents.length - 1]?.account;
+        const prog = terminals().find((k) => k.address === a.terminal)?.program?.name;
+        const sub = [a.title, prog, acct ? `runs on ${acct}` : null, ago(askAt(a.id))].filter(Boolean).join(" · ");
+        const go = { id: `wask-open-${a.id}`, label: WORDS.openTask, look: "secondary", after: "mods/workspace-chrome/chevron-right.svg", fn: () => openTaskThread(a.terminal, a.ref, a.title) };
+        out.push({ id: `card:${a.id}`, at: this.afterNews(a.ref, askAt(a.id)), owner: this.workerCards, ask: a, strips: this.workerCards.strips(a, { who: a.ref, sub, open: go }) });
       } else out.push({ id: `card:${a.id}`, at: this.afterNews(a.ref, askAt(a.id)), owner: this.workerCards, ask: a,
         strips: this.workerCards.strips(a, { who: a.ref, links: open(a.id, a.ref, a.title, a.terminal), terminal: false, chatHint: "Or write to it in its own chat." }) });
     }
@@ -2621,10 +2631,16 @@ export default class Chat extends View {
       }
       case "tasknews": return x.accept ? 26 : 20;
       case "cardstrip": {
-        const s = x.s, edge = (x.first ? 10 : s.gap ?? 8) + (x.last ? 10 : 0);
-        const h = s.kind === "title" || s.kind === "text" ? 18 * lines(s.text, w)
+        // As strips.js draws it: a banner fills the card's top (no padding), the rest sit under their gap; the
+        // card's border is a px at its top and bottom. inner: the card's inside (the column less its border and px).
+        const s = x.s, inner = Math.min(this.width, this.rd.column + 36) - 36 - 26;
+        const edge = (s.kind === "banner" ? 0 : x.first ? 10 : s.gap ?? 8) + (x.last ? 10 : 0) + (x.first ? 1 : 0) + (x.last ? 1 : 0);
+        const h = s.kind === "text" && s.size === "body" ? strips.BODY_LINE * wrapLines(s.text, inner, 7.2)
+          : s.kind === "title" || s.kind === "text" ? 18 * lines(s.text, w)
           : s.kind === "detail" ? 12 + 16 * Math.min(s.clip ? 11 : Infinity, s.lines?.length ?? 1)
-          : { head: 18, controls: 24, option: 32 + (s.desc ? 16 : 0), review: 31, input: 32 }[s.kind] ?? 24;
+          : s.kind === "step" ? strips.STEP_LINE * wrapLines(s.text, inner - 29, 7.2)
+          : s.kind === "chips" ? strips.CHIP_H * strips.chipRows(s.tags, inner - (s.indent ?? 0)) + strips.CHIP_GAP * (strips.chipRows(s.tags, inner - (s.indent ?? 0)) - 1)
+          : { head: 18, controls: 24, option: 32 + (s.desc ? 16 : 0), review: 31, input: 32, banner: strips.BANNER_H, line: strips.LINE_H }[s.kind] ?? 24;
         return edge + h;
       }
       default: return 60;

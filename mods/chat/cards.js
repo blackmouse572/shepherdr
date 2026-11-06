@@ -12,6 +12,7 @@ import { div } from "gpui-kit";
 import { InputState } from "gpui-base";
 import { allow, deny, answer, answers, chatAbout, release } from "./core/asks.js";
 import { ALWAYS } from "./core/allow.js";
+import { WORDS, planTitle, planSteps } from "./core/chat-view.js";
 
 // A card's first strip. opts: { who ("Claude", "HERD-12"), asks (false: what follows `who`
 // instead, e.g. "Kept"), dot (its color; default red), links ([ctl] at the right) }.
@@ -39,10 +40,12 @@ export class AskCards {
 
   // The strips of one ask's card. opts: { who (whose ask: "Claude", "HERD-12"), links (more
   // quiet links at the header's right, e.g. "Open chat"), terminal (the "Answer in terminal"
-  // link; default on), chatHint (what "Chat about this" says) }.
+  // link; default on), chatHint (what "Chat about this" says), sub (a plan's line under its title: task · program ·
+  // account · age), open (a plan's "Open task" ctl, in place of "Answer in terminal") }.
   strips(ask, opts = {}) {
     const w = ask.words;
     if (w.kind === "questions" && w.questions.length) return this.questions(ask, opts);
+    if (w.kind === "plan") return this.plan(ask, opts);
     const id = ask.id;
     const long = Boolean(w.detail) && longDetail(w.detail);
     const open = this.open.has(id);
@@ -68,6 +71,33 @@ export class AskCards {
       out.push({ key: "actions", kind: "controls", align: "start", ctls });
     }
     return out;
+  }
+
+  // A plan to approve (Doop App 01, as Needs you's card): its banner ("SHE-14 has a plan to approve", task ·
+  // program · account · age, Open task), its steps numbered (else the plan as written, in a box), Approve plan and
+  // Ask for changes; Enter approves once the card has the keys (pressed()).
+  plan(ask, opts) {
+    const w = ask.words, id = ask.id;
+    const steps = planSteps(w.detail);
+    const long = !steps && Boolean(w.detail) && longDetail(w.detail);
+    const open = this.open.has(id);
+    const links = [...(long ? [linkCtl(`ask-all-${id}`, open ? "Show less" : "Show all", () => { if (open) this.open.delete(id); else this.open.add(id); })] : []),
+      ...(opts.open ? [opts.open] : opts.terminal !== false ? [this.terminalLink(ask)] : [])];
+    const out = [{ key: "banner", kind: "banner", state: "attention", title: planTitle(opts.who ?? "Claude"), sub: opts.sub ?? null, links }];
+    if (steps) steps.forEach((text, i) => out.push({ key: `step${i}`, kind: "step", gap: i ? 9 : 14, num: i + 1, text }));
+    else if (w.detail) out.push({ key: "detail", kind: "detail", gap: 12, lines: w.detail.split("\n"), clip: long && !open ? SHORT : null });
+    if (w.cut) out.push({ key: "cut", kind: "text", tone: "dim", text: "Some of it is too long for the chat; the terminal shows it all." });
+    const ctls = [];
+    if (!w.unread) ctls.push({ id: `ask-allow-${id}`, label: WORDS.approvePlan, look: "primary", icon: "mods/chat/check.svg", fn: (cx) => this.approve(ask, cx) });
+    ctls.push({ id: `ask-deny-${id}`, label: WORDS.askChanges, look: "secondary",
+      fn: (cx) => { this.drop(ask); this.host.reply(ask, deny("The person didn't approve this plan yet. Ask them what to change."), cx); } });
+    out.push({ key: "actions", kind: "controls", gap: 16, align: "start", ctls, hint: w.unread ? null : { keys: ["↵"], text: WORDS.approveKey } });
+    return out;
+  }
+
+  approve(ask, cx) {
+    this.drop(ask);
+    this.host.reply(ask, allow(), cx);
   }
 
   // "Answer in terminal": a quiet link, always at the header's right.
@@ -138,9 +168,9 @@ export class AskCards {
     this.host.reply(ask, answers(ask.req, map), cx);
   }
 
-  // A press on one of this ask's strips: its card takes the keys (arrows, Tab, digits).
+  // A press on one of this ask's strips: its card takes the keys (arrows, Tab, digits; a plan's Enter).
   pressed(ask) {
-    if (ask.words.kind !== "questions") return;
+    if (ask.words.kind !== "questions" && ask.words.kind !== "plan") return;
     this.keyed = ask;
     this.focus.focus();
   }
@@ -152,6 +182,13 @@ export class AskCards {
   }
 
   key(ask, e, cx) {
+    if (ask.words.kind === "plan") {
+      if (e.key !== "enter" || ask.words.unread) return;
+      cx.stop_propagation();
+      this.approve(ask, cx);
+      cx.notify();
+      return;
+    }
     const w = ask.words, q = this.state(ask), n = w.questions.length;
     const last = n > 1 ? n : n - 1, step = Math.min(q.step, last);
     const k = e.key;
