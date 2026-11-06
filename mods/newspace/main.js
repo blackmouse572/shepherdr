@@ -32,7 +32,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
 import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, segmented, fieldFrame, MONO, TEXT, RADIUS, submitKeys, isSubmitKey } from "./ui.js";
-import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines } from "./coordinator.js";
+import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines, newSpaceHeight } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
 // The suggestions' width (the field's: the dialog's 460 less its padding, the icon, Browse… and the gaps).
@@ -440,7 +440,8 @@ export default class NewSpace extends View {
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.close(), note: this.error, error: true,
         primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx),
           keys: submitKeys() } }));
-    // The overlay is the panel at its tallest; the panel sits in its middle.
-    return v_flex().size_full().justify_center().child(panel);
+    // The overlay is the panel at its tallest; the panel sits in its middle. A frameless overlay is as tall as its
+    // content, so the root takes the overlay's height itself (size_full() collapses it, and the panel loses its fill).
+    return v_flex().w_full().h(newSpaceHeight((props()?.recent ?? []).length, machineList.length > 1)).justify_center().child(panel);
   }
 }
