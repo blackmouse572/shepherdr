@@ -1,6 +1,6 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec, props, terminals } from "herdr";
+import { panes, run, openOverlay, theme, window, shared, setShared, layout, settings, nextCommand, readTextFile, appHome, home, exec, props, terminals, focused } from "herdr";
 import { spacesWithChats as spaces, sweep } from "./parked.js";
 import { agentIn, isCoordinatorTab, closeTab, watchNewSpaces, newSpace, openCoordinator, renameTab, renameSpace } from "./coordinator.js";
 import { startTick, tickOnChange } from "./tick.js";
@@ -351,7 +351,9 @@ export default class Tabs extends View {
       const b = this.branchOf(space, cx, false), n = b?.state?.dirty ?? 0;
       return ["Changes", b ? `${b.name} · ${n ? `${n} not committed` : "nothing to commit"}` : "", null];
     }
-    const f = space?.folder ?? "", h = home();
+    // The folder Herdr's Files shows: the focused pane's, else the focused agent's, else the space's (its location()).
+    const fo = focused(), pane = fo?.pane ? panes().find((p) => p.pane === fo.pane) : null;
+    const f = pane?.cwd || fo?.cwd || space?.folder || "", h = home();
     return ["Files", !space?.machine && h && (f === h || f.startsWith(`${h}/`)) ? `~${f.slice(h.length)}` : f, null];
   }
 
