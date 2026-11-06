@@ -1,6 +1,6 @@
 // The status bar (Doop "App 02 · Task" footer): the shown space's machine (as the sidebar names it) and branch, the
 // red Needs-you badge (the Tasks panel's count, inbox.js) when something needs the person, then a rule and the usage
-// pill, the switch rule and Codex (usage.js), and the palette key at the right. The pill opens the usage and accounts
+// pill, the switch rule and Codex (usage.js), and the command bar's key at the right. The pill opens the usage and accounts
 // popover: this mod again, as a popup with props.view "usage". No agent count: the Tasks panel shows the work.
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
@@ -22,12 +22,12 @@ export default class WorkspaceStatus extends View {
     if (!this.pop) startUsage(cx, { onView: () => openUsage({}) });
   }
 
-  // The palette key as actually bound, not a hardcoded one; without a
+  // The command bar's key as actually bound (tabs-tasks.commands, keys.json), not a hardcoded one; without a
   // binding the hint stays useful ("Commands") instead of lying.
   hint() {
     const mac = window()?.platform === "macos";
     const mod = { cmd: mac ? "⌘" : "Ctrl+", ctrl: mac ? "⌃" : "Ctrl+", shift: mac ? "⇧" : "Shift+", alt: mac ? "⌥" : "Alt+", option: mac ? "⌥" : "Alt+" };
-    const b = keys().find((k) => k.section === "global" && k.action === "app.palette");
+    const b = keys().find((k) => k.action === "tabs-tasks.commands" && k.keys?.trim());
     const parts = b && b.keys.endsWith("--") ? [...b.keys.slice(0, -2).split("-"), "-"] : b?.keys.split("-");
     const key = parts && parts.map((p) => mod[p.toLowerCase()] ?? p.toUpperCase()).join("");
     return key ? `${key}  Commands` : "Commands";
@@ -49,6 +49,7 @@ export default class WorkspaceStatus extends View {
       .child(div().flex_1())
       .child(div().id("palette").px(6).h(20).flex().items_center().rounded(RADIUS.control).text_color(t.dim).cursor_pointer()
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
-        .on_click(() => run("app.palette")).child(this.hint()));
+        // Shepherdr's command bar (mods/jump on commands, as Ctrl+Shift+P), not Herdr's palette.
+        .on_click(() => run("tabs-tasks.commands")).child(this.hint()));
   }
 }
