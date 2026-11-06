@@ -66,6 +66,9 @@ const KEEP = 2000;
 // The conversation's width at most is this.rd.column (core/reading.js): the prose's measure plus room for the
 // person's bubbles, so lines stay readable in a wide pane.
 const KINDS = { "claude-code": "claude", claude: "claude", codex: "codex" };
+// macOS's file picker, several at once: each chosen path on its own line.
+const MAC_PICK = `set fs to choose file with prompt "${WORDS.attach}" with multiple selections allowed\n`
+  + 'set out to ""\nrepeat with f in fs\nset out to out & POSIX path of f & linefeed\nend repeat\nreturn out';
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const same = (a, b) => norm(a) === norm(b);
 // When an ask was made: its id is <terminal>.<seconds>.<pid> (ask-hook.sh), taken at the end of
@@ -3294,13 +3297,17 @@ export default class Chat extends View {
     if (this.pinned) this.stick = true;
   }
 
-  // The desktop's own file picker (pick-files.py, xdg-desktop-portal): the chosen files join
-  // the message as tiles, as a drop or a paste makes them.
+  // The desktop's own file picker (macOS: AppleScript's choose file; else pick-files.py,
+  // xdg-desktop-portal): the chosen files join the message as tiles, as a drop or a paste makes
+  // them. Cancelled, nothing.
   pickFiles(cx) {
     cx.spawn(async (cx) => {
-      const r = await exec("sh", ["-c", 'P=/usr/bin/python3; [ -x "$P" ] || P=python3; exec "$P" -I "$1"', "x", `${appHome()}/mods/chat/pick-files.py`]).catch(() => null);
+      const mac = window()?.platform === "macos";
+      const r = await (mac ? exec("osascript", ["-e", MAC_PICK])
+        : exec("sh", ["-c", 'P=/usr/bin/python3; [ -x "$P" ] || P=python3; exec "$P" -I "$1"', "x", `${appHome()}/mods/chat/pick-files.py`])).catch(() => null);
       const list = (r?.stdout ?? "").split("\n").filter(Boolean);
-      if (r && r.code !== 0) this.error = "Couldn't open the file picker.";
+      // AppleScript's cancel is error -128: not a failure.
+      if (r && r.code !== 0 && !(mac && /-128/.test(r.stderr ?? ""))) this.error = "Couldn't open the file picker.";
       if (!list.length) { cx.notify(); return; }
       this.addFiles(attach.paths(list));
       this.saveSoon(cx);
