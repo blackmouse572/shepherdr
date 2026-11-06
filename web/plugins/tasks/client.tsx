@@ -241,7 +241,7 @@ function whereOf(snap: Snapshot, t: Task, names: TaskGroup['names']) {
 /** 3.0's statuses (core/tasks.js ORDER) as the web's task statuses, and their words */
 const FILTER_STATUS: Record<string, Task['status']> = { working: 'work', merging: 'merging', ready: 'ready', queued: 'queued', todo: 'todo', done: 'done' }
 const FILTER_WORDS: Record<string, string> = { needs: 'Needs you', working: 'Working', merging: 'Merging', ready: 'Ready', queued: 'Queued', todo: 'To do', done: 'Done', automations: 'Automations' }
-const FILTER_ORDER = ['needs', 'ready', 'merging', 'working', 'queued', 'todo', 'done', 'automations']
+const FILTER_ORDER = ['needs', 'working', 'queued', 'todo', 'ready', 'merging', 'done', 'automations']
 /** the chips that show beside All statuses before More, as far as there is room (3.0's filterRow) */
 const PRIMARY = ['needs', 'working', 'ready']
 

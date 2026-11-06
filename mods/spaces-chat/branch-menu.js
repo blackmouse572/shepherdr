@@ -1,7 +1,8 @@
 // The tab bar's branch chip's menu (Doop App 02b): where the shown code lives, ways to open it, and the repo's other
 // checkouts: go to one, or work in two at once (one in a new tab, or beside this one). The tab bar (tabs-tasks) reads the git (core/worktree.js BRANCH_STATE) and opens this mod as a
 // popup with props { view: "branch", state (branchState()), branch, machine, files (the Files panel is on),
-// editor (the command to open it with there, else null), update (Update from its base shows), pr ({ number, state, url })}.
+// editor (the command to open it with there, else null), update (Update from its base shows), pr ({ number, state, url }),
+// task (the id of the task whose worktree this is: in the header, and the footer says it goes once merged)}.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -76,14 +77,14 @@ export class BranchMenu {
       .text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).tooltip(tip)
       .on_click((_e, cx) => { cx.stop_propagation(); pick(i, cx, how); })
       .child(svg(icon).size(14).flex_none());
-    const row = (r, i, child) => h_flex().id(`bm-${i}`).h(M.row).px(10).gap(10).items_center().rounded(RADIUS.card).whitespace_nowrap()
+    const row = (r, i, child) => h_flex().id(`bm-${i}`).h(M.row).px(10).gap(10).items_center().rounded(RADIUS.row).whitespace_nowrap()
       .cursor_pointer().when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((st) => st.bg(t.hover)))
       .on_click((_e, cx) => pick(i, cx)).child(child);
     const kv = (k, v) => [div().w(70).flex_none().text_color(t.dim).child(k), h_flex().flex_1().min_w(0).gap(6).children(Array.isArray(v) ? v : [v])];
     const sec = (label, n = null) => h_flex().h(M.sec).px(16).pt(8).items_center().border_t(1).border_color(t.border)
       .font_family(MONO).text_size(TEXT.id - 0.5).text_color(t.dim).child(div().flex_1().child(label.toUpperCase()))
       .when(n !== null, (el) => el.child(String(n)));
-    const sub = [s.linked ? `Worktree of ${s.repo}` : `Checkout of ${s.repo}`, p.machine ?? "This computer"].join(" · ");
+    const sub = [s.linked ? `Worktree of ${s.repo}` : `Checkout of ${s.repo}`, p.task, p.machine ?? "This computer"].filter(Boolean).join(" · ");
     // Note: a popup is as tall as its content, so the menu sets its own size (props.height from tabs-tasks).
     return v_flex().id("branch-menu").track_focus(this.handle).w(M.width).h(p.height ?? 420).min_h(0).bg(dark ? t.chrome : t.popover).text_size(TEXT.body)
       .on_key_down((e, cx) => {
@@ -122,6 +123,9 @@ export class BranchMenu {
             .child(o.tree.main ? "main checkout" : midCut(tilde(o.tree.path), 28)))
           .when(o.tree.ahead > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(`↑${o.tree.ahead}`)))
           .child(open(actions.length + k, "tab", "mods/workspace-chrome-shepherdr/plus.svg", "Open in a new tab (⌘↵)"))
-          .when(beside, (el) => el.child(open(actions.length + k, "right", "mods/jump/columns.svg", "Open beside this one (⇧↵)"))))))));
+          .when(beside, (el) => el.child(open(actions.length + k, "right", "mods/jump/columns.svg", "Open beside this one (⇧↵)")))))))
+      // A task's worktree: herdr-task removes it once its branch merges (App 02b's footer).
+      .when(Boolean(p.task), (el) => el.child(h_flex().h(M.foot).flex_none().px(16).items_center().border_t(1).border_color(t.border)
+        .text_size(TEXT.label).text_color(t.dim).child("Removed after its PR merges"))));
   }
 }

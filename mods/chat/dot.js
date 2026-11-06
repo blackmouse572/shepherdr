@@ -10,7 +10,7 @@
 //   queued   the grey ring with a clock's two hands      todo  the grey ring      off  dashed
 import { div, svg } from "gpui-kit";
 import { theme, terminals } from "herdr";
-import { need, working, green } from "./ui.js";
+import { need, working, green, red } from "./ui.js";
 
 // The design's need, working and ready colours, light and dark: one source for the app, in ui.js. The
 // greys are the theme's.
@@ -45,7 +45,8 @@ export function taskDot(s, { pct = null, halo = false } = {}) {
 
 // An agent's status mark (Doop App 02 .dot), the sidebar's rows and the tab bar's tabs: needs you (amber, pulsing),
 // working (blue, an arc going round it; a task's pie once it reports its %), ready (taskDot's tick), done (green),
-// idle (hollow). 14 square, so nothing moves when it changes.
+// crashed (red: its agent ended with an error, core/tasks.js agentDot), idle (hollow). 14 square, so nothing moves
+// when it changes.
 export function statusDot(kind, pct = null) {
   const t = theme();
   const box = () => div().relative().size(14).flex_none().flex().items_center().justify_center();
@@ -57,6 +58,7 @@ export function statusDot(kind, pct = null) {
   if (kind === "working") return box().child(div().size(6).rounded(3).bg(working()))
     .child(div().absolute().inset_0().child(svg("mods/workspace-chrome/spinner.svg").size(14).text_color(working()).spin(1200)));
   if (kind === "done") return box().child(div().size(8).rounded(4).bg(readyColor()));
+  if (kind === "crashed") return box().child(div().size(8).rounded(4).bg(red()));
   return box().child(div().size(8).rounded(4).border(1.5).border_color(t.dim));
 }
 

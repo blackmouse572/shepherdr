@@ -17,20 +17,23 @@
 
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, Popup, InputState, Input } from "gpui-base";
-import { panes, terminals, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay, fonts } from "herdr";
+import { panes, terminals, spaces, props, run, theme, home, exec, hc, notify, nextCommand, shared, setShared, openOverlay, fonts } from "herdr";
 import { apSpace, apWatch, apPoll, apChip, apHeartbeatLink, COMPACT_BELOW } from "./autopilot.js";
 import { button as uiButton, segmented, TEXT, RADIUS, HEAD, MONO, toast, plainError, isDark, bannerBg, bannerDots, agentBanner, toastWho, SERIF, dialogTitle, toggleSwitch, menuRow, fieldFrame } from "./ui.js";
-import { READING_KEY, READING_WORDS, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice, fontOptions, fontFamily } from "./core/reading.js";
+import { READING_KEY, READING_WORDS, READING_POP, SIZES, LEADINGS, WIDTHS, FONTS, readingPrefs, withChoice, fontOptions, fontFamily } from "./core/reading.js";
 import { on as addonOn } from "./addons.js";
 // "End Claude Code?" and its buttons: core/menus.js (the web app's header asks in the same words).
 import { endAgent } from "./core/menus.js";
+import { READ_LISTS, taskLists } from "./core/tasklists.js";
+import { paneLine, reportOf } from "./core/tasks.js";
+import { defaults, current, modelName } from "./agent.js";
 
 const CHAT = "chat";
 const LABEL = "herdr.chat";
 // When a toggle last swapped a pane (every copy of this build shares it).
 let lastSwap = 0;
 // The reading popover's size, and its padding.
-const READING_W = 400, READING_H = 312, READING_PAD = 14;
+const READING_W = READING_POP.width, READING_H = READING_POP.height, READING_PAD = 14;
 
 function icon(p, size, color) {
   if (!p?.icon) return null;
@@ -66,6 +69,61 @@ async function app(name, args) {
   try { out = JSON.parse(r.stdout || "{}"); } catch {}
   if (r.code !== 0 || out.error) throw new Error(out.error || r.stderr.trim() || `${name} failed`);
   return out;
+}
+
+// What a header says of an agent beyond Herdr's live list, looked up once and shared by every header of this build:
+// its argv and when it started (hc get), its agent's settings (the model when argv names none), its task's record.
+const told = new Map(), dflts = new Map(), lists = new Map();
+const machineOf = (address) => (String(address ?? "").includes("/") ? address.split("/")[0] : null);
+const KIND = { claude: "claude", codex: "codex" };
+function lookUp(k, cx) {
+  if (!told.has(k.address)) {
+    told.set(k.address, null);
+    cx.spawn(async (cx) => {
+      let t = null;
+      try { t = JSON.parse((await hc(["get", k.address, "--json"])).stdout || "null"); } catch {}
+      told.set(k.address, { argv: t?.foreground?.argv ?? t?.argv ?? [], born: t?.created_ms ?? null });
+      cx.notify();
+    });
+  }
+  return told.get(k.address);
+}
+// "Opus 5.5": what it runs on, from its argv, else its agent's own settings on its machine.
+function modelOf(k, cx) {
+  const kind = KIND[k?.program?.key], info = k && lookUp(k, cx);
+  if (!kind || !info) return null;
+  const key = `${machineOf(k.address) ?? ""}|${kind}`;
+  if (!dflts.has(key)) {
+    dflts.set(key, null);
+    cx.spawn(async (cx) => { dflts.set(key, await defaults(kind, machineOf(k.address)).catch(() => ({}))); cx.notify(); });
+  }
+  const c = current(kind, info.argv ?? [], {}, dflts.get(key) ?? {});
+  return c.label ?? (c.model ? modelName(c.model) : null);
+}
+// Its task's record ({ list, task }), the machine's lists read again at most every 20 s.
+function taskOf(k, cx) {
+  const key = k?.labels?.["herdr.task"];
+  if (!key) return null;
+  const m = machineOf(k.address) ?? "";
+  const had = lists.get(m);
+  if (!had || (!had.busy && Date.now() - had.at > 20000)) {
+    lists.set(m, { ...(had ?? { tasks: new Map() }), at: Date.now(), busy: true });
+    cx.spawn(async (cx) => {
+      const r = await exec("sh", ["-c", READ_LISTS], m ? { on: m } : {}).catch(() => null);
+      const tasks = new Map();
+      for (const list of taskLists(r?.stdout ?? "")) for (const task of list.tasks) tasks.set(`${list.slug}#${task.id}`, { list, task });
+      lists.set(m, { at: Date.now(), busy: false, tasks: r ? tasks : lists.get(m)?.tasks ?? tasks });
+      cx.notify();
+    });
+  }
+  return lists.get(m)?.tasks.get(key) ?? null;
+}
+// The Claude account a task's agent runs on, by the person's name for it (as the Tasks list's); null with one account.
+function accountOf(task) {
+  if ((shared("usage")?.claude ?? []).length < 2) return null;
+  const id = [...(task?.agents ?? [])].reverse().find((a) => typeof a?.account === "string")?.account;
+  if (!id) return null;
+  return shared("usage.prefs")?.names?.[id] || (id === "default" ? "Default" : id[0].toUpperCase() + id.slice(1));
 }
 
 // A parked agent, shown in a chat pane: what the header shows for it.
@@ -273,9 +331,13 @@ export default class Pane extends View {
     // An artifact (mods/artifacts: mod "art-<id>") shows its title and version.
     const art = self.mod?.startsWith("art-") ? shared("artifacts.titles")?.[self.mod] ?? self.title : null;
     const prog = ((p.program?.agent || p.program?.shell) && p.program.name) || p.title || p.program?.name || "Shell";
-    // An Assistant reads "Assistant · Claude Code": the role first, then what it runs.
-    const isAssistant = Boolean(lazy) || terminals().find((x) => x.address === (agent ?? self.terminal))?.labels?.["herdr.role"] === "coordinator";
-    const name = art ?? (lazy ? "Assistant" : chatMode && p === self ? "Chat" : isAssistant ? `Assistant · ${prog}` : prog);
+    const k = terminals().find((x) => x.address === (agent ?? self.terminal));
+    const isAssistant = Boolean(lazy) || k?.labels?.["herdr.role"] === "coordinator";
+    // The name: a task's title, an Assistant its space's name (Doop App 01, App 02); the program shows as its logo.
+    const rec = art === null ? taskOf(k, cx) : null;
+    const spaceName = isAssistant ? spaces().find((s) => s.tabs?.some((x) => x.id === self.tab))?.name : null;
+    const name = art ?? (lazy ? spaceName || "Assistant" : chatMode && p === self ? "Chat"
+      : rec?.task.title || (isAssistant ? spaceName || `Assistant · ${prog}` : prog));
     const pic = art !== null ? svg("mods/artifacts/artifacts.svg").size(14).flex_none().text_color(t.dim) : icon(p.program, 14, t.dim);
     const st = p.status;
     const pane = self.pane;
@@ -286,10 +348,18 @@ export default class Pane extends View {
     apWatch(this, apFor, cx);
     // Dark: the header is a duotone banner in the agent's state (ui.js bannerBg/bannerDots), its name in the serif.
     const banner = isDark() ? agentBanner(st) : null;
-    // Its line: its task's id, the folder, the branch there (a parked agent's from a pane in the same folder).
-    const k = terminals().find((x) => x.address === (agent ?? self.terminal));
+    // Its line: an agent's task id (else its branch or folder), model, progress or when it started, and account
+    // (core/tasks.js paneLine); anything else its folder and the branch there (a parked agent's from a pane in the
+    // same folder).
     const branch = self.branch ?? (p.cwd ? panes().find((x) => x.cwd === p.cwd && x.branch)?.branch : null);
-    const line = [k?.labels?.["herdr.task"] ? toastWho(k) : null, folder(p.cwd), branch].filter(Boolean).join(" · ");
+    const agentish = art === null && Boolean(k) && (Boolean(p.program?.agent) || isAssistant || Boolean(k.labels?.["herdr.task"]));
+    const own = typeof k?.report?.progress === "number" && k.report.progress >= 0 ? { pct: k.report.progress, msg: k.report.msg || null } : null;
+    const w = rec ? reportOf(rec.task, "working", own) : null;
+    const line = agentish
+      ? paneLine({ ref: k.labels?.["herdr.task"] ? toastWho(k) : null, role: isAssistant ? "Assistant" : null,
+        where: branch ?? (folder(p.cwd) === "~" ? null : folder(p.cwd)), model: modelOf(k, cx), pct: w?.done ?? null, left: w?.left ?? null,
+        since: rec?.task.started ?? lookUp(k, cx)?.born ?? null, account: accountOf(rec?.task) })
+      : [folder(p.cwd), branch].filter(Boolean).join(" · ");
     // A bare "~" (home, no task or branch) says nothing: the name sits alone.
     const sub = line === "~" ? "" : line;
     return h_flex()
@@ -311,7 +381,8 @@ export default class Pane extends View {
       .when(Boolean(pic), (el) => el.child(pic))
       // The name over its line; the line gives way first, the switch keeps its width.
       .child(v_flex().flex_shrink_1().min_w(0).gap(2)
-        .child(div().truncate().max_w(260).text_color(t.foreground)
+        .child(div().id(`ph-name-${pane}`).truncate().max_w(260).text_color(t.foreground)
+          .when(name !== prog && art === null, (el) => el.tooltip(prog))
           .when(Boolean(banner), (el) => el.font_family(SERIF).text_size(HEAD.small))
           .when(!banner, (el) => el.font_medium())
           .child(name))
@@ -326,7 +397,7 @@ export default class Pane extends View {
       .when(Boolean(entry) && this.ending === true, el => el
         .child(div().flex_none().whitespace_nowrap().text_color(t.foreground).child(endAgent(prog).ask))
         .child(uiButton(`ph-end-no-${pane}`, endAgent(prog).cancel, { kind: "plain", onClick: () => { this.ending = false; } }))
-        .child(uiButton(`ph-end-${pane}`, endAgent(prog).verb, { kind: "primary", onClick: () => this.closeChat(pane) })))
+        .child(uiButton(`ph-end-${pane}`, endAgent(prog).verb, { kind: "ember", onClick: () => this.closeChat(pane) })))
       // Hover buttons come before the switch so Chat | Terminal never moves.
       .when(this.hovered && !(entry && this.ending === true), el => el
         .child(this.button(t, `ph-r-${pane}`, "split-right", "pane.split", { direction: "right", pane }))

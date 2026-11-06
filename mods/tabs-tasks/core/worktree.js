@@ -179,7 +179,7 @@ export function changesLine(s) {
 
 // The menu's sizes (a popup is opened at its height): header, the Base/Path/Changes block (kvLine more with a PR line),
 // a section's heading, a row, a list's bottom padding; at most `others` other checkouts.
-export const BRANCH_MENU = { width: 420, head: 58, kv: 88, kvLine: 24, sec: 30, row: 34, pad: 6, others: 6 };
+export const BRANCH_MENU = { width: 420, head: 58, kv: 88, kvLine: 24, sec: 30, row: 34, pad: 6, others: 6, foot: 36 };
 // The agent a terminal runs, as knownAgents() lists it (lib/coordinator.js entryFor's rule), or null: another
 // checkout opened beside it (the branch menu's New tab and Beside) starts the same one, fresh.
 export function agentEntry(k, known) {
@@ -190,9 +190,10 @@ export function agentEntry(k, known) {
   return known.find((a) => a.key === k.program?.key) ?? known.find((a) => base(a.run?.[0]) === base(k.foreground?.argv?.[0] ?? k.argv?.[0])) ?? null;
 }
 export const otherTrees = (s) => (s?.trees ?? []).filter((x) => x.path !== s.top).slice(0, BRANCH_MENU.others);
-export function branchMenuHeight(s, actions, pr = false) {
+// foot: the footer line ("Removed after its PR merges": a task's worktree).
+export function branchMenuHeight(s, actions, pr = false, foot = false) {
   const M = BRANCH_MENU, o = otherTrees(s).length;
-  return M.head + M.kv + (pr ? M.kvLine : 0) + M.sec + actions * M.row + M.pad + (o ? M.sec + o * M.row + M.pad : 0) + 2;
+  return M.head + M.kv + (pr ? M.kvLine : 0) + M.sec + actions * M.row + M.pad + (o ? M.sec + o * M.row + M.pad : 0) + (foot ? M.foot : 0) + 2;
 }
 
 // ---- the branch menu's extras: Open in editor, Update from <base>, the PR line ------------------------------------

@@ -9,8 +9,9 @@ import { REASONS } from "./needs.js";
 export const RANK = { blocked: 4, done: 3, working: 2, idle: 1 };
 export const STATUS = { needs: "Needs you", working: "Working", merging: "Merging", ready: "Ready", queued: "Queued", todo: "To do", done: "Done" };
 export const RANK_OF = Object.fromEntries(["needs", "ready", "merging", "working", "queued", "todo", "done"].map((id, i) => [id, i]));
-// The list's order: its groups, and the filter row's chips.
-export const ORDER = ["needs", "ready", "merging", "working", "queued", "todo", "done", "automations"];
+// The list's order: its groups, and the filter row's chips (Doop App 02, App 13: Needs you, Working, Queued, Ready,
+// Merging, Done).
+export const ORDER = ["needs", "working", "queued", "todo", "ready", "merging", "done", "automations"];
 // How the list can be grouped (the ⋯ menu's Group by; Shepherdr's GROUP_WORDS). "folder" was Space's old key.
 export const GROUP_BY = ["status", "space", "machine", "machine-space"];
 export const groupBy = (v) => (v === "folder" ? "space" : GROUP_BY.includes(v) ? v : "status");
@@ -177,6 +178,32 @@ export function ago(ms, suffix = true, now = Date.now()) {
 // Every second line starts with a capital ("After HERD-14"), an agent's own words too; a word
 // already in mixed case ("iOS") is left as it is.
 export const capital = (s) => (/^[a-z](?![A-Z])/.test(String(s)) ? s[0].toUpperCase() + s.slice(1) : s);
+
+// A row's age at its right (Doop App 02): since its last change (done, ready, started, else added), "now" under a
+// minute.
+export function ageOf(task, now = Date.now()) {
+  const at = Math.max(0, ...[task.done_at, task.ready_at, task.started, task.created].filter((x) => typeof x === "number"));
+  return at ? age(at, now) : null;
+}
+export const age = (ms, now = Date.now()) => (now - ms < 60000 ? "now" : ago(ms, false, now));
+// A row's right column: its pull request's number while it has one, else its age.
+export const sideOf = (task, now = Date.now()) => (task.pr?.number ? `#${task.pr.number}` : ageOf(task, now));
+
+// A pane header's mono line (Doop App 02, DS 04): "SHE-12 · Opus 5.5 · 62% · ~6 min left · Default" for a task's
+// agent, "feat/og-tags · Opus 5.5 · started 4m ago" for another. ref: its task's id; role: "Assistant"; where: its
+// branch (else folder; a task's is left out); left: minutes left (a real estimate only); since: when it started.
+export function paneLine({ ref = null, role = null, where = null, model = null, pct = null, left = null, since = null, account = null }, now = Date.now()) {
+  const done = typeof pct === "number" && pct >= 0 ? `${Math.round(pct)}%` : null;
+  const time = typeof left === "number" ? (left < 1 ? "<1 min left" : `~${left} min left`) : since ? `started ${ago(since, true, now)}` : null;
+  return [ref, role, ref ? null : where, model, done, time, account].filter(Boolean).join(" · ");
+}
+
+// An agent as the design's status dot (DS 02 StatusDot): blocked needs you, working, done, else idle; its terminal
+// gone with a failing exit code (state not live, exit_code not 0) crashed. k: its terminal, when known.
+export function agentDot(status, k = null) {
+  if (k?.state && k.state !== "live" && typeof k.exit_code === "number" && k.exit_code !== 0) return "crashed";
+  return status === "blocked" ? "needs" : status === "working" ? "working" : status === "done" ? "done" : "idle";
+}
 
 // Minutes left, as Shepherdr writes them under the dot: "6m", "<1m", "2h".
 export const short = (n) => (n < 1 ? "<1m" : n < 60 ? `${n}m` : `${Math.round(n / 60)}h`);

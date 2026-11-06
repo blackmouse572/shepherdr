@@ -51,6 +51,10 @@ export function readingPrefs(raw) {
   };
 }
 
+// The command bar's Reading settings row (Doop App 07b): its hint, "15 px · Comfy"; and the popover's size (pane-chat).
+export const readingHint = (raw) => { const p = readingPrefs(raw); return `${p.size} px · ${LEADINGS.find((l) => l[0] === p.leading)[1]}`; };
+export const READING_POP = { width: 400, height: 312 };
+
 // One choice changed (the popover), the rest kept.
 export const withChoice = (raw, key, value) => readingPrefs({ ...readingPrefs(raw), [key]: value });
 

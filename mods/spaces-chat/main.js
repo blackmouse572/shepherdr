@@ -39,7 +39,7 @@ import { meterWords, healthErrorWords } from "./core/machines.js";
 import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS } from "./ui.js";
 import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees, assistantOf, machineOf } from "./core/spaces.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { autoPrefix } from "./core/tasks.js";
+import { autoPrefix, agentDot } from "./core/tasks.js";
 import { statusDot } from "./dot.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer, branch: BranchMenu };
@@ -96,9 +96,8 @@ const FALLBACK = 60000;
 
 // Each worktree after the base branch's name: its ref and its folder, a line each back: "<ahead> <behind> <1 if dirty>".
 const TREE_STATE = 'b=$1; shift; while [ $# -gt 1 ]; do a=$(git rev-list --count "$b..$1" 2>/dev/null || echo 0); c=$(git rev-list --count "$1..$b" 2>/dev/null || echo 0); d=$(git -C "$2" --no-optional-locks -c core.fsmonitor=false status --porcelain 2>/dev/null | head -c 1); echo "$a $c ${d:+1}"; shift 2; done';
-// An agent's status as the design's dot: needs you, working, done, else idle.
-const dotOf = (status) => (status === "blocked" ? "needs" : status === "working" ? "working" : status === "done" ? "done" : "idle");
-const STATUS_WORDS = { needs: "Needs you", working: "Working", done: "Done", idle: "Idle" };
+// An agent's status as the design's dot (core/tasks.js agentDot): needs you, working, done, crashed, else idle.
+const STATUS_WORDS = { needs: "Needs you", working: "Working", done: "Done", crashed: "Crashed", idle: "Idle" };
 const short = (address) => String(address ?? "").split("/").pop();
 // A dev server's port from its title ("vite :5173", "localhost:3000").
 const PORT = /\s*(?:localhost|127\.0\.0\.1)?:(\d{2,5})\b/;
@@ -637,7 +636,7 @@ export default class Spaces extends View {
   // A group's heading (Pinned, a section, a machine), as the design's: small mono capitals, dim, a little air above
   // it so groups read apart. Its icon (12), then capitals(), then what sits at its right.
   groupHead(id, t) {
-    return h_flex().relative().id(id).h(28).mt(6).flex_none().px(8).gap(6).items_center().rounded(RADIUS.card)
+    return h_flex().relative().id(id).h(28).mt(6).flex_none().px(8).gap(6).items_center().rounded(RADIUS.row)
       .text_size(TEXT.id).font_family(MONO).font_medium().text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover));
   }
 
@@ -661,7 +660,7 @@ export default class Spaces extends View {
     const open = this.more.has(key);
     const noun = hidden === 1 ? what.slice(0, -1) : what;
     const words = open ? "Show fewer" : what === "spaces" ? `${hidden} more ${noun}, none need you` : `${hidden} more ${noun}`;
-    return h_flex().id(`more-${key}`).h(26).flex_none().px(10).gap(8).items_center().rounded(RADIUS.card)
+    return h_flex().id(`more-${key}`).h(26).flex_none().px(10).gap(8).items_center().rounded(RADIUS.row)
       .text_size(TEXT.id + 0.5).font_family(MONO).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.muted))
       .on_click((_e, cx) => { open ? this.more.delete(key) : this.more.add(key); cx.notify(); })
       .child(svg(`mods/workspace-chrome/chevron-${open ? "right" : "down"}.svg`).size(12).flex_none())
@@ -707,7 +706,7 @@ export default class Spaces extends View {
     const s = k.space, on = Boolean(s?.w.active);
     const label = k.branch ?? "detached";
     const max = fits(8 * 2 + 18 + 8 * 2 + 12 + 7 + 64);
-    return h_flex().id(`tree-${r.w.id}-${k.path}`).h(TREE).flex_none().px(8).gap(7).items_center().rounded(RADIUS.card)
+    return h_flex().id(`tree-${r.w.id}-${k.path}`).h(TREE).flex_none().px(8).gap(7).items_center().rounded(RADIUS.row)
       .text_size(TEXT.id).font_family(MONO).text_color(on ? t.foreground : s ? t.muted : t.dim)
       .tooltip(`${label} · ${tilde(k.path)}${k.dirty ? " · uncommitted changes" : ""}`)
       .when(on, (el) => el.bg(t.selected))
@@ -790,7 +789,7 @@ export default class Spaces extends View {
     const icon = a.kind === "assistant" ? svg("mods/spaces-chat/compass.svg").size(14).flex_none().text_color(t.dim)
       : a.kind === "terminal" ? svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.dim)
       : logo(a.program, a.helper ? 13 : 14) ?? svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(t.dim);
-    const kind = a.kind === "terminal" ? "idle" : dotOf(a.status);
+    const kind = a.kind === "terminal" ? "idle" : agentDot(a.status);
     const left = (nested ? 12 : 4) + (a.helper ? 16 : 0);
     return h_flex().relative().id(`agent-${a.address}`).h(26).flex_none().pl(left + 4).pr(8).gap(8).items_center().rounded(RADIUS.control)
       .text_size(TEXT.body - 0.5).text_color(a.focused ? t.foreground : t.muted).whitespace_nowrap().cursor_pointer()
@@ -995,7 +994,7 @@ export default class Spaces extends View {
       .h(sub ? ROW_SUB : ROW)
       .flex_none()
       .justify_center()
-      .rounded(RADIUS.card)
+      .rounded(RADIUS.row)
       .cursor_pointer()
       .tooltip(at ? `${name} · ${tilde(at)}` : name)
       .when(on, (el) => el.bg(t.selected))
@@ -1038,7 +1037,7 @@ export default class Spaces extends View {
       .text_color(onStatus()).font_family(MONO).text_size(TEXT.id).font_semibold().child(n > 99 ? "99+" : String(n));
     const bell = svg("mods/spaces-chat/bell.svg").size(15).flex_none().text_color(n ? need() : t.dim);
     if (collapsed)
-      return h_flex().id("needs-you").h(30).mx(6).mt(8).mb(2).flex_none().gap(4).items_center().justify_center().rounded(RADIUS.card)
+      return h_flex().id("needs-you").h(30).mx(6).mt(8).mb(2).flex_none().gap(4).items_center().justify_center().rounded(RADIUS.row)
         .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(n ? `Needs you: ${n}` : "Needs you")
         .on_mouse_down("left", (e) => { this.needsAt = rectOf(e); }).on_click(() => openNeeds(this.needsAt))
         .child(bell).when(n > 0, (el) => el.child(pill.min_w(16).px(4)));
@@ -1066,7 +1065,7 @@ export default class Spaces extends View {
       .flex_none()
       .items_center()
       .justify_center()
-      .rounded(RADIUS.card)
+      .rounded(RADIUS.row)
       .cursor_pointer()
       .tooltip(needs ? `${label} · ${needs} need you` : label)
       .when(on, (el) => el.bg(t.selected).border_1().border_color(t.border))

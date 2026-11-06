@@ -86,6 +86,7 @@ test("the branch menu's extras: the editor, the PR line and Update from its base
   expect(branchActions({})).toBe(2);
   const s = { top: "/a", trees: [] };
   expect(branchMenuHeight(s, 2, true) - branchMenuHeight(s, 2)).toBe(M.kvLine);
+  expect(branchMenuHeight(s, 2, false, true) - branchMenuHeight(s, 2)).toBe(M.foot);
 });
 
 test("the extras script finds a command and stays quiet without gh", async () => {

@@ -11,7 +11,7 @@ import { startBridge } from "./bridge.js";
 import { countBadge, H, TEXT, RADIUS, MONO, SERIF, HEAD, working, openSettings, raisedLook, well, isDark, banner } from "./ui.js";
 import { statusDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
-import { autoPrefix } from "./core/tasks.js";
+import { autoPrefix, agentDot } from "./core/tasks.js";
 // The branch chip's git and its menu's size (Doop App 02b; the menu is spaces-chat's branch-menu.js).
 import { BRANCH_STATE, BRANCH_MENU, branchState, branchMenuHeight, BRANCH_EXTRAS, EDITOR_KEY, PR_KEEP, PR_WAIT, branchExtras,
   editorTries, canUpdate, branchActions } from "./core/worktree.js";
@@ -173,14 +173,20 @@ export default class Tabs extends View {
         cx.stop_propagation();
         this.chipAt = { x: e.position.x - (e.local_position?.x ?? 0), y: e.position.y - (e.local_position?.y ?? 0), h: e.bounds?.height ?? H.sm };
       })
-      .on_click(() => {
+      .on_click((_e, cx) => {
         if (!s) return;
         const at = this.chipAt ? { x: this.chipAt.x, y: this.chipAt.y + this.chipAt.h + 6 } : "pointer";
         const update = canUpdate(s, b.name);
-        openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, at,
-          height: branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr)),
+        // The shown tab's task, when this checkout is its worktree: its id in the header, and herdr-task removes it
+        // once its branch merges (the menu's footer, App 02b).
+        const space = spaces().find((x) => x.active), tab = space?.tabs.find((x) => x.active);
+        const byAddress = new Map(terminals().map((k) => [k.address, k]));
+        const task = tab ? this.taskOf(space, panes().filter((p) => p.tab === tab.id), byAddress, cx) : null;
+        const own = Boolean(task?.worktree) && s.linked && task.worktree === s.top;
+        const height = branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr), own);
+        openOverlay({ mod: "spaces-chat", kind: "popup", width: BRANCH_MENU.width, at, height,
           props: { view: "branch", state: s, branch: b.name, machine: b.machine, files, editor: b.editor, update, pr: b.pr,
-            height: branchMenuHeight(s, branchActions({ files, editor: b.editor, update }), Boolean(b.pr)) } });
+            task: own ? task.ref : null, height } });
       })
       .child(svg("mods/workspace-chrome-shepherdr/git-branch.svg").size(13).flex_none().text_color(working()))
       .child(div().max_w(roomy ? 240 : 140).truncate().child(b.name))
@@ -246,7 +252,8 @@ export default class Tabs extends View {
       if (!r) return;
       this.tasks ??= new Map();
       for (const list of taskLists(r.stdout)) for (const task of Array.isArray(list.tasks) ? list.tasks : [])
-        this.tasks.set(`${m ?? ""}|${list.slug}#${task.id}`, { ref: `${list.prefix || autoPrefix(list.folder)}-${task.id}`, title: task.title ?? null, pct: task.progress?.done ?? null });
+        this.tasks.set(`${m ?? ""}|${list.slug}#${task.id}`, { ref: `${list.prefix || autoPrefix(list.folder)}-${task.id}`, title: task.title ?? null, pct: task.progress?.done ?? null,
+          worktree: task.worktree ?? null });
       cx.notify();
     });
   }
@@ -390,10 +397,12 @@ export default class Tabs extends View {
         : program?.icon && !program.shell ? (program.tint ? svg(program.icon).size(14).flex_none().text_color(tint) : image(program.icon).size(14).flex_none())
         : svg("mods/workspace-chrome/terminal.svg").size(14).flex_none().text_color(tint);
       const need = needs.get(c.id) ?? 0, ready = readies.get(c.id) ?? 0;
-      const kind = need > 0 || c.status === "blocked" ? "needs" : c.status === "working" ? "working" : ready > 0 ? "ready" : c.status === "done" ? "done" : null;
+      // Crashed: an agent in it ended with an error (its terminal kept, not live).
+      const crashed = ps.some((p) => p.terminal && agentDot(null, byAddress.get(p.terminal)) === "crashed");
+      const kind = need > 0 || c.status === "blocked" ? "needs" : crashed ? "crashed" : c.status === "working" ? "working" : ready > 0 ? "ready" : c.status === "done" ? "done" : null;
       const n = kind === "needs" ? need : kind === "ready" ? ready : 0;
-      return h_flex().id(`tab-${c.id}`).h(28).pl(10).pr(8).gap(7).rounded(RADIUS.card).items_center().flex_none().text_size(TEXT.body - 0.5).whitespace_nowrap()
-        .when(c.active, (el) => raisedLook(el, RADIUS.card).text_color(t.foreground))
+      return h_flex().id(`tab-${c.id}`).h(28).pl(10).pr(8).gap(7).rounded(RADIUS.row).items_center().flex_none().text_size(TEXT.body - 0.5).whitespace_nowrap()
+        .when(c.active, (el) => raisedLook(el, RADIUS.row).text_color(t.foreground))
         .when(!c.active, (el) => el.text_color(t.muted).hover(s => s.bg(t.hover)))
         .when(c.settled && !c.active, (el) => el.opacity(0.6))
         .cursor_pointer()
@@ -445,7 +454,7 @@ export default class Tabs extends View {
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(4).overflow_x_scrollbar()
         .children(tabsShown ? listed.map(item) : [])
         .child(button("tab-new", svg("mods/workspace-chrome-shepherdr/plus.svg").size(15), () => openOverlay({ mod: "new-menu-tasks", kind: "popup", width: 250, height: 543, props: { right: this.right } }), 28)))
-      .when(tabsShown && settled.length > 0, (el) => el.child(h_flex().id("tabs-settled").h(28).px(10).gap(7).flex_none().items_center().rounded(RADIUS.card)
+      .when(tabsShown && settled.length > 0, (el) => el.child(h_flex().id("tabs-settled").h(28).px(10).gap(7).flex_none().items_center().rounded(RADIUS.row)
         .text_size(TEXT.body - 0.5).whitespace_nowrap().cursor_pointer()
         .bg(this.showSettled ? t.selected : t.chrome).text_color(this.showSettled ? t.foreground : t.muted).hover((s) => s.bg(this.showSettled ? t.selected : t.hover).text_color(t.foreground))
         .on_mouse_down("left", stop).on_click((_e, cx) => { this.showSettled = !this.showSettled; cx.notify(); })

@@ -2,8 +2,8 @@
 // props { view: "needs" }. Every item inbox.js lists, as a card: who and why, where, its age and what it can do. A
 // Claude ask (a plan, a permission) is answered on its card, as the chat's card does (data/chat-asks: end/<id> says
 // how, ans/<id>.json is the hook's decision); everything else opens where it is (inbox.js toAlert, else the Tasks
-// panel's Needs you). Filters: All, then each kind that has something. ↑/↓ pick a card, Enter takes its first
-// action, Esc closes. A permission's "Always in this space" keeps the ask's exact rule for its space (lib/allow.js,
+// panel's Needs you). Filters: All, then each kind that has something. ↑/↓ (or J/K) pick a card, Enter takes its first
+// action, Esc closes. A long command shows its first 3 lines and "Show all N lines" (App 13 R8). A permission's "Always in this space" keeps the ask's exact rule for its space (lib/allow.js,
 // core/allow.js) and allows it; later asks matching it are allowed by the sidebar's engine. Its rules are listed (and
 // removed) in Settings > Agents.
 // Not here: "Move to Default" (Settings > Machines has it), the phone alert line.
@@ -21,7 +21,7 @@ import { ago } from "./core/tasks.js";
 import { button, segmented, closeX, link, bannerBg, bannerDots, isDark, need, red, toast, plainError, toastWho, openSettings, MONO, SERIF, HEAD, TEXT, RADIUS } from "./ui.js";
 
 export const NEEDS_DRAWER = { width: 460, height: 640 };
-const HEADER = 64, FILTERS = 44, FOOT = 40;
+const HEADER = 64, FILTERS = 44, FOOT = 40, CLAMP = 3;
 const ICON = { plan: null, permission: "mods/spaces-chat/shield.svg", signin: "mods/spaces-chat/login.svg", other: null };
 const machineOf = (a) => (String(a ?? "").includes("/") ? String(a).split("/")[0] : null);
 
@@ -40,6 +40,7 @@ export class NeedsDrawer {
     this.asks = new Map(); // ask id -> { req, words } (null while unreadable)
     this.reading = new Set();
     this.done = new Set(); // keys answered here, gone before the hook's file is
+    this.whole = new Set(); // cards whose command shows every line
     // Ages move on.
     cx.timer.every(30000, (cx) => cx.notify());
   }
@@ -124,7 +125,7 @@ export class NeedsDrawer {
       actions = [{ id: "signin", label: "Sign in again", kind: "primary", fn: () => { this.close(); openSettings({ section: "accounts" }); } }, go];
     else if (it.kind === "ask") actions = [{ id: "answer", label: "Answer", kind: "primary", fn: () => this.open(it) }];
     const body = filter === "plan" ? detail : filter === "permission" ? null : it.attention ?? it.error?.message ?? null;
-    return { filter, title, sub, where, body, mono: filter === "permission" ? detail : null, actions, remote: Boolean(m) };
+    return { filter, title, sub, where, body, mono: filter === "permission" ? a?.words.detail ?? null : null, actions, remote: Boolean(m) };
   }
 
   render(cx) {
@@ -146,9 +147,10 @@ export class NeedsDrawer {
     return v_flex().id("needs-drawer").track_focus(this.handle).size_full().min_h(0).rounded(RADIUS.dialog).overflow_hidden()
       .bg(dark ? t.chrome : t.popover).border_1().border_color(t.border).text_size(TEXT.body)
       .on_key_down((e, cx) => {
+        const m = e.modifiers ?? {}, bare = !m.control && !m.alt && !m.platform && !m.shift;
         if (e.key === "escape") this.close();
-        else if (e.key === "down") this.at = Math.min(this.at + 1, shown.length - 1);
-        else if (e.key === "up") this.at = Math.max(this.at - 1, 0);
+        else if (e.key === "down" || (e.key === "j" && bare)) this.at = Math.min(this.at + 1, shown.length - 1);
+        else if (e.key === "up" || (e.key === "k" && bare)) this.at = Math.max(this.at - 1, 0);
         else if (e.key === "enter") shown[this.at]?.c.actions[0]?.fn(cx);
         else return;
         cx.stop_propagation();
@@ -182,6 +184,10 @@ export class NeedsDrawer {
     const id = String(it.key).replace(/[^\w-]/g, "_");
     const icon = ICON[c.filter];
     const age = atMs(it.at);
+    // A long command: its first CLAMP lines until "Show all N lines".
+    const lines = c.mono ? String(c.mono).split("\n") : [];
+    const long = lines.length > CLAMP, whole = this.whole.has(it.key);
+    const mono = long && !whole ? lines.slice(0, CLAMP).join("\n") : c.mono;
     return v_flex().id(`need-${id}`).flex_none().rounded(12).overflow_hidden().border_1().border_color(on ? t.dim : t.border).bg(t.raised)
       .on_mouse_down("left", (_e, cx) => { cx.stop_propagation(); })
       .child(h_flex().relative().flex_none().px(14).py(10).gap(10).items_center().overflow_hidden().border_b(1).border_color(t.border)
@@ -197,13 +203,17 @@ export class NeedsDrawer {
           .child(svg(`mods/workspace-chrome/${c.remote ? "server" : "folder"}.svg`).size(12).flex_none())
           .child(div().truncate().child(c.where)))
         .when(Boolean(c.body), (el) => el.child(div().text_size(TEXT.body).text_color(t.muted).child(c.body)))
-        .when(Boolean(c.mono), (el) => el.child(div().px(12).py(8).rounded(RADIUS.card).border_1().border_color(t.border)
-          .bg(dark ? "#0E0F0D" : t.background).font_family(MONO).text_size(TEXT.label).text_color(t.foreground).child(c.mono))))
+        .when(Boolean(c.mono), (el) => el.child(div().px(12).py(8).rounded(RADIUS.row).border_1().border_color(t.border)
+          .bg(dark ? "#0E0F0D" : t.background).font_family(MONO).text_size(TEXT.label).text_color(t.foreground).child(mono))))
       .child(h_flex().px(14).pt(10).pb(12).gap(8).items_center()
         .children(c.actions.map((a, i) => {
           const b = button(`need-${a.id}-${id}`, a.label, { kind: a.kind, onClick: (_e, cx) => a.fn(cx) });
-          const right = a.id === "open" && i > 0;
+          const right = a.id === "open" && i > 0 && !long;
           return (a.id === "deny" ? b.text_color(red()) : b).when(right, (el) => el.ml_auto());
-        })));
+        }))
+        .when(long, (el) => el.child(div().id(`need-lines-${id}`).ml_auto().flex_none().font_family(MONO).text_size(TEXT.id).text_color(need())
+          .cursor_pointer().hover((s) => s.opacity(0.8))
+          .on_click((_e, cx) => { cx.stop_propagation(); if (whole) this.whole.delete(it.key); else this.whole.add(it.key); cx.notify(); })
+          .child(whole ? "Show less" : `Show all ${lines.length} lines`))));
   }
 }

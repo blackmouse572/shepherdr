@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readingPrefs, withChoice, stepSize, proseMetrics, readingSig, codeLines, fontOptions, fontFamily, READING_DEFAULTS } from "./reading.js";
+import { readingPrefs, readingHint, withChoice, stepSize, proseMetrics, readingSig, codeLines, fontOptions, fontFamily, READING_DEFAULTS } from "./reading.js";
 
 test("stored reading choices come back whole and valid", () => {
   expect(readingPrefs(null)).toEqual(READING_DEFAULTS);
@@ -49,4 +49,9 @@ test("any font on this computer can be the chat's", () => {
   expect(all.map((o) => o[0])).toEqual(["sans", "serif", "Avenir", "Menlo"]);
   expect(fontOptions(["Menlo", "Avenir"], "men").map((o) => o[1])).toEqual(["Menlo"]);
   expect([fontFamily("sans", "S"), fontFamily("serif", "S"), fontFamily("Menlo", "S")]).toEqual([null, "S", "Menlo"]);
+});
+
+test("the command bar's hint says the size and leading", () => {
+  expect(readingHint(null)).toBe("14 px · Comfy");
+  expect(readingHint({ size: 15, leading: "airy" })).toBe("15 px · Airy");
 });

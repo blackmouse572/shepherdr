@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, WORKING_AGAIN, taskLine, progressPill, prPill } from "./tasks.js";
+import { ORDER, age, ageOf, paneLine, sideOf, agentDot, place, queueReason, reportOf, estimated, order, ago, autoPrefix, refOf, taskKey, matches, busyAgain, secondLine, WORKING_AGAIN, taskLine, progressPill, prPill } from "./tasks.js";
 import { REASONS, fit } from "./needs.js";
 
 const NOW = 1_800_000_000_000;
@@ -114,5 +114,53 @@ describe("the task header (Doop App 02)", () => {
     expect(prPill({ number: 48 })).toBe("PR #48");
     expect(prPill({ number: 48 }, "draft")).toBe("PR #48 · draft");
     expect(prPill(null)).toBe(null);
+
+describe("the list's rows (Doop App 02, App 13)", () => {
+  test("groups go Needs you, Working, Queued, Ready, Merging, Done", () => {
+    const shown = ORDER.filter((s) => ["needs", "working", "queued", "ready", "merging", "done"].includes(s));
+    expect(shown).toEqual(["needs", "working", "queued", "ready", "merging", "done"]);
+  });
+  test("a row's age: since its last change, now under a minute", () => {
+    expect(ageOf({ created: NOW - 30_000 }, NOW)).toBe("now");
+    expect(ageOf({ created: NOW - 3_600_000, started: NOW - 120_000 }, NOW)).toBe("2m");
+    expect(ageOf({ started: NOW - 7_200_000, ready_at: NOW - 3 * 3_600_000 }, NOW)).toBe("2h");
+    expect(ageOf({ started: NOW - 7_200_000, done_at: NOW - 300_000 }, NOW)).toBe("5m");
+    expect(ageOf({}, NOW)).toBe(null);
+    expect(age(NOW - 9 * 60_000, NOW)).toBe("9m");
+  });
+  test("its right column: the pull request's number, else its age", () => {
+    expect(sideOf({ pr: { number: 48 }, started: NOW - 120_000 }, NOW)).toBe("#48");
+    expect(sideOf({ started: NOW - 120_000 }, NOW)).toBe("2m");
+  });
+});
+
+describe("an agent's status dot", () => {
+  test("Herdr's statuses", () => {
+    expect(agentDot("blocked")).toBe("needs");
+    expect(agentDot("working")).toBe("working");
+    expect(agentDot("done")).toBe("done");
+    expect(agentDot("idle")).toBe("idle");
+    expect(agentDot(null)).toBe("idle");
+  });
+  test("crashed: its terminal ended with a failing exit code", () => {
+    expect(agentDot(null, { state: "exited", exit_code: 1 })).toBe("crashed");
+    expect(agentDot("working", { state: "exited", exit_code: 137 })).toBe("crashed");
+    expect(agentDot(null, { state: "exited", exit_code: 0 })).toBe("idle");
+    expect(agentDot("working", { state: "live", exit_code: 1 })).toBe("working");
+    expect(agentDot("done", { state: "exited" })).toBe("done");
+  });
+});
+
+describe("a pane header's line", () => {
+  test("a task's agent: id, model, progress, minutes left, account", () => {
+    expect(paneLine({ ref: "SHE-12", where: "work/12", model: "Opus 5.5", pct: 62, left: 6, since: NOW - 60_000, account: "Default" }, NOW))
+      .toBe("SHE-12 · Opus 5.5 · 62% · ~6 min left · Default");
+    expect(paneLine({ ref: "SHE-12", model: "Opus 5.5", since: NOW - 240_000 }, NOW)).toBe("SHE-12 · Opus 5.5 · started 4m ago");
+  });
+  test("another agent: its branch, model and when it started", () => {
+    expect(paneLine({ where: "feat/og-tags", model: "Opus 5.5", since: NOW - 240_000 }, NOW)).toBe("feat/og-tags · Opus 5.5 · started 4m ago");
+    expect(paneLine({ role: "Assistant", where: "main", model: "Opus 5.5" }, NOW)).toBe("Assistant · main · Opus 5.5");
+    expect(paneLine({ where: "~/x", left: 0 }, NOW)).toBe("~/x · <1 min left");
+    expect(paneLine({}, NOW)).toBe("");
   });
 });

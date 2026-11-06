@@ -32,6 +32,7 @@ import { taskDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { busyAgain } from "./core/tasks.js";
 import { REASONS } from "./core/needs.js";
+import { READING_KEY, READING_POP, readingHint } from "./core/reading.js";
 // A space's name as the sidebar (and the web app) says it: never "~" (core/spaces.js).
 import { spaceName } from "./core/spaces.js";
 // Keys as caps, one key each (core/keys.js, the Keybinds dialog's words).
@@ -194,6 +195,9 @@ function commandList({ space, ours, tasks, peek = [], done = [], onPeek }) {
     cmd("space.prev", "app", "Previous space", "mods/chat/chevron-up.svg", "space.prev", does("space.prev")),
     cmd("add-machine", "app", "Add machine", `${WC}/server.svg`, null, does("mod.open", { name: "machine-add-chat" })),
     cmd("keybinds", "app", "Keybinds", "mods/keybinds/keyboard.svg", "mod.open:keybinds", does("mod.open", { name: "keybinds" })),
+    // How every chat reads: pane-chat's Aa popover (Doop App 07b).
+    cmd("reading", "app", "Reading settings", "mods/pane-chat/type.svg", null,
+      () => openOverlay({ mod: "pane-chat", kind: "popup", at: "top", offset: 56, ...READING_POP, props: { view: "reading" } }), readingHint(shared(READING_KEY))),
     layouts().length > 1 && cmd("layout.switch", "app", "Switch layout", "mods/shepherdr-settings/layout.svg", "layout.switch", does("layout.switch"),
       layouts().map((n) => (n === "main" ? "Herdr" : capital(n))).join(" · ")),
     cmd("app.settings", "app", "Herdr settings", `${WC}/settings.svg`, "app.settings", does("app.settings"), "Look, alerts, updates"),
@@ -576,13 +580,13 @@ export default class Jump extends View {
     }
     if (r.kind === "more") {
       return h_flex().w_full().h(MORE).px(8).child(
-        h_flex().flex_1().h_full().px(12).items_center().rounded(RADIUS.card).text_size(TEXT.label).text_color(t.muted).cursor_pointer()
+        h_flex().flex_1().h_full().px(12).items_center().rounded(RADIUS.row).text_size(TEXT.label).text_color(t.muted).cursor_pointer()
           .when(on, (el) => el.bg(t.selected)).hover((s) => s.bg(on ? t.selected : t.hover))
           .child(`Show ${r.count} more`));
     }
     // One line: the name, then a quieter second part, then the time or the key at the right (never cut).
     return h_flex().w_full().h(ROW).px(8).child(
-      h_flex().flex_1().min_w(0).h_full().px(12).gap(12).items_center().rounded(RADIUS.card).cursor_pointer()
+      h_flex().flex_1().min_w(0).h_full().px(12).gap(12).items_center().rounded(RADIUS.row).cursor_pointer()
         .when(on, (el) => el.bg(t.selected)).hover((s) => s.bg(on ? t.selected : t.hover))
         .child(this.mark(r, t))
         .child(h_flex().flex_1().min_w(0).gap(10).items_center().text_size(TEXT.body + 1)

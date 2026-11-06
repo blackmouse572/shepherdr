@@ -16,11 +16,12 @@ import { spaces, panes, agents, terminals, machines, exec, readTextFile, watchFo
 // What needs the person, from every space and machine (lib/inbox.js, shared; the tab
 // bar runs its engine): agents asking or waiting, task problems, failed automations, merges.
 import { items as needs, ASKS, toAgent, reasonOf, reqReason, REASONS, fit } from "./inbox.js";
+import { atMs } from "./core/needs.js";
 import { words } from "./core/asks.js";
 import { taskDot, ownProgress } from "./dot.js";
 // The rules for a task's status, order and words: shared with the web app (core/tasks.js).
 import { RANK, STATUS, RANK_OF, ORDER, GROUP_BY, groupBy, machineOf, machineName, refOf, taskKey, autoPrefix, place,
-  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short } from "./core/tasks.js";
+  queueReason, reportOf as report, secondLine, leftOf, order, matches, day, ago, capital, short, sideOf, age } from "./core/tasks.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { button, banner, TEXT, H, RADIUS, HEAD, MONO, red, working, isDark, SERIF } from "./ui.js";
 
@@ -548,7 +549,7 @@ export default class Tasks extends View {
   // chevron; it opens them (Shepherdr's ArchivedLink). A button that opens a view, not a task.
   archivedLink(n, t) {
     return div().flex_none().pt(6).border_t(1).border_color(t.border)
-      .child(h_flex().id("task-archived").h(32).px(8).gap(10).items_center().rounded(RADIUS.card).cursor_pointer()
+      .child(h_flex().id("task-archived").h(32).px(8).gap(10).items_center().rounded(RADIUS.row).cursor_pointer()
         .hover((s) => s.bg(t.hover))
         .on_click((_e, cx) => { this.archivedOpen = true; cx.notify(); })
         .child(h_flex().w(14).h(14).flex_none().items_center().justify_center()
@@ -604,7 +605,7 @@ export default class Tasks extends View {
       .when(machine && !first, (el) => el.mt(4).pt(6).border_t(1).border_color(t.border))
       // As Shepherdr's: the whole heading is the button; the chevron in the rows' icon column
       // (brighter on hover), the label small and dim, the count at the far right.
-      .child(h_flex().id(`head-${key}`).h(30).px(8).gap(10).items_center().rounded(RADIUS.card).text_size(TEXT.label)
+      .child(h_flex().id(`head-${key}`).h(30).px(8).gap(10).items_center().rounded(RADIUS.row).text_size(TEXT.label)
         .when(!open, (el) => el.cursor_pointer().hover((s) => s.bg(t.hover))
           .on_hover((on, cx) => { this.hoverHead = on ? key : this.hoverHead === key ? null : this.hoverHead; cx.notify(); })
           // A closing group keeps its rows until it has folded, then lets them go.
@@ -618,7 +619,7 @@ export default class Tasks extends View {
           .when(Boolean(note), (el) => el.child(div().flex_none().text_color(t.dim).child(`· ${note}`))))
         .child(div().flex_none().text_color(t.dim).child(count ? String(count) : "")))
       .child(this.foldBody(key, shut, v_flex().gap(1).children(shown)
-        .when(cut > 0 || (!open && all && done > DONE_SHOWN), (el) => el.child(h_flex().id(`more-${key}`).h(28).pl(32).pr(8).items_center().rounded(RADIUS.card).cursor_pointer()
+        .when(cut > 0 || (!open && all && done > DONE_SHOWN), (el) => el.child(h_flex().id(`more-${key}`).h(28).pl(32).pr(8).items_center().rounded(RADIUS.row).cursor_pointer()
           .text_size(TEXT.label).text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
           .on_click((_e, cx) => {
             if (all) this.allDone.delete(key); else this.allDone.add(key);
@@ -669,7 +670,9 @@ export default class Tasks extends View {
   needRow(x, t) {
     // Where it is: a task's folder, an agent's space (and its machine, when not this computer).
     const at = this.whereOf(x.machine ?? machineOf(x.terminal), x.name ?? (x.terminal ? agents().find((a) => a.address === x.terminal)?.space_name : null), true);
-    const v = (glyph, title, go, why, ref = x.ref, sub = reasonOf(x)) => this.line(`need-${x.key}`, { glyph, ref, title, go, why, where: at, sub }, t);
+    // Its age at the right (App 13: 2m, 9m), as a task row's.
+    const side = atMs(x.at) ? age(atMs(x.at)) : null;
+    const v = (glyph, title, go, why, ref = x.ref, sub = reasonOf(x)) => this.line(`need-${x.key}`, { glyph, ref, title, go, why, where: at, sub, side }, t);
     // An agent's item: its task's title when it works on one, else its name.
     const who = (address) => this.taskTitle(address) ?? agentName(address);
     switch (x.kind) {
@@ -813,6 +816,7 @@ export default class Tasks extends View {
     const acct = accountOf(task);
     return this.line(`task-${key}`, {
       go: this.target(p), glyph: this.glyph(p, w), ref: refOf(list, task), title: task.title, sub, left, acct,
+      side: section === "ready" ? null : sideOf(task),
       dim: section === "done", selected: focused, where: this.whereOf(list.machine, placeName(list)),
       action: section === "ready" ? this.acceptButton(p, t) : null,
       pin: this.shelved(p) ? null : { key, on: this.pins().has(key) },
@@ -869,11 +873,12 @@ export default class Tasks extends View {
   // the row can only name an error (`why`, its message); the second line, when it was cut.
   // `left`: the minutes left, small under the glyph in the working color. `meta`: a short note at
   // the first line's end (an automation's next run). `pin`: { key, on }: Pin / Unpin in the row's right-click menu.
-  // `acct`: the Claude account its agent runs on, as an initial at the first line's end (App 02).
-  line(id, { go, why, glyph, ref, title, sub, left, dim, selected, meta, metaColor, where, action, pin, acct }, t) {
+  // `acct`: the Claude account its agent runs on, as an initial at the first line's end (App 02). `side`: the right
+  // column (App 02 .tk .end): its pull request (#48), else its age (2m, now), in the id's mono.
+  line(id, { go, why, glyph, ref, title, sub, left, dim, selected, meta, metaColor, where, action, pin, acct, side }, t) {
     const idCol = this.idWidth > 1 && Boolean(ref);
     const two = Boolean(sub) || Boolean(action);
-    const tip = [this.titleCut(title, { meta }) ? title : null, why].filter(Boolean).join(" · ");
+    const tip = [this.titleCut(title, { meta: [meta, side].filter(Boolean).join("  ") }) ? title : null, why].filter(Boolean).join(" · ");
     const place = () => div().flex_shrink_1().min_w(0).truncate().text_size(TEXT.label).text_color(t.dim).child(where);
     // The folder gives way first (its strong shrink weight; a direct child of the line, so no
     // wrapper's minimum width holds it): the title is cut only once the folder is gone (the end
@@ -883,9 +888,10 @@ export default class Tasks extends View {
       .child(div().id(`${id}-title`).flex_auto().min_w(64).truncate().text_color(dim ? t.muted : t.foreground).when(Boolean(tip), (el) => el.tooltip(tip)).child(title))
       .when(Boolean(meta), (el) => el.child(div().flex_none().pl(4).text_size(TEXT.id).text_color(metaColor ?? t.dim).child(meta)))
       .when(!two && Boolean(where), (el) => el.child(place().flex_shrink(1000).when(!meta, (el) => el.pl(4))))
+      .when(Boolean(side), (el) => el.child(div().flex_none().pl(4).font_family(ID_FONT).text_size(TEXT.id - 0.5).text_color(t.dim).child(side)))
       .when(Boolean(acct), (el) => el.child(div().id(`${id}-acct`).size(16).flex_none().flex().items_center().justify_center().rounded(8)
         .bg(t.hover).border_1().border_color(t.border).text_size(8.5).font_semibold().text_color(t.muted).tooltip(acct).child(acct[0].toUpperCase())));
-    const row = h_flex().id(id).relative().flex_none().px(8).gap(10).rounded(RADIUS.card)
+    const row = h_flex().id(id).relative().flex_none().px(8).gap(10).rounded(RADIUS.row)
       .when(Boolean(selected), (el) => el.bg(t.selected))
       .when(Boolean(pin), (el) => el.on_mouse_down("right", (_e, cx) => { cx.stop_propagation(); this.rowMenu(pin); }))
       .when(Boolean(go), (el) => el.cursor_pointer().hover((s) => s.bg(selected ? t.selected : t.hover)).on_click((_e, cx) => { go(); cx.notify(); }));
