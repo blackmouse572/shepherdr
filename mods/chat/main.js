@@ -33,7 +33,7 @@ import { ruleOf } from "./core/allow.js";
 import { alwaysAllow } from "./allow.js";
 import { spaceOfTerminal } from "./core/notify.js";
 // The rows' words and rules the web app's chat draws by too (core/chat-view.js).
-import { WORDS, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
+import { WORDS, queuedChips, attachedFiles, clock, senderName, briefLabel, newsWords, resolveArtifacts, unsigned, fitThumbs, bandActs, imagesLine, questionsBelow, notSent, published, artifactLine, elapsed, LOST, lostMessage, shellWord, sessionStarted, sessionFailed } from "./core/chat-view.js";
 import { ago } from "./core/tasks.js";
 // Sending the person's words, as the web app does (core/send.js).
 import { refusal, taskTag, messageBody, replyInstead, steerNow, reactionLine, mentionedIn } from "./core/send.js";
@@ -756,7 +756,8 @@ export default class Chat extends View {
 
   // The cards waiting in this chat, each with its moment: this agent's own (an ask, a secret,
   // its start screen) and, in an Assistant's chat, its tasks' workers'. Each:
-  // { id, at, strips, owner (its AskCards, for keys), ask, question (a questions card) }.
+  // { id, at, strips, owner (its AskCards, for keys), ask, question (a questions card), info (waits on no one: not
+  // pointed to when scrolled up) }.
   timelineCards() {
     const out = [];
     // A plan's banner line: what runs it and how long it has waited (Doop App 01).
@@ -785,12 +786,33 @@ export default class Chat extends View {
       } else out.push({ id: `card:${a.id}`, at: this.afterNews(a.ref, askAt(a.id)), owner: this.workerCards, ask: a,
         strips: this.workerCards.strips(a, { who: a.ref, links: open(a.id, a.ref, a.title, a.terminal), terminal: false, chatHint: "Or write to it in its own chat." }) });
     }
+    out.push(...this.queuedCards());
     for (const [addr, x] of this.workerTasks()) {
       // Its secret asks' moments, noted even while a question of its hides them (seenAt()).
       for (const s of this.secretCards.items(addr)) if (!s.kept) this.seenAt(`s:${s.address}|${s.name}`);
       const card = openCard(addr);
       if (card) out.push({ id: `card:${card.id}`, at: this.afterNews(x.ref, card.opened), strips: screenStrips(card, { who: x.ref, links: open(card.id, x.ref, x.title, addr),
         busy: this.screenBusy.has(card.id), error: this.screenErr.get(card.id), press: (i, cx) => this.pressScreen(card, i, cx) }) });
+    }
+    return out;
+  }
+
+  // An Assistant's chat: each of its space's queued tasks as a card where it was added (Doop App 01), gone once it
+  // starts (its news line says so). Its head opens the task; its tags say what it waits for and how it will run
+  // (core/chat-view.js queuedChips). One added before what this chat has loaded shows once it's scrolled back to.
+  queuedCards() {
+    const space = this.assistant();
+    if (!space) return [];
+    const first = (this.conv?.items ?? []).find((x) => x.at)?.at ?? 0;
+    const seen = new Set(), out = [];
+    for (const x of this.spaceTasks ?? []) {
+      if ((x.space ?? x.queue?.space) !== space || !x.ref || seen.has(x.ref)) continue;
+      seen.add(x.ref);
+      if (x.state !== "queued" || !Number.isFinite(x.created) || (x.created < first && this.start !== 0)) continue;
+      const open = { id: `q-open-${x.ref}`, label: "Open", look: "link", after: "mods/workspace-chrome/chevron-right.svg", fn: () => this.openTask(x.id, x) };
+      out.push({ id: `card:q:${x.ref}`, at: x.created, info: true, strips: [
+        { key: "head", kind: "line", icon: "mods/tasks/queued.svg", ref: x.ref, title: x.title, hint: ago(x.created), links: [open] },
+        { key: "chips", kind: "chips", gap: 4, indent: 20, tags: queuedChips(x) }] });
     }
     return out;
   }
@@ -2379,7 +2401,7 @@ export default class Chat extends View {
       .sort((a, b) => a.at - b.at);
     // A card is a run of strips, one list row each (strips.js), kept together as one block.
     const putCard = (c) => c.strips.forEach((s, j) => out.push({ kind: "cardstrip", id: `cs:${c.id}:${s.key}`, s, blk: c.id, first: j === 0, last: j === c.strips.length - 1,
-      sig: strips.sig(s), owner: c.owner, ask: c.ask }));
+      sig: strips.sig(s), owner: c.owner, ask: c.ask, info: c.info }));
     const put = (e) => { if (e.card) putCard(e.card); else out.push(e.row); };
     let ti = 0;
     // A day's line where a new day starts (Today, Yesterday, a weekday, a date), the first too.
@@ -3848,7 +3870,7 @@ export default class Chat extends View {
         .child(this.cards.sink("own")).child(this.workerCards.sink("worker"))
         .when(!this.pinned, (el) => {
           // Scrolled up: a card waiting below what's shown is pointed to; else the newest.
-          const below = rows.map((r, i) => (r.kind === "cardstrip" && r.first && i >= (this.range?.end ?? rows.length) ? i : -1)).filter((i) => i >= 0);
+          const below = rows.map((r, i) => (r.kind === "cardstrip" && r.first && !r.info && i >= (this.range?.end ?? rows.length) ? i : -1)).filter((i) => i >= 0);
           const label = questionsBelow(below.length);
           return el.child(h_flex().absolute().bottom(10).left(0).right(0).justify_center()
             .child(h_flex().id("chat-latest").h(26).px(10).gap(5).items_center().rounded(13).cursor_pointer()

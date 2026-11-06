@@ -195,4 +195,31 @@ describe("the Doop cards", () => {
     c.clickRow(rows[4].id, c.rows(), { notify() {}, timer: { after() {} }, spawn() {} }, []);
     expect(JSON.parse(replies[0]).hookSpecificOutput.decision.behavior).toBe("allow");
   });
+
+  test("a queued task in its Assistant's chat: a card with what it waits for and how it will run (App 01)", async () => {
+    const c = await chat([said(1, "Queued as SHE-15.")]);
+    Object.assign(c, { t: { labels: { "herdr.role": "coordinator", "herdr.space": "s1" } }, accepting: new Set() });
+    const at = Date.parse("2026-11-01T10:00:30Z");
+    c.spaceTasks = [
+      { id: 15, ref: "SHE-15", title: "Account switch toast", state: "queued", created: at, space: "s1", reason: "after SHE-12",
+        agent: "claude", model: "claude-opus-5-5", effort: "high", set: { review_rounds: 2, merge: "ask" } },
+      { id: 16, ref: "SHE-16", title: "Not queued", state: "todo", created: at, space: "s1" },
+      { id: 17, ref: "OTH-1", title: "Another space's", state: "queued", created: at, space: "s2" },
+    ];
+    const rows = c.rows().filter((r) => r.kind === "cardstrip");
+    expect(rows.map((r) => r.s.kind)).toEqual(["line", "chips"]);
+    expect(rows[0].info).toBe(true);
+    expect(rows[1].s.tags.map((g) => g.label)).toEqual(["Queued · after SHE-12", "Claude Code · Opus 5.5 · High", "Review 2 rounds", "Ask before merge"]);
+    drawn.length = 0;
+    drawsInList(c, rows);
+    for (const w of ["SHE-15", "Account switch toast", "Open", "Queued · after SHE-12", "Ask before merge"]) expect(drawn).toContain(w);
+    // Narrow, its tags wrap: the estimate has room for every line of them.
+    c.width = 260;
+    const inner = Math.min(c.width, c.rd.column + 36) - 36 - 26 - 20;
+    const wide = rows[1].s.tags.reduce((n, g) => n + g.label.length * 6.3 + 12 + 6, 0);
+    expect(c.guess(rows[1])).toBeGreaterThanOrEqual(Math.ceil(wide / inner) * 20);
+    // What it was made of, only: nothing set, just why it waits.
+    const { queuedChips } = await import("./chat-view.js");
+    expect(queuedChips({ reason: "Starts soon" })).toEqual([{ label: "Queued · starts soon" }]);
+  });
 });

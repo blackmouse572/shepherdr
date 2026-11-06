@@ -3,6 +3,8 @@
 // too: their words, a message's time, who sent a message, a launch brief's label, a task's news line, which
 // artifact a publish made, how images under a message are sized. Plain JS: no herdr, node or DOM.
 
+import { NAMES, modelName, levelName } from "./agents.js";
+
 // Every fixed word the chat shows, once: both sides read them from here (core/chat-view.test.js checks).
 export const WORDS = {
   top: "Start of conversation",
@@ -81,6 +83,22 @@ const plainWords = (s) => {
   const t = String(s).replace(/\[([^\]]+)\]\([^)]*\)/g, "$1").replace(/(\*\*|__)(.+?)\1/g, "$2").replace(/`([^`]+)`/g, "$1").trim();
   return t.length > 400 ? `${t.slice(0, 399)}…` : t;
 };
+
+// A queued task's card in its Assistant's chat (Doop App 01): what it waits for and how it will run, as small tags.
+// Only what its record says: its agent, model and effort, and its review and merge rules when they're set for it.
+// x: the task as herdr-task lists it (reason: queueReason's words). -> [{ label, tone ("accent": asks the person) }]
+export function queuedChips(x) {
+  const why = String(x?.reason ?? "").trim();
+  const out = [{ label: why ? `Queued · ${why[0].toLowerCase()}${why.slice(1)}` : "Queued" }];
+  const runs = [NAMES[x?.agent] ?? x?.agent, modelName(x?.model), levelName(x?.effort)].filter(Boolean);
+  if (runs.length) out.push({ label: runs.join(" · ") });
+  const set = x?.set ?? {};
+  if (set.review === "off" || set.review_rounds === 0) out.push({ label: "No review" });
+  else if (set.review_rounds > 0) out.push({ label: `Review ${set.review_rounds} ${set.review_rounds === 1 ? "round" : "rounds"}` });
+  const merge = { ask: "Ask before merge", checks: "Merge after checks", auto: "Merge on its own" }[set.merge];
+  if (merge) out.push({ label: merge, tone: set.merge === "ask" ? "accent" : null });
+  return out;
+}
 
 // A finished helper's report card (Doop App 02): "<name> helper · reported 1m ago". ago: core/tasks.js ago()'s.
 export const helperSub = (ago) => `helper · reported ${ago}`;
