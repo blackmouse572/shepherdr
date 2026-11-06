@@ -87,7 +87,7 @@ function body(t, s, pre) {
         : div().min_w(0).text_size(TEXT.label).line_height("18px").text_color(tone(t, s.tone)).child(s.text);
     case "banner": {
       const dark = isDark(), state = s.state ?? "attention";
-      return h_flex().relative().w_full().h(BANNER_H).px(14).gap(10).items_center().overflow_hidden().border_b(1).border_color(t.border)
+      return h_flex().relative().w_full().h(BANNER_H).px(14).gap(10).items_center().overflow_hidden().rounded_t(R - 1).border_b(1).border_color(t.border)
         .when(dark, (el) => el.bg(bannerBg(state)).child(bannerDots(state)))
         .child(div().size(8).flex_none().rounded(4).bg(s.dot ?? need()))
         .child(v_flex().flex_1().min_w(0).gap(3)

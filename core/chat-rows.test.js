@@ -199,6 +199,25 @@ describe("the Doop cards", () => {
     expect(JSON.parse(replies[0]).hookSpecificOutput.decision.behavior).toBe("allow");
   });
 
+  test("a task worker's plan in its Assistant's chat: headed by its task, what runs it and on which account, Open task", async () => {
+    const { AskCards } = await import(join(import.meta.dir, "../mods/chat/cards.js"));
+    const { words } = await import("./asks.js");
+    const c = await chat([said(1, "SHE-14 is planning.")]);
+    Object.assign(c, { t: { labels: { "herdr.role": "coordinator", "herdr.space": "s1" } }, accepting: new Set(),
+      spaceTasks: [{ id: 14, ref: "SHE-14", title: "Threshold card", state: "running", space: "s1", live: [{ address: "t5" }], agents: [{ account: "Personal" }] }] });
+    c.workerCards = new AskCards({ reply() {}, toTerminal() {}, chatAbout() {} }, { focus() {} });
+    c.secretCards = { items: () => [] };
+    c.wasks = [{ id: "w.1793000000.2", terminal: "t5", ref: "SHE-14", title: "Threshold card", words: words({ tool_name: "ExitPlanMode", tool_input: { plan: "1. One\n2. Two" } }) }];
+    terms = [{ address: "t5", state: "live", program: { name: "Claude Code" } }];
+    try {
+      const banner = c.rows().find((r) => r.kind === "cardstrip" && r.s.kind === "banner");
+      expect(banner.s.title).toBe("SHE-14 has a plan to approve");
+      expect(banner.s.sub).toMatch(/^Threshold card · Claude Code · runs on Personal · /);
+      expect(banner.s.links.map((k) => k.label)).toEqual(["Open task"]);
+      drawsInList(c, c.rows());
+    } finally { terms = []; }
+  });
+
   test("a queued task in its Assistant's chat: a card with what it waits for and how it will run (App 01)", async () => {
     const c = await chat([said(1, "Queued as SHE-15.")]);
     Object.assign(c, { t: { labels: { "herdr.role": "coordinator", "herdr.space": "s1" } }, accepting: new Set() });
