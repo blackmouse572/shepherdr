@@ -95,3 +95,14 @@ test("the extras script finds a command and stays quiet without gh", async () =>
   expect(r.status).toBe(0);
   expect(branchExtras(r.stdout)).toEqual({ editor: "sh", pr: null });
 });
+
+test("a checkout opened beside starts the agent the focused terminal runs, fresh", async () => {
+  const { agentEntry } = await import("./worktree.js");
+  const known = [{ key: "claude", run: ["/usr/local/bin/claude"] }, { key: "codex", run: ["codex"] }];
+  expect(agentEntry({ labels: { "herdr.agent": "codex" } }, known)?.key).toBe("codex");
+  expect(agentEntry({ program: { key: "claude" } }, known)?.run).toEqual(["/usr/local/bin/claude"]);
+  // its own argv (a --resume) is never copied: only the entry's run
+  expect(agentEntry({ foreground: { argv: ["claude", "--resume", "x"] } }, known)?.run).toEqual(["/usr/local/bin/claude"]);
+  expect(agentEntry({ foreground: { argv: ["zsh"] } }, known)).toBe(null);
+  expect(agentEntry(null, known)).toBe(null);
+});

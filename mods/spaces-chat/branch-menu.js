@@ -1,12 +1,12 @@
 // The tab bar's branch chip's menu (Doop App 02b): where the shown code lives, ways to open it, and the repo's other
-// checkouts to go to. The tab bar (tabs-tasks) reads the git (core/worktree.js BRANCH_STATE) and opens this mod as a
+// checkouts: go to one, or work in two at once (one in a new tab, or beside this one). The tab bar (tabs-tasks) reads the git (core/worktree.js BRANCH_STATE) and opens this mod as a
 // popup with props { view: "branch", state (branchState()), branch, machine, files (the Files panel is on),
 // editor (the command to open it with there, else null), update (Update from its base shows), pr ({ number, state, url })}.
 
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { props, closeOverlay, theme, run, spaces, panes, exec } from "herdr";
-import { BRANCH_MENU as M, otherTrees, baseLine, changesLine, editorName, updateLabel, updateArgv, prLine } from "./core/worktree.js";
+import { props, closeOverlay, theme, run, spaces, panes, terminals, exec, knownAgents } from "herdr";
+import { BRANCH_MENU as M, otherTrees, baseLine, changesLine, editorName, updateLabel, updateArgv, prLine, agentEntry } from "./core/worktree.js";
 import { tilde, midCut } from "./core/spaces.js";
 import { bannerBg, bannerDots, isDark, green, red, working, MONO, SERIF, HEAD, TEXT, RADIUS } from "./ui.js";
 
@@ -18,6 +18,10 @@ export class BranchMenu {
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.at = 0;
+    // The agents there, for New tab and Beside (read now: the menu closes as one is pressed).
+    this.known = [];
+    const m = props().machine ?? null;
+    cx.spawn(async () => { this.known = await knownAgents(m ? { on: m } : {}).catch(() => []); });
   }
 
   close() { closeOverlay(props().overlay); }
@@ -29,6 +33,16 @@ export class BranchMenu {
       && (inside(x.folder, tree.path) || x.tabs.some((c) => ps.some((p) => p.tab === c.id && p.cwd && inside(p.cwd, tree.path)))));
     if (s) run("space.select", { id: s.id });
     else run("space.new", { folder: tree.path, name: tree.branch, ...(machine ? { machine } : {}) });
+  }
+
+  // Two checkouts at once: another one in its own tab of this space, or in a pane beside the focused one (this
+  // computer's only: a pane opens here), running a fresh copy of the agent the focused pane runs, else a shell.
+  openTree(tree, machine, place) {
+    const k = terminals().find((x) => x.address === panes().find((p) => p.focused)?.terminal);
+    const a = agentEntry(k, this.known);
+    const argv = a && a.installed !== false ? { argv: a.run } : {};
+    if (place === "tab") run("tab.new", { space: spaces().find((x) => x.active)?.id, folder: tree.path, name: tree.branch, ...argv });
+    else run("terminal.open", { folder: tree.path, place: "right", ...argv });
   }
 
   render() {
@@ -48,7 +62,20 @@ export class BranchMenu {
     ];
     const others = otherTrees(s).map((x) => ({ id: `tree-${x.path}`, tree: x }));
     const rows = [...actions, ...others];
-    const pick = (i, cx) => { const r = rows[i]; if (!r) return; if (r.tree) this.goTo(r.tree, p.machine); else r.fn(cx); this.close(); };
+    const beside = !p.machine;
+    // A checkout: Enter goes to it, Cmd+Enter opens it in a new tab, Shift+Enter beside this one.
+    const pick = (i, cx, how = null) => {
+      const r = rows[i];
+      if (!r) return;
+      if (r.tree && how && (how === "tab" || beside)) this.openTree(r.tree, p.machine, how);
+      else if (r.tree) this.goTo(r.tree, p.machine);
+      else r.fn(cx);
+      this.close();
+    };
+    const open = (i, how, icon, tip) => h_flex().id(`bm-${how}-${i}`).size(24).flex_none().items_center().justify_center().rounded(RADIUS.control)
+      .text_color(t.dim).cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).tooltip(tip)
+      .on_click((_e, cx) => { cx.stop_propagation(); pick(i, cx, how); })
+      .child(svg(icon).size(14).flex_none());
     const row = (r, i, child) => h_flex().id(`bm-${i}`).h(M.row).px(10).gap(10).items_center().rounded(RADIUS.card).whitespace_nowrap()
       .cursor_pointer().when(i === this.at, (el) => el.bg(t.selected)).when(i !== this.at, (el) => el.hover((st) => st.bg(t.hover)))
       .on_click((_e, cx) => pick(i, cx)).child(child);
@@ -63,7 +90,7 @@ export class BranchMenu {
         if (e.key === "escape") this.close();
         else if (e.key === "down") this.at = (this.at + 1) % rows.length;
         else if (e.key === "up") this.at = (this.at + rows.length - 1) % rows.length;
-        else if (e.key === "enter") pick(this.at, cx);
+        else if (e.key === "enter") pick(this.at, cx, e.modifiers.platform || e.modifiers.control ? "tab" : e.modifiers.shift ? "right" : null);
         else return;
         cx.stop_propagation();
         cx.notify();
@@ -93,6 +120,8 @@ export class BranchMenu {
           .child(div().flex_none().font_family(MONO).text_size(TEXT.label).child(o.tree.branch))
           .child(div().flex_1().min_w(0).truncate().font_family(MONO).text_size(TEXT.id + 0.5).text_color(t.dim)
             .child(o.tree.main ? "main checkout" : midCut(tilde(o.tree.path), 28)))
-          .when(o.tree.ahead > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(`↑${o.tree.ahead}`))))))));
+          .when(o.tree.ahead > 0, (el) => el.child(div().flex_none().font_family(MONO).text_size(TEXT.id).text_color(t.dim).child(`↑${o.tree.ahead}`)))
+          .child(open(actions.length + k, "tab", "mods/workspace-chrome-shepherdr/plus.svg", "Open in a new tab (⌘↵)"))
+          .when(beside, (el) => el.child(open(actions.length + k, "right", "mods/jump/columns.svg", "Open beside this one (⇧↵)"))))))));
   }
 }
