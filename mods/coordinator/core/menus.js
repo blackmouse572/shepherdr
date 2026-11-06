@@ -82,7 +82,18 @@ export const agentChoices = (agents) => [...agents.filter((a) => a.installed), .
 export const agentHint = (a, i) => (a.installed ? (i < 9 ? String(i + 1) : "") : NEW_MENU.notInstalled);
 
 // A tab's name in the tab bar: the name given, else (Herdr's own "tb3", or none) what runs in it, else "Terminal".
-export const tabName = (name, program = null) => (!name || /^tb\d+$/.test(name) ? program || "Terminal" : name);
+// An agent's session title as its program set it (Claude Code's terminal title: the conversation's name), or null
+// when it's only the program's or a shell's name, or a path. Leading status glyphs (✳, a spinner) are dropped.
+const SHELLS = /^(claude( code)?|codex|terminal|zsh|bash|fish|sh|nu|pwsh)$/i;
+export function sessionTitle(title, program = null) {
+  const s = String(title ?? "").replace(/^[\s✳✶✻✽✢✺·•\u2800-\u28FF]+/u, "").trim();
+  if (s.length < 2 || SHELLS.test(s) || /^[~/]/.test(s)) return null;
+  if (program && s.toLowerCase() === String(program).toLowerCase()) return null;
+  return s.slice(0, 80);
+}
+
+// A tab's name: the person's, else its agent's session title, else its program's.
+export const tabName = (name, program = null, title = null) => (!name || /^tb\d+$/.test(name) ? sessionTitle(title, program) || program || "Terminal" : name);
 
 // The pane header's × on an agent's chat asks first, in place of its buttons.
 export const endAgent = (program) => ({ ask: `End ${program}?`, tip: `End ${program}`, cancel: "Cancel", verb: "End agent" });

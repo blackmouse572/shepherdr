@@ -40,6 +40,7 @@ import { countBadge, red, green, need, working, onStatus, button, TEXT, RADIUS }
 import { spaceName, gitTail, tilde, midCut, parentOf, foldList, parseWorktrees, assistantOf, machineOf } from "./core/spaces.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { autoPrefix, agentDot } from "./core/tasks.js";
+import { sessionTitle } from "./core/menus.js";
 import { statusDot } from "./dot.js";
 
 const POPUPS = { add: Menu, space: Menu, section: Menu, icon: IconPicker, rename: Rename, machine: MachinePopup, needs: NeedsDrawer, branch: BranchMenu };
@@ -756,7 +757,7 @@ export default class Spaces extends View {
         if (l["herdr.task"]) { add(task(k, p)); continue; }
         const tab = s.tabs.find((x) => x.id === p.tab);
         const agent = Boolean(p.program?.agent);
-        add({ address: p.terminal, kind: agent ? "agent" : "terminal", name: agent ? (tab?.named ? tab.name : p.program?.name ?? p.title) : String(p.title ?? "").replace(PORT, "").trim() || p.program?.name || "Terminal",
+        add({ address: p.terminal, kind: agent ? "agent" : "terminal", name: agent ? (tab?.named ? tab.name : sessionTitle(p.title, p.program?.name) ?? p.program?.name ?? p.title) : String(p.title ?? "").replace(PORT, "").trim() || p.program?.name || "Terminal",
           sub: agent ? null : [short(p.terminal), portOf(p.title)].filter(Boolean).join(" · "), status: agent ? statusOf(p.terminal, p.status) : null,
           program: p.program, cwd: p.cwd, tab: p.tab, pane: p.pane, focused: p.focused && s.active });
       }
@@ -765,7 +766,7 @@ export default class Spaces extends View {
         if (l["herdr.role"] === "reviewer" || l["herdr.role"] === "coordinator") continue;
         const under = l["herdr.task.space"] === id || (coord && full(k.parent) === coord.address);
         if (l["herdr.task"] && under) add(task(k));
-        else if (under) add({ address: k.address, kind: "agent", name: k.name || k.program?.name || short(k.address), status: statusOf(k.address), program: k.program, cwd: k.cwd });
+        else if (under) add({ address: k.address, kind: "agent", name: k.name || sessionTitle(k.title, k.program?.name) || k.program?.name || short(k.address), status: statusOf(k.address), program: k.program, cwd: k.cwd });
       }
       const RANK = { assistant: 0, task: 1, agent: 2, terminal: 3 };
       rows.sort((x, y) => RANK[x.kind] - RANK[y.kind]);

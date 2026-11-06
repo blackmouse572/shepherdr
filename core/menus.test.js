@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { spaceMenu, addMenu, machineMenu, sectionMenu, taskMenu, machineLabel, tabMenu, appMenu, assistantRow, agentChoices, agentHint, tabName, endAgent, NEW_MENU, SWITCH_AGENT } from "./menus.js";
+import { spaceMenu, addMenu, machineMenu, sectionMenu, taskMenu, machineLabel, tabMenu, appMenu, assistantRow, agentChoices, agentHint, tabName, sessionTitle, endAgent, NEW_MENU, SWITCH_AGENT } from "./menus.js";
 
 const words = (list) => list.map((x) => (x.sep ? "—" : x.label));
 
@@ -41,10 +41,22 @@ test("the + menu's words: the Assistant's row, the agents it offers, and a tab's
   expect(NEW_MENU.agents).toBe("Start an agent");
   expect(tabName("tb3", "Claude Code")).toBe("Claude Code");
   expect(tabName("", null)).toBe("Terminal");
+  expect(tabName("tb3", "Claude Code", "✳ Doop design new UI fork")).toBe("Doop design new UI fork");
+  expect(tabName("Mine", "Claude Code", "Doop design")).toBe("Mine");
+  expect(tabName("tb3", "Claude Code", "Claude Code")).toBe("Claude Code");
   expect(tabName("Build")).toBe("Build");
   expect(endAgent("Codex")).toEqual({ ask: "End Codex?", tip: "End Codex", cancel: "Cancel", verb: "End agent" });
 });
 
 test("the app menu: New space, Keybinds, then the window's themes", () => {
   expect(words(appMenu())).toEqual(["New space", "—", "Keybinds", "—", "Theme: Graphite", "Theme: Ink", "Theme: Moss", "Theme: Atom One Dark"]);
+});
+
+test("an agent's session title, not its program's name, a shell's or a path", () => {
+  expect(sessionTitle("⠂ Fix the login flow", "Claude Code")).toBe("Fix the login flow");
+  expect(sessionTitle("Claude Code", "Claude Code")).toBe(null);
+  expect(sessionTitle("zsh")).toBe(null);
+  expect(sessionTitle("~/work/minmed")).toBe(null);
+  expect(sessionTitle("✳")).toBe(null);
+  expect(sessionTitle(null)).toBe(null);
 });
