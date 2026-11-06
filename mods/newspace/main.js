@@ -32,7 +32,7 @@ import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Popup } from "gpui-base";
 import { props, theme, home, exec, pickFolder, closeOverlay, openOverlay, shared, setShared, spaces, focused } from "herdr";
 import { dialogFooter, dialogTitle, DIALOG_ICON, TITLE_SHIFT, button, toggleSwitch, segmented, fieldFrame, MONO, TEXT, RADIUS, submitKeys, isSubmitKey } from "./ui.js";
-import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines, newSpaceHeight } from "./coordinator.js";
+import { NEWSPACE as K, readShepherdr, shepherdrFor, LOCAL_MACHINE, autoCoordinator, newSpace, newSpaceMachines } from "./coordinator.js";
 import * as N from "./core/newspace.js";
 
 // The suggestions' width (the field's: the dialog's 460 less its padding, the icon, Browse… and the gaps).
@@ -385,7 +385,7 @@ export default class NewSpace extends View {
       .when(rows.length > 0 || Boolean(empty), (el) => el.content(v_flex().id("folder-rows").w(LIST_W).max_h(K.row * 8 + 8).overflow_y_scrollbar().mt(4).p(4).rounded(8).border(1).border_color(t.border).bg(t.popover).shadow_lg().text_size(13)
         .children(rows.map((r, i) => this.row(t, `folder-${i}`, i === this.hi, r.path, (cx) => this.pick(r.path, cx), r.up)))
         .when(Boolean(empty), (el) => el.child(div().h(K.row).flex_none().px(9).flex().items_center().text_color(t.dim).child(empty)))));
-    const panel = v_flex().id("newspace").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(13)
+    const panel = v_flex().id("newspace").w_full().h_full().min_h(0).p(K.pad).rounded(RADIUS.dialog).border_1().border_color(t.border).bg(t.chrome).shadow_lg().overflow_hidden().text_size(13)
       .on_key_down((e, cx) => this.key(e, cx))
       .on_mouse_down("left", (_e, cx) => {
         if (this.listOpen) { this.listOpen = false; this.browse = null; this.hi = -1; cx.notify(); }
@@ -440,8 +440,7 @@ export default class NewSpace extends View {
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.close(), note: this.error, error: true,
         primary: { id: "create", label: this.busy ? W.creating : W.create, disabled: !folder || this.busy, onClick: (_e, cx) => this.create(cx),
           keys: submitKeys() } }));
-    // The overlay is the panel at its tallest; the panel sits in its middle. A frameless overlay is as tall as its
-    // content, so the root takes the overlay's height itself (size_full() collapses it, and the panel loses its fill).
-    return v_flex().w_full().h(newSpaceHeight((props()?.recent ?? []).length, machineList.length > 1)).justify_center().child(panel);
+    // The panel is the overlay (as Settings' card): a panel centred in a wrapper drew its words without its fill.
+    return panel;
   }
 }

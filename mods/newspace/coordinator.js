@@ -183,7 +183,7 @@ export async function newSpace(space) {
   if (!at) return toast({ title: `Couldn't reach ${machine}`, body: "Try New space again once it's connected.", level: "error" });
   // The dialog draws its own panel (frame "none"), centered and as tall as what it shows now:
   // the overlay is the panel at its tallest.
-  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(recent.length, newSpaceMachines(machine).length > 1), props: { recent, machine, home: at, section: space?.section ?? null } });
+  openOverlay({ mod: "newspace", kind: "dialog", frame: "none", width: 460, height: newSpaceHeight(newSpaceMachines(machine).length > 1), props: { recent, machine, home: at, section: space?.section ?? null } });
 }
 
 // A machine's home folder (null: this computer's).
@@ -195,15 +195,15 @@ export async function homeOf(machine = null) {
 
 // The New space dialog's parts, in px (mods/newspace draws them at these sizes): its padding,
 // title and its line (sub), the Machine picker (with another machine), the Folder label and field
-// (gap apart), list rows (a typed path's Use row, at most NEWSPACE_SHOWN folders, then Choose
-// folder…), the Name field, the two switch rows (toggle, gap apart), the buttons, and the space
-// between sections. The overlay is the dialog at its tallest; the panel sits in its middle.
+// (gap apart), the lines under it, the Name field, the two switch rows (toggle, gap apart), the buttons, and the
+// space between sections. The folder suggestions hang under the field in a popup (NEWSPACE_SHOWN at most, row
+// tall), outside the dialog's height. The overlay is the dialog itself.
 export const NEWSPACE = { pad: 18, title: 20, sub: 18, label: 16, gap: 4, field: 32, row: 31, line: 32, toggle: 36, buttons: 32, section: 16 };
 export const NEWSPACE_SHOWN = 5;
-export function newSpaceHeight(n, picker = false) {
-  const k = NEWSPACE, rows = 1 + Math.min(n, NEWSPACE_SHOWN) + 1;
+export function newSpaceHeight(picker = false) {
+  const k = NEWSPACE;
   const field = k.label + k.gap + k.field + k.section;
-  return 2 * k.pad + k.title + k.sub + k.section + (picker ? field : 0) + k.label + k.gap + k.field + k.gap + rows * k.row
+  return 2 * k.pad + k.title + k.sub + k.section + (picker ? field : 0) + k.label + k.gap + k.field
     + k.section + 3 * k.line + k.section + field + 2 * k.toggle + k.gap + k.section + k.buttons;
 }
 // The machines New space offers (its Machine picker): this computer (null), then each connected one, `machine`

@@ -119,7 +119,7 @@ export class Rename {
       : this.isSection
         ? svg("mods/workspace-chrome/folder.svg").size(14).text_color(t.muted)
         : div().text_size(16).text_color(t.muted).child("#");
-    const panel = v_flex().id("rename").w_full().flex_none().p(K.pad).rounded(RADIUS.dialog).border(1).border_color(t.border).bg(t.chrome).shadow_lg().text_size(TEXT.body)
+    const panel = v_flex().id("rename").w_full().h_full().min_h(0).p(K.pad).rounded(RADIUS.dialog).border_1().border_color(t.border).bg(t.chrome).shadow_lg().overflow_hidden().text_size(TEXT.body)
       .on_key_down((e) => { if (e.key === "escape") this.cancel(); else if (isSubmitKey(e)) this.save(); })
       // The design's banner header (ui.js dialogTitle): the space under it gives up what it adds, so RENAME's height holds.
       .child(dialogTitle("rename-title", this.p.new ? "New section" : this.isMachine ? "Rename machine" : this.p.section ? "Rename section" : "Rename space", { pad: K.pad, radius: RADIUS.dialog - 1, onClose: () => this.cancel() }))
@@ -137,6 +137,7 @@ export class Rename {
       .child(div().h(K.section).flex_none())
       .child(dialogFooter({ radius: RADIUS.dialog - 1, onCancel: () => this.cancel(), note: this.error, error: true,
         primary: { id: "save", label: this.p.new ? "Create section" : "Save", keys: submitKeys(), onClick: () => this.save() } }));
-    return v_flex().size_full().justify_center().child(panel);
+    // The panel is the overlay (as New space's): one centred in a wrapper drew its words without its fill.
+    return panel;
   }
 }
