@@ -27,7 +27,7 @@
 import { div, svg, image } from "gpui-kit";
 import { View } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input, VirtualListScrollHandle, v_virtual_list, Scrollbar } from "gpui-base";
-import { spaces, machines, terminals, agents, panes, layout, layouts, exec, home, run, theme, props, closeOverlay, openOverlay, shared, setShared, keys, window, writeTextFile } from "herdr";
+import { spaces, machines, terminals, agents, panes, layout, layouts, exec, home, run, theme, props, closeOverlay, openOverlay, shared, setShared, keys, window, writeTextFile, readTextFile } from "herdr";
 import { taskDot } from "./dot.js";
 import { READ_LISTS, taskLists } from "./core/tasklists.js";
 import { busyAgain } from "./core/tasks.js";
@@ -112,8 +112,12 @@ function useAccount(id) {
   const next = { active: null, switch_at: 95, names: {}, hidden: [], ...(shared("usage.prefs") ?? {}), active: id };
   setShared("usage.prefs", next);
   const file = `${home()}/.herdr/accounts.json`;
-  exec("sh", ["-c", 'mkdir -p "$(dirname "$1")"', "x", file]).catch(() => {})
-    .then(() => writeTextFile(file, `${JSON.stringify(next, null, 2)}\n`, null)).catch(() => {});
+  exec("sh", ["-c", 'mkdir -p "$(dirname "$1")"', "x", file]).catch(() => {}).then(async () => {
+    for (let i = 0; i < 3; i++) {
+      const was = await readTextFile(file).catch(() => null);
+      try { await writeTextFile(file, `${JSON.stringify(next, null, 2)}\n`, was); return; } catch {}
+    }
+  });
 }
 
 const find = (node, id) => {
