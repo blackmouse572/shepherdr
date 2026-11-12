@@ -212,8 +212,9 @@ export const weekly = (a) => meter(a, "weekly");
 // The model weeks (Fable, Opus, ...), as the endpoint names them.
 export const models = (a) => (a?.meters ?? []).filter((m) => m.id !== "session" && m.id !== "weekly");
 
-// What decides a switch: the 5h session window only (Doop App 05).
-export const binding = (a) => n(session(a)?.pct);
+// What decides a switch: the 5h session window (Doop App 05), or a week used up.
+export const weekFull = (a) => (n(weekly(a)?.pct) ?? 0) >= 100;
+export const binding = (a) => (weekFull(a) ? 100 : n(session(a)?.pct));
 
 // The accounts in the person's switch order (prefs.order), the ones not in it after, as found.
 export function ordered(accounts, prefs) {
@@ -265,7 +266,7 @@ export function dueSwitch(accounts, prefs) {
   if (!from || prefs?.auto === false || binding(from) === null || binding(from) < at) return null;
   const to = nextAccount(accounts, from.id, at, prefs);
   if (!to) return null;
-  return { from, to, at, why: `${from.name} passed ${at}% of its 5h window` };
+  return { from, to, at, why: weekFull(from) ? `${from.name} used up its week` : `${from.name} passed ${at}% of its 5h window` };
 }
 
 // The rule row's second line.

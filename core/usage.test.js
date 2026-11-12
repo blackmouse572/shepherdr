@@ -82,8 +82,10 @@ test("an automatic switch only past the point and only to an account with room",
   expect(d.why).toBe("Default passed 95% of its 5h window");
   expect(dueSwitch(list, { active: "default", auto: false })).toBe(null);
   expect(dueSwitch([acct("default", 96, 51), acct("personal", 97, 50)], { active: "default" })).toBe(null);
-  // The week alone never switches.
+  // The week alone switches only once it is used up.
   expect(dueSwitch([acct("default", 40, 99), acct("personal", 27, 50)], { active: "default" })).toBe(null);
+  expect(dueSwitch([acct("default", 40, 100), acct("personal", 27, 50)], { active: "default" }).why).toBe("Default used up its week");
+  expect(dueSwitch([acct("default", 40, 50), acct("personal", 27, 100)], { active: "default", switch_at: 50 })).toBe(null);
   expect(dueSwitch(list, { active: "default", skipped: ["personal"] })).toBe(null);
 });
 
