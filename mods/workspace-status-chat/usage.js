@@ -21,7 +21,7 @@ import { div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, props, openOverlay, closeOverlay, window, settings } from "herdr";
 import { TEXT, RADIUS, button, segmented, isDark, bannerBg, bannerDots, SERIF, openSettings, heading, green, need, toast, plainError } from "./ui.js";
-import { usage, accounts, prefs, setPrefs, refresh, signIn, logo, meterBar, activeBadge, avatar, MONO } from "./usage-data.js";
+import { usage, accounts, prefs, setPrefs, setDefault, refresh, signIn, logo, meterBar, activeBadge, avatar, MONO } from "./usage-data.js";
 import { WORDS, POP, pctText, resetsLine, resetsWhen, activeOf, switchLine, accountSub, weekBars, spaceSplit,
   pillParts, updatedLine, popoverHeight, capHeight, session, weekly, models, errorLine, midCut, statusSwitch, clampSwitch, staleLine } from "./core/usage.js";
 
@@ -164,7 +164,7 @@ export class UsagePopover {
       else if (a.error === "signed-out") right.push(button(`sign-${a.id}`, WORDS.signIn, { size: "sm",
         onClick: () => { this.close(); signIn(a.id, a.name).catch((e) => toast({ title: "Couldn't open the sign-in", body: plainError(e), level: "error" })); } }));
       else right.push(button(`use-${a.id}`, "Switch", { size: "sm", icon: I("switch"),
-        onClick: () => setPrefs({ active: a.id }) }));
+        onClick: () => setDefault(a.id) }));
       right.push(this.iconButton(`more-${a.id}`, "chevron-right", WORDS.detail,
         () => this.reopen({ detail: open ? null : a.id }), open));
     }

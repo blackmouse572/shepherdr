@@ -62,7 +62,8 @@ def switching():
 def active():
     """The account new Claude agents here start on: the one picked when its folder is there, else default."""
     a = picks().get("active")
-    if isinstance(a, str) and a != DEFAULT and ID.match(a) and os.path.isdir(folder(a)):
+    # A cswap slot ("2") is a login swapped into ~/.claude, not a folder.
+    if isinstance(a, str) and a != DEFAULT and ID.match(a) and not a.isdigit() and os.path.isdir(folder(a)):
         return a
     return DEFAULT
 

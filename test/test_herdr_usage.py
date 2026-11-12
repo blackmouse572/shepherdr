@@ -77,5 +77,21 @@ class HerdrUsage(unittest.TestCase):
             self.assertFalse(out["codex"]["signed_in"])
 
 
+    def test_cswap_accounts(self):
+        rows = [{"number": 1, "email": "me@x.com", "active": False, "usageStatus": "ok", "plan": {"label": "Max"},
+                 "usage": {"fiveHour": {"pct": 2, "resetsAt": "2026-11-12T10:00:00Z"}, "sevenDay": {"pct": 63},
+                           "scoped": [{"name": "fable", "pct": 35}]}},
+                {"number": 2, "email": "ngoc@y.com", "alias": "work", "active": True, "usageStatus": "relogin_required", "usage": None}]
+        with tempfile.TemporaryDirectory() as home:
+            os.makedirs(os.path.join(home, ".claude", "projects"))
+            a, b = U.cswap_accounts(rows, home, [])
+        self.assertEqual((a["id"], a["name"], a["via"], a["plan"], a["error"]), ("1", "Me", "cswap", "Max", None))
+        self.assertEqual([m["id"] for m in a["meters"]], ["session", "weekly", "fable"])
+        self.assertEqual(a["meters"][0]["resets_at"], "2026-11-12T10:00:00Z")
+        self.assertEqual((b["id"], b["name"], b["active"], b["error"]), ("2", "Work", True, "signed-out"))
+        self.assertEqual(a["days"], [], "the last 7 days go on the active login only")
+        self.assertEqual(len(b["days"]), 7)
+
+
 if __name__ == "__main__":
     unittest.main()

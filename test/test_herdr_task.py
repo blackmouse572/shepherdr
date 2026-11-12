@@ -373,6 +373,9 @@ class Accounts(unittest.TestCase):
         self.assertEqual(self.acc.env("work"), [f"CLAUDE_CONFIG_DIR={self.home}/.claude-work"])
         self.pick({"active": "../etc"})
         self.assertEqual(self.acc.active(), "default")
+        os.makedirs(os.path.join(self.home, ".claude-2"))
+        self.pick({"active": "2"})
+        self.assertEqual(self.acc.active(), "default", "a cswap slot is a login in ~/.claude")
         with self.assertRaises(self.acc.Fail):
             self.acc.folder("Bad Name")
 

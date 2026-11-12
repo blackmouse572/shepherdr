@@ -193,7 +193,65 @@ def history(folder, spaces, today=None):
     return days, split
 
 
+def cswap_rows():
+    """claude-swap's accounts (`cswap list --json`), or None when it isn't installed or has none: then accounts are
+    folders. Its accounts are logins swapped in and out of ~/.claude, not folders."""
+    import shutil
+    import subprocess
+    exe = shutil.which("cswap") or next((p for p in (os.path.expanduser("~/.local/bin/cswap"), "/opt/homebrew/bin/cswap")
+                                         if os.path.isfile(p)), None)
+    if not exe:
+        return None
+    try:
+        r = subprocess.run([exe, "list", "--json"], capture_output=True, text=True, timeout=60)
+        d = json.loads(r.stdout or "null")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    rows = d.get("accounts") if isinstance(d, dict) else d
+    rows = [x for x in rows or [] if isinstance(x, dict) and x.get("number") is not None]
+    return rows or None
+
+
+def cswap_meters(row):
+    """(meters, plan, error) from a cswap row: the 5-hour session, the week, then each model's own week."""
+    u = row.get("usage") or row.get("lastGoodUsage")
+    plan = (row.get("plan") or {}).get("label") if isinstance(row.get("plan"), dict) else None
+    if not isinstance(u, dict):
+        st = row.get("usageStatus")
+        return [], plan, "signed-out" if st in ("no_credentials", "relogin_required") else "error"
+    out = []
+    for key, mid, label in (("fiveHour", "session", "Session"), ("sevenDay", "weekly", "Weekly")):
+        w = u.get(key)
+        if isinstance(w, dict) and pct(w.get("pct")) is not None:
+            out.append({"id": mid, "label": label, "pct": pct(w["pct"]), "resets_at": w.get("resetsAt")})
+    for w in u.get("scoped") or []:
+        if isinstance(w, dict) and pct(w.get("pct")) is not None:
+            label = re.sub(r"^(?:seven_day_)?", "", str(w.get("name") or "Limit")).replace("_", " ").strip().title()[:24]
+            out.append({"id": re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-") or "limit", "label": label,
+                        "pct": pct(w["pct"]), "resets_at": w.get("resetsAt"), "model": True})
+    return out, plan, None
+
+
+def cswap_accounts(rows, home, spaces):
+    """Each cswap account as an account here: id is its slot number. One ~/.claude holds every login's history, so
+    the last 7 days go on the active one."""
+    folder = os.path.join(home, ".claude")
+    out = []
+    for r in rows:
+        email = str(r.get("email") or "")
+        user = str(r.get("alias") or email.split("@")[0] or f"Account {r['number']}")
+        a = {"id": str(r["number"]), "name": user[:1].upper() + user[1:],
+             "folder": tilde(folder, home), "email": email, "via": "cswap", "active": bool(r.get("active"))}
+        a["meters"], a["plan"], a["error"] = cswap_meters(r)
+        a["days"], a["spaces"] = history(folder, spaces) if a["active"] else ([], [])
+        out.append(a)
+    return out
+
+
 def claude_accounts(home, spaces, fetch=True, machine=None):
+    rows = cswap_rows() if fetch else None
+    if rows:
+        return cswap_accounts(rows, home, spaces)
     found = claude_folders(home)
     got = {}
     if fetch and machine:

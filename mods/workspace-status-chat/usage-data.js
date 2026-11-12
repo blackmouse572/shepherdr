@@ -14,6 +14,10 @@
 // Accounts are added (a ~/.claude-<id> folder with Shepherdr's hooks, then a terminal to sign in), renamed (a name of
 // the person's own; the folder stays) and removed from Shepherdr (hidden; the folder stays) here too.
 //
+// With claude-swap (cswap) installed and holding accounts, herdr-usage lists its logins instead (via "cswap", id = its
+// slot): one ~/.claude whose login cswap swaps, so every agent, resumed or not, runs on the one switched to. Picking
+// or switching runs `cswap switch <slot>`; "active" follows cswap's own; nothing moves.
+//
 // Shared: the source is lib/usage-data.js; bin/sync-shared copies it into each mod in lib/COPIES.
 // Edit lib/usage-data.js, never a mod's copy, then run bin/sync-shared.
 
@@ -41,6 +45,18 @@ export const usage = () => shared(USAGE) ?? null;
 export const prefs = () => normPrefs(shared(PREFS));
 // The Claude accounts as the person sees them: their own names, without the ones removed from Shepherdr.
 export const accounts = () => shown(usage()?.claude ?? [], prefs());
+
+// Accounts are cswap's logins (herdr-usage read them with `cswap list`), not folders.
+export const viaCswap = () => (usage()?.claude ?? []).some((a) => a.via === "cswap");
+const loginShell = async () => (await exec("sh", ["-c", 'printf %s "${SHELL:-/bin/sh}"']).catch(() => null))?.stdout?.trim() || "/bin/sh";
+// Swaps ~/.claude's login to cswap's slot `id` (the login shell's PATH finds cswap). Throws with its reason.
+async function cswapSwitch(id) {
+  const r = await exec(await loginShell(), ["-lic", `cswap switch ${String(id).replace(/[^0-9]/g, "")}`]);
+  if (r.code !== 0) throw new Error((r.stderr || r.stdout || "cswap switch failed").trim().split("\n").pop());
+  setShared(PREFS, normPrefs({ ...prefs(), active: id }));
+  savePrefs(prefs());
+  refresh();
+}
 
 export async function loadPrefs() {
   let p = {};
@@ -85,6 +101,9 @@ async function read() {
     const lineOut = String(r.stdout ?? "").split("\n").find((l) => l.startsWith("{"));
     if (lineOut) {
       setShared(USAGE, keepGood(shared(USAGE), JSON.parse(lineOut)));
+      // cswap's active login is the truth: a switch made outside the window shows here too.
+      const on = (usage()?.claude ?? []).find((a) => a.via === "cswap" && a.active);
+      if (on && prefs().active !== on.id) setPrefs({ active: on.id, moving: null });
       // This machine's switch rule runs here: another machine's window leaves it alone (readOthers()).
       exec("sh", ["-c", 'mkdir -p "$HOME/.herdr" && : > "$HOME/.herdr/usage-read"']).catch(() => {});
     }
@@ -120,7 +139,9 @@ async function autoSwitch() {
   const d = held ? null : dueSwitch(accounts(), pr);
   if (!d) return;
   movingBefore = pr.moving;
-  setPrefs({ active: d.to.id, ...(pr.running === "moves" ? { moving: movingAfter(pr.moving, d) } : {}) });
+  if (viaCswap()) {
+    try { await cswapSwitch(d.to.id); } catch (e) { toast({ title: `Couldn't switch to ${d.to.name}`, body: String(e?.message ?? e), level: "error" }); return; }
+  } else setPrefs({ active: d.to.id, ...(pr.running === "moves" ? { moving: movingAfter(pr.moving, d) } : {}) });
   const words = switchToast(d, await queuedRef(), pr.running);
   toast({ ...words, level: "info", ...(pr.undo ? {
     timeout: UNDO_MS,
@@ -133,7 +154,8 @@ function undo(u) {
   const a = accounts().find((x) => x.id === u.to);
   const resets = Date.parse(session(a)?.resets_at ?? "");
   held = { id: u.to, until: Number.isFinite(resets) ? resets : Date.now() + 5 * 3600000 };
-  setPrefs({ active: u.to, moving: movingBefore });
+  if (viaCswap()) cswapSwitch(u.to).catch(() => {});
+  else setPrefs({ active: u.to, moving: movingBefore });
 }
 
 // ---- another machine's switch rule -------------------------------------------------------------------------------
@@ -204,11 +226,15 @@ const folderOf = (id) => (id === "default" ? `${home()}/.claude` : `${home()}/.c
 
 // A terminal signing the account in (Claude Code's /login with that folder), shown over the window. It runs in the
 // person's login shell, as herdr-task starts agents, so their PATH finds claude.
+// With cswap: /login in ~/.claude, then `cswap add` keeps that login (in its slot when it's one already). Note: never
+// /logout first, which can revoke the login being left.
 export async function signIn(id, name) {
-  const sh = (await exec("sh", ["-c", 'printf %s "${SHELL:-/bin/sh}"']).catch(() => null))?.stdout?.trim() || "/bin/sh";
-  const env = id === "default" ? [] : [`CLAUDE_CONFIG_DIR=${folderOf(id)}`];
+  const sh = await loginShell();
+  const cswap = viaCswap();
+  const env = cswap || id === "default" ? [] : [`CLAUDE_CONFIG_DIR=${folderOf(id)}`];
+  const keep = cswap ? `cswap add${/^[0-9]+$/.test(id) ? ` --slot ${id}` : ""}; ` : "";
   const r = await exec("hc", ["run", "--bg", "--json", "--no-parent", "--keep", "--cwd", home(), "--name", `sign-in-${id}`.slice(0, 32),
-    "--", "env", ...env, sh, "-lic", `claude /login; exec ${sh} -i`]);
+    "--", "env", ...env, sh, "-lic", `claude /login; ${keep}exec ${sh} -i`]);
   let out = {};
   try { out = JSON.parse(r.stdout || "{}"); } catch {}
   if (r.code !== 0 || !out.address) throw new Error((r.stderr || r.stdout || "The terminal didn't start.").trim());
@@ -222,6 +248,7 @@ export async function signIn(id, name) {
 // A new account: its folder (owner only) with Shepherdr's hooks (herdr-task accounts prepare), its name, then the
 // terminal to sign in. Throws with herdr-task's reason.
 export async function addAccount(name) {
+  if (viaCswap()) { await signIn("new", cleanName(name)); return "new"; }
   const id = accountId(name);
   const r = await exec(CLI(), ["accounts", "prepare", id, "--json"]);
   let out = {};
@@ -246,7 +273,7 @@ export function hideAccount(id) {
   setPrefs({ hidden: [...new Set([...prefs().hidden, id])] });
 }
 export const showAccount = (id) => setPrefs({ hidden: prefs().hidden.filter((x) => x !== id) });
-export const setDefault = (id) => setPrefs({ active: id });
+export const setDefault = (id) => (viaCswap() ? cswapSwitch(id).catch((e) => toast({ title: "Couldn't switch", body: String(e?.message ?? e), level: "error" })) : setPrefs({ active: id }));
 export const setSkipped = (id, on) => setPrefs({ skipped: on ? [...new Set([...prefs().skipped, id])] : prefs().skipped.filter((x) => x !== id) });
 
 // The account's folder in the desktop's file browser.
